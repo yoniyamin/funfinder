@@ -845,31 +845,17 @@ export default function App(){
                           🔗 Book/Info
                         </a>
                       )}
-                      <button
-                        onClick={async () => {
-                          if (ctx && await addToExclusionList(ctx.location, a.title || 'Untitled activity')) {
-                            // Remove this activity from current results
-                            setActivities(prev => prev ? prev.filter(act => act.title !== a.title) : prev);
-                          }
-                        }}
-                        className="text-xs text-red-500 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded transition-colors flex items-center gap-1"
-                        title="Don't suggest this attraction again for this location"
-                      >
-                        🚫 Exclude
-                      </button>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {Array.isArray(a.evidence) && a.evidence.length>0 && (
-                        <div className="text-[11px] text-gray-500">
-                          <span>Sources: </span>
-                          {a.evidence.map((u,i)=> (
-                            <a key={i} className="text-indigo-500 hover:underline ml-1" href={u} target="_blank">
-                              [{i+1}]
-                            </a>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                    {Array.isArray(a.evidence) && a.evidence.length>0 && (
+                      <div className="text-[11px] text-gray-500">
+                        <span>Sources: </span>
+                        {a.evidence.map((u,i)=> (
+                          <a key={i} className="text-indigo-500 hover:underline ml-1" href={u} target="_blank">
+                            [{i+1}]
+                          </a>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </article>
               ))}

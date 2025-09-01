@@ -55,7 +55,45 @@ function reinitializeGemini() {
 
 // Secure API Key Management
 const CONFIG_FILE = path.join(process.cwd(), '.api-config.json');
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
+const MASTER_KEY_FILE = path.join(process.cwd(), '.master-key');
+
+// Master key management - ensures persistence across sessions
+function getOrCreateMasterKey() {
+  // First try environment variable
+  if (process.env.ENCRYPTION_KEY) {
+    console.log('Using encryption key from environment variable');
+    return process.env.ENCRYPTION_KEY;
+  }
+  
+  // Try to load existing master key file
+  try {
+    if (fs.existsSync(MASTER_KEY_FILE)) {
+      const masterKey = fs.readFileSync(MASTER_KEY_FILE, 'utf8').trim();
+      if (masterKey && masterKey.length === 64) { // 32 bytes = 64 hex chars
+        console.log('Loaded existing master key from file');
+        return masterKey;
+      } else {
+        console.log('Invalid master key found, generating new one');
+      }
+    }
+  } catch (error) {
+    console.log('Error reading master key file:', error.message);
+  }
+  
+  // Generate new master key and save it
+  const newMasterKey = crypto.randomBytes(32).toString('hex');
+  try {
+    fs.writeFileSync(MASTER_KEY_FILE, newMasterKey, { mode: 0o600 }); // Read/write for owner only
+    console.log('Generated and saved new master key to file');
+  } catch (error) {
+    console.error('Error saving master key file:', error.message);
+    console.log('Continuing with in-memory key (will not persist across restarts)');
+  }
+  
+  return newMasterKey;
+}
+
+const ENCRYPTION_KEY = getOrCreateMasterKey();
 
 // API Key Storage
 let apiKeys = {
@@ -77,9 +115,7 @@ let searchHistory = [];
 const EXCLUSION_LIST_FILE = path.join(process.cwd(), '.exclusion-list.json');
 let exclusionList = {}; // Format: { location: ['attraction1', 'attraction2', ...] }
 
-// AI Reasoning Storage (temporary, in-memory)
-let currentReasoning = '';
-let reasoningSessionId = '';
+
 
 // Encryption utilities
 function encrypt(text) {
@@ -1096,9 +1132,6 @@ for (let attempt = 1; attempt <= maxRetries; attempt++) {
       const reasoning = responseData.reasoning || null;
       if (reasoning) {
         console.log(`🧠 [${new Date().toISOString()}] OpenRouter reasoning (${reasoning.length} chars): ${reasoning.substring(0, 200)}...`);
-        // Store reasoning for frontend access
-        currentReasoning = reasoning;
-        reasoningSessionId = Date.now().toString();
       }
       
       console.log(`✅ [${new Date().toISOString()}] OpenRouter completed (${duration.toFixed(2)}ms)`);
@@ -1280,10 +1313,6 @@ app.post('/api/activities', async (req, res) => {
     const ctx = req.body?.ctx;
     const allowed = req.body?.allowedCategories || JSON_SCHEMA.activities[0].category;
     
-    // Clear previous reasoning at start of new generation
-    currentReasoning = '';
-    reasoningSessionId = '';
-    
     // Check if any AI provider is available
     const provider = apiKeys.ai_provider || 'gemini';
     const geminiKey = apiKeys.gemini_api_key || process.env.GEMINI_API_KEY || '';
@@ -1423,21 +1452,6 @@ app.delete('/api/exclusion-list/:location/:attraction', (req, res) => {
   } catch (error) {
     console.error('Error removing from exclusion list:', error);
     res.status(500).json({ ok: false, error: 'Failed to remove from exclusion list' });
-  }
-});
-
-// AI Reasoning endpoint
-app.get('/api/reasoning', (req, res) => {
-  try {
-    res.json({ 
-      ok: true, 
-      reasoning: currentReasoning,
-      sessionId: reasoningSessionId,
-      hasReasoning: !!currentReasoning
-    });
-  } catch (error) {
-    console.error('Error getting reasoning:', error);
-    res.status(500).json({ ok: false, error: 'Failed to get reasoning' });
   }
 });
 
