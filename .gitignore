@@ -35,3 +35,6 @@ dist-ssr
 
 # Search History
 .search-history.json
+server/.master-key
+.gitignore
+.master-key
