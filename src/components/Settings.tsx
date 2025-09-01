@@ -8,6 +8,8 @@ interface ApiSettings {
   ticketmaster_configured: boolean;
   ai_provider: string;
   openrouter_model: string;
+  enable_gemini_holidays: boolean;
+  max_activities: number;
   gemini_api_key_masked: string;
   openrouter_api_key_masked: string;
   google_search_api_key_masked: string;
@@ -35,6 +37,8 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
     openrouter_api_key: '',
     ai_provider: 'gemini',
     openrouter_model: 'deepseek/deepseek-chat-v3.1:free',
+    enable_gemini_holidays: false,
+    max_activities: 20,
     google_search_api_key: '',
     google_search_engine_id: '',
     openwebninja_api_key: '',
@@ -64,7 +68,9 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
         setApiKeys(prev => ({
           ...prev,
           ai_provider: data.settings.ai_provider || 'gemini',
-          openrouter_model: data.settings.openrouter_model || 'deepseek/deepseek-chat-v3.1:free'
+          openrouter_model: data.settings.openrouter_model || 'deepseek/deepseek-chat-v3.1:free',
+          enable_gemini_holidays: data.settings.enable_gemini_holidays || false,
+          max_activities: data.settings.max_activities || 20
         }));
       }
     } catch (error) {
@@ -73,6 +79,7 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
   };
 
   const saveSettings = async () => {
+    console.log('🔧 Save settings called, hasUnsavedChanges:', hasUnsavedChanges);
     setLoading(true);
     setMessage(null);
     
@@ -81,16 +88,23 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
       const apiKeyUpdates: any = {};
       Object.keys(apiKeys).forEach(key => {
         const value = apiKeys[key as keyof typeof apiKeys];
-        if (value.trim() !== '' && value !== 'EDIT_MODE') {
+        // Handle string, boolean, and number values
+        if (typeof value === 'boolean' || typeof value === 'number') {
+          apiKeyUpdates[key] = value;
+        } else if (typeof value === 'string' && value.trim() !== '' && value !== 'EDIT_MODE') {
           apiKeyUpdates[key] = value;
         }
       });
+      
+      console.log('📤 Sending apiKeyUpdates:', apiKeyUpdates);
       
       const response = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ apiKeyUpdates })
       });
+      
+      console.log('📥 Response status:', response.status, response.statusText);
       
       const data = await response.json();
       if (data.ok) {
@@ -101,6 +115,8 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
           ...prev,
           ai_provider: data.settings.ai_provider || prev.ai_provider,
           openrouter_model: data.settings.openrouter_model || prev.openrouter_model,
+          enable_gemini_holidays: data.settings.enable_gemini_holidays !== undefined ? data.settings.enable_gemini_holidays : prev.enable_gemini_holidays,
+          max_activities: data.settings.max_activities !== undefined ? data.settings.max_activities : prev.max_activities,
           // Clear only the actual API key fields that were saved
           gemini_api_key: prev.gemini_api_key === 'EDIT_MODE' ? '' : prev.gemini_api_key.length > 0 ? '' : prev.gemini_api_key,
           openrouter_api_key: prev.openrouter_api_key === 'EDIT_MODE' ? '' : prev.openrouter_api_key.length > 0 ? '' : prev.openrouter_api_key,
@@ -139,7 +155,7 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
     }
   };
 
-  const handleApiKeyChange = (key: string, value: string) => {
+  const handleApiKeyChange = (key: string, value: string | boolean | number) => {
     setApiKeys(prev => ({ ...prev, [key]: value }));
     setHasUnsavedChanges(true);
   };
@@ -487,6 +503,81 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                 </div>
               )}
             </div>
+
+                {/* Gemini Holiday Fetching Toggle */}
+                <div className="border border-gray-200 rounded-lg p-4 bg-yellow-50">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold flex items-center gap-2">
+                      <span>🎉</span>
+                      Gemini Holiday & Festival Enhancement
+                      <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full text-xs">Optional</span>
+                    </h3>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={apiKeys.enable_gemini_holidays}
+                        onChange={(e) => {
+                          handleApiKeyChange('enable_gemini_holidays', e.target.checked);
+                          setHasUnsavedChanges(true);
+                        }}
+                        className="rounded text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span className="text-sm font-medium">
+                        {apiKeys.enable_gemini_holidays ? 'Enabled' : 'Disabled'}
+                      </span>
+                    </label>
+                  </div>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Use Gemini AI to fetch comprehensive holidays and festivals when normal APIs return no results. 
+                    Searches a 3-day period (day before, target day, day after) for both holidays and festivals, 
+                    providing better coverage for local celebrations and cultural events.
+                  </p>
+                  <div className="text-xs text-gray-500 bg-white p-2 rounded border">
+                    <strong>Enhanced Coverage:</strong> This feature searches for holidays, festivals, cultural events, 
+                    and local traditions across a 3-day window. Requires a Gemini API key and consumes additional tokens. 
+                    Only activates when Wikidata doesn't find any local festivals or events.
+                  </div>
+                  {apiKeys.enable_gemini_holidays && !settings?.gemini_configured && (
+                    <div className="mt-3 p-2 bg-orange-100 border border-orange-200 rounded text-sm text-orange-800">
+                      ⚠️ Gemini API key required for this feature to work
+                    </div>
+                  )}
+                </div>
+
+                {/* Activity Count Setting */}
+                <div className="border border-gray-200 rounded-lg p-4 bg-blue-50">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold flex items-center gap-2">
+                      <span>🎯</span>
+                      Maximum Activities per Search
+                      <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs">Global Setting</span>
+                    </h3>
+                  </div>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Set the maximum number of activity recommendations to generate per search. 
+                    Higher numbers provide more options but use more AI tokens and take longer to process.
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <label className="block text-sm font-medium">Activities:</label>
+                    <select
+                      className="input w-32"
+                      value={apiKeys.max_activities}
+                      onChange={(e) => {
+                        handleApiKeyChange('max_activities', parseInt(e.target.value));
+                        setHasUnsavedChanges(true);
+                      }}
+                    >
+                      <option value={10}>10 (Fast)</option>
+                      <option value={15}>15 (Balanced)</option>
+                      <option value={20}>20 (Default)</option>
+                      <option value={25}>25 (More Options)</option>
+                      <option value={30}>30 (Maximum)</option>
+                    </select>
+                    <div className="text-xs text-gray-500">
+                      Current: {apiKeys.max_activities} activities
+                    </div>
+                  </div>
+                </div>
 
                 {/* OpenRouter */}
                 <div className="border border-gray-200 rounded-lg p-4">

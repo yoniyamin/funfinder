@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { toISODate, geocode, fetchHolidays, fetchWeatherDaily, fetchFestivalsWikidata } from './lib/api';
+import { toISODate, geocode, fetchHolidays, fetchWeatherDaily, fetchFestivalsWikidata, fetchHolidaysWithGemini } from './lib/api';
 import type { Activity, Context, LLMResult } from './lib/schema';
 import Settings from './components/Settings';
 
@@ -141,6 +141,7 @@ export default function App(){
   const [showPrompt, setShowPrompt] = useState<boolean>(false);
   const [prompt, setPrompt] = useState<string>('');
   const [showSettings, setShowSettings] = useState<boolean>(false);
+  const [showExclusionManager, setShowExclusionManager] = useState<boolean>(false);
   const [exclusionList, setExclusionList] = useState<{[location: string]: string[]}>({});
 
   const cats = useMemo(()=> Array.from(new Set((activities||[]).map(a=>a.category))).sort(), [activities]);
@@ -191,6 +192,41 @@ export default function App(){
       console.error('Failed to add to exclusion list:', error);
     }
     return false;
+  };
+
+  const removeFromExclusionList = async (location: string, attraction: string) => {
+    try {
+      const response = await fetch(`/api/exclusion-list/${encodeURIComponent(location)}/${encodeURIComponent(attraction)}`, {
+        method: 'DELETE'
+      });
+      const data = await response.json();
+      if (data.ok) {
+        setExclusionList(data.exclusions);
+        return true;
+      }
+    } catch (error) {
+      console.error('Failed to remove from exclusion list:', error);
+    }
+    return false;
+  };
+
+  // Helper function to separate holidays from festivals
+  const separateHolidaysFromFestivals = (events: any[], targetDate: string) => {
+    const holidayKeywords = ['labor day', 'labour day', 'memorial day', 'independence day', 'veterans day', 'presidents day', 'martin luther king', 'columbus day', 'thanksgiving', 'christmas', 'easter', 'new year', 'holiday', 'national day'];
+    
+    const holidays = events.filter((event: any) => 
+      event.start_date === targetDate && holidayKeywords.some(keyword => 
+        event.name.toLowerCase().includes(keyword)
+      )
+    );
+    
+    const festivals = events.filter((event: any) => 
+      !(event.start_date === targetDate && holidayKeywords.some(keyword => 
+        event.name.toLowerCase().includes(keyword)
+      ))
+    );
+    
+    return { holidays, festivals };
   };
 
   const deleteHistoryEntry = async (id: string) => {
@@ -278,7 +314,13 @@ export default function App(){
 
       setStatus('Fetching weather forecast…');
       setProgress(25);
-      const w = await fetchWeatherDaily(lat, lon, date);
+      let w: { tmax: number | null; tmin: number | null; pprob: number | null; wind: number | null } = { tmax: null, tmin: null, pprob: null, wind: null };
+      try {
+        w = await fetchWeatherDaily(lat, lon, date);
+      } catch (error) {
+        console.warn('Weather data not available for this date, using default values:', error);
+        // Continue with null weather data for future dates or when API fails
+      }
 
       setStatus('Checking public holidays…');
       setProgress(40);
@@ -297,9 +339,57 @@ export default function App(){
       let festivals: Array<{name:string; url:string|null; start_date:string|null; end_date:string|null; lat:number|null; lon:number|null; distance_km:number|null}> = [];
       try {
         festivals = await fetchFestivalsWikidata(lat, lon, date);
+        
+        // If no festivals found and Gemini holiday fetching might be enabled, try Gemini as fallback
+        if (festivals.length === 0) {
+          console.log('No festivals found from Wikidata, trying Gemini comprehensive search...');
+          try {
+            const geminiEvents = await fetchHolidaysWithGemini(`${name}, ${country}`, date);
+            if (geminiEvents.length > 0) {
+              console.log(`✨ Gemini found ${geminiEvents.length} holidays/festivals in 3-day period around ${date}`);
+              
+              // Separate holidays from festivals using helper function
+              const { holidays: actualHolidays, festivals: actualFestivals } = separateHolidaysFromFestivals(geminiEvents, date);
+              
+              // If we found holidays that match today's date, mark as holiday
+              if (actualHolidays.length > 0 && !isHoliday) {
+                isHoliday = true;
+                console.log(`✨ Found public holiday(s) from Gemini: ${actualHolidays.map((h: any) => h.name).join(', ')}`);
+              }
+              
+              // Use only the festivals (holidays filtered out)
+              festivals = actualFestivals;
+              console.log(`🎭 Filtered festivals (holidays removed): ${festivals.length} events remaining`);
+            }
+          } catch (geminiError) {
+            console.warn('Gemini holiday/festival fallback failed:', geminiError);
+            // Continue without Gemini data - this is just a fallback
+          }
+        }
       } catch (error) {
-        console.warn('Failed to fetch festivals, continuing without festival data:', error);
-        // Continue without festival data - don't let this block the entire search
+        console.warn('Failed to fetch festivals, trying Gemini comprehensive search...', error);
+        // Try Gemini as complete fallback if Wikidata fails entirely
+        try {
+          const geminiEvents = await fetchHolidaysWithGemini(`${name}, ${country}`, date);
+          if (geminiEvents.length > 0) {
+            console.log(`✨ Gemini comprehensive search found ${geminiEvents.length} holidays/festivals`);
+            
+            // Separate holidays from festivals using helper function
+            const { holidays: actualHolidays, festivals: actualFestivals } = separateHolidaysFromFestivals(geminiEvents, date);
+            
+            if (actualHolidays.length > 0 && !isHoliday) {
+              isHoliday = true;
+              console.log(`✨ Found public holiday(s) from Gemini fallback: ${actualHolidays.map((h: any) => h.name).join(', ')}`);
+            }
+            
+            // Use only the festivals (holidays filtered out)
+            festivals = actualFestivals;
+            console.log(`🎭 Filtered festivals in fallback (holidays removed): ${festivals.length} events remaining`);
+          }
+        } catch (geminiError) {
+          console.warn('All festival/holiday fetching failed:', geminiError);
+          // Continue without festival data - don't let this block the entire search
+        }
       }
 
       const context: Context = {
@@ -329,47 +419,73 @@ export default function App(){
       setStatus('Generating activity recommendations… This might take a while');
       setProgress(85);
       
-      // Add status updates during generation
+      // Rotating status messages during generation
+      const loadingMessages = [
+        'Generating activity recommendations… This might take a while',
+        'Free models are a bit slower… Thanks for your patience! 🤖',
+        'Analyzing local attractions and family-friendly activities… ⏳',
+        'Checking weather conditions and seasonal activities… 🌤️',
+        'Finding the perfect activities for your family… 👨‍👩‍👧‍👦',
+        'Searching for hidden gems and popular destinations… 💎',
+        'Considering age-appropriate activities and duration… 🎯',
+        'Almost ready with personalized recommendations… ✨'
+      ];
+      
+      let messageIndex = 0;
+      const messageInterval = setInterval(() => {
+        messageIndex = (messageIndex + 1) % loadingMessages.length;
+        setStatus(loadingMessages[messageIndex]);
+        console.log(`🔄 Loading message changed to: ${loadingMessages[messageIndex]}`);
+      }, 15000); // Change message every 15 seconds for better user experience
+      
+      // Also change the first message after a shorter delay to show it's working
       setTimeout(() => {
-        if (isLoading) {
-          setStatus('Free models are a bit slower… Thanks for your patience! 🤖');
+        if (messageIndex === 0) { // Only if we haven't moved yet
+          messageIndex = 1;
+          setStatus(loadingMessages[messageIndex]);
+          console.log(`🔄 First message change to: ${loadingMessages[messageIndex]}`);
         }
       }, 5000);
       
-      setTimeout(() => {
-        if (isLoading) {
-          setStatus('Still generating great recommendations for you… Almost there! ⏳');
+      try {
+        const resp = await fetch('/api/activities', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ctx: context, allowedCategories: ALLOWED_CATS }) });
+        
+        if(!resp.ok){ 
+          const errorText = await resp.text();
+          throw new Error(errorText || 'Failed to get activities from AI model'); 
         }
-      }, 10000);
-      
-      const resp = await fetch('/api/activities', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ctx: context, allowedCategories: ALLOWED_CATS }) });
-      
-      if(!resp.ok){ 
-        const errorText = await resp.text();
-        throw new Error(errorText || 'Failed to get activities from AI model'); 
-      }
-      const data: { ok:boolean; data: LLMResult } = await resp.json();
-      if(!data.ok || !data.data?.activities) {
-        throw new Error('Invalid response from AI model');
-      }
-      
-      setStatus('Processing results…');
-      setProgress(95);
-      setActivities(data.data.activities);
-      setWebSources(data.data.web_sources || null);
-      
-      setStatus('Complete!');
-      setProgress(100);
-      
-      // Reload search history to show the new entry
-      loadSearchHistory();
-      
-      // Clear status after a short delay
-      setTimeout(() => {
-        setStatus('');
+        const data: { ok:boolean; data: LLMResult } = await resp.json();
+        if(!data.ok || !data.data?.activities) {
+          throw new Error('Invalid response from AI model');
+        }
+        
+        setStatus('Processing results…');
+        setProgress(95);
+        setActivities(data.data.activities);
+        setWebSources(data.data.web_sources || null);
+        
+        setStatus('Complete!');
+        setProgress(100);
+        
+        // Reload search history to show the new entry
+        loadSearchHistory();
+        
+        // Clear status after a short delay
+        setTimeout(() => {
+          setStatus('');
+          setIsLoading(false);
+          setProgress(0);
+        }, 1000);
+        
+      } catch(err:any){
+        console.error(err);
+        setStatus(err.message || 'Something went wrong');
         setIsLoading(false);
         setProgress(0);
-      }, 1000);
+      } finally {
+        // Always clear the interval when done
+        clearInterval(messageInterval);
+      }
       
     } catch(err:any){
       console.error(err);
@@ -393,14 +509,24 @@ export default function App(){
       <header className="mx-auto max-w-5xl px-4 pt-10 pb-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex-1"></div>
-          <button 
-            onClick={() => setShowSettings(true)}
-            className="btn btn-secondary flex items-center gap-2 text-sm"
-            title="API Settings"
-          >
-            <span>⚙️</span>
-            <span>Settings</span>
-          </button>
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setShowExclusionManager(true)}
+              className="btn btn-secondary flex items-center gap-2 text-sm"
+              title="Manage Excluded Activities"
+            >
+              <span>🚫</span>
+              <span>Exclusions</span>
+            </button>
+            <button 
+              onClick={() => setShowSettings(true)}
+              className="btn btn-secondary flex items-center gap-2 text-sm"
+              title="API Settings"
+            >
+              <span>⚙️</span>
+              <span>Settings</span>
+            </button>
+          </div>
         </div>
         <div className="text-center">
           <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">Kids Activities Finder</h1>
@@ -869,6 +995,77 @@ export default function App(){
         isOpen={showSettings} 
         onClose={() => setShowSettings(false)} 
       />
+
+      {/* Exclusion Manager Modal */}
+      {showExclusionManager && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold text-gray-900">Manage Excluded Activities</h2>
+                <button
+                  onClick={() => setShowExclusionManager(false)}
+                  className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+                >
+                  ×
+                </button>
+              </div>
+              <p className="text-sm text-gray-600 mt-2">
+                Remove activities you don't want to see in future recommendations. Exclusions are saved per location.
+              </p>
+            </div>
+
+            <div className="p-6">
+              {Object.keys(exclusionList).length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <span className="text-4xl block mb-4">🎯</span>
+                  <p>No exclusions yet!</p>
+                  <p className="text-sm">Use the "Don't suggest this again" button on activities to add exclusions.</p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {Object.entries(exclusionList).map(([location, attractions]) => (
+                    <div key={location} className="border border-gray-200 rounded-lg p-4">
+                      <h3 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+                        <span>📍</span>
+                        {location}
+                        <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-full text-xs">
+                          {attractions.length} excluded
+                        </span>
+                      </h3>
+                      <div className="space-y-2">
+                        {attractions.map((attraction, index) => (
+                          <div key={index} className="flex items-center justify-between bg-red-50 border border-red-200 rounded-lg p-3">
+                            <span className="text-sm text-gray-700">{attraction}</span>
+                            <button
+                              onClick={() => removeFromExclusionList(location, attraction)}
+                              className="text-red-600 hover:text-red-800 text-sm font-medium"
+                              title="Remove from exclusions"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4">
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setShowExclusionManager(false)}
+                  className="btn btn-primary"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

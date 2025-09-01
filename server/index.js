@@ -104,7 +104,9 @@ let apiKeys = {
   google_search_api_key: '',
   google_search_engine_id: '',
   openwebninja_api_key: '',
-  ticketmaster_api_key: ''
+  ticketmaster_api_key: '',
+  enable_gemini_holidays: false, // Enable Gemini-powered holiday/festival fetching
+  max_activities: 20 // Maximum number of activities to generate
 };
 
 // Search History Storage
@@ -218,6 +220,8 @@ function loadFromEnvironment() {
   apiKeys.google_search_engine_id = process.env.GOOGLE_SEARCH_ENGINE_ID || '';
   apiKeys.openwebninja_api_key = process.env.OPENWEBNINJA_API_KEY || '';
   apiKeys.ticketmaster_api_key = process.env.TICKETMASTER_API_KEY || '';
+  apiKeys.enable_gemini_holidays = process.env.ENABLE_GEMINI_HOLIDAYS === 'true' || false;
+  apiKeys.max_activities = parseInt(process.env.MAX_ACTIVITIES) || 20;
   
   const hasKeys = Object.values(apiKeys).some(key => typeof key === 'string' && key.length > 0);
   if (hasKeys) {
@@ -230,12 +234,13 @@ function saveApiKeys() {
   try {
     const encryptedConfig = {};
     Object.keys(apiKeys).forEach(key => {
-      if (apiKeys[key]) {
+      // Save all values, including false booleans and empty strings
+      if (apiKeys[key] !== null && apiKeys[key] !== undefined) {
         // Encrypt string values, save others as-is
         if (typeof apiKeys[key] === 'string' && apiKeys[key].length > 0) {
           encryptedConfig[key] = encrypt(apiKeys[key]);
         } else if (typeof apiKeys[key] !== 'string') {
-          encryptedConfig[key] = apiKeys[key]; // Save non-string values directly
+          encryptedConfig[key] = apiKeys[key]; // Save non-string values directly (including false booleans)
         }
       }
     });
@@ -365,9 +370,10 @@ const JSON_SCHEMA = {
   } ]
 };
 
-function buildUserMessage(ctx, allowedCats, webSearchResults = null){
+function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActivities = null){
+  const activityCount = maxActivities || apiKeys.max_activities || 20;
   const basePrompt = [
-    'You are a local family activities planner. Using the provided context JSON, suggest 12-20 kid-friendly activities.',
+    `You are a local family activities planner. Using the provided context JSON, suggest ${activityCount} kid-friendly activities.`,
     'HARD RULES:',
     '- Tailor to the exact city and date.',
     '- Respect the duration window.',
@@ -415,9 +421,10 @@ function buildUserMessage(ctx, allowedCats, webSearchResults = null){
   return basePrompt.join('\n');
 }
 
-function buildUserMessageForDisplay(ctx, allowedCats){
+function buildUserMessageForDisplay(ctx, allowedCats, maxActivities = null){
+  const activityCount = maxActivities || apiKeys.max_activities || 20;
   return [
-    'You are a local family activities planner. Using the provided context JSON, suggest 12-20 kid-friendly activities.',
+    `You are a local family activities planner. Using the provided context JSON, suggest ${activityCount} kid-friendly activities.`,
     'HARD RULES:',
     '- Tailor to the exact city and date.',
     '- Respect the duration window.',
@@ -879,6 +886,91 @@ function extractSearchInsights(searchResults, location) {
   return insights;
 }
 
+// Gemini-powered holiday and festival fetching (comprehensive search for 3-day period)
+async function fetchHolidaysWithGemini(location, date) {
+  if (!apiKeys.enable_gemini_holidays) {
+    return [];
+  }
+  
+  const geminiKey = apiKeys.gemini_api_key || process.env.GEMINI_API_KEY || '';
+  if (!geminiKey) {
+    console.log('Gemini holiday fetching enabled but no API key available');
+    return [];
+  }
+  
+  try {
+    // Initialize Gemini for holiday fetching
+    console.log('Initializing Gemini for holiday fetching...');
+    const tempGenAI = new GoogleGenerativeAI(geminiKey);
+    const tempModel = tempGenAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    
+    // Calculate date range (day before to day after)
+    const targetDate = new Date(date);
+    const dayBefore = new Date(targetDate);
+    dayBefore.setDate(targetDate.getDate() - 1);
+    const dayAfter = new Date(targetDate);
+    dayAfter.setDate(targetDate.getDate() + 1);
+    
+    const formatDate = (d) => d.toISOString().split('T')[0];
+    const dateRange = `${formatDate(dayBefore)} to ${formatDate(dayAfter)}`;
+
+    const prompt = `You are a comprehensive holiday and festival expert. For the location "${location}" and the date range ${dateRange} (focusing on ${date}), provide information about:
+
+1. Public holidays occurring during this 3-day period
+2. Local festivals, cultural events, or seasonal celebrations happening during this time
+3. Religious observances and traditional celebrations
+4. Seasonal events, street festivals, and community gatherings
+5. Cultural heritage events and local traditions
+6. Any special events or observances that might affect family activities
+
+Return ONLY a valid JSON array in this exact format:
+[
+  {
+    "name": "Holiday/Festival Name",
+    "start_date": "YYYY-MM-DD or null if unknown",
+    "end_date": "YYYY-MM-DD or null if single day or unknown", 
+    "url": "official website URL or null if unknown",
+    "distance_km": null
+  }
+]
+
+IMPORTANT GUIDELINES:
+- Include both holidays AND festivals in the same response
+- Focus on events happening within the 3-day window: ${dateRange}
+- Include multi-day events that overlap with this period
+- Prioritize family-friendly events and well-known celebrations
+- Include major religious holidays, national holidays, cultural festivals, street fairs, seasonal celebrations
+- Include local traditions specific to ${location.split(',')[0]}
+- If an event spans multiple days, use appropriate start_date and end_date
+- If no significant holidays or festivals are found, return an empty array []
+- Do not include minor commercial holidays unless they significantly impact local activities`;
+
+      console.log(`🎉 Fetching holidays and festivals for ${dateRange} with Gemini...`);
+      const result = await tempModel.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }]}],
+        generationConfig: { 
+          responseMimeType: 'application/json',
+          temperature: 0.3,
+        }
+      });
+      
+      const text = result.response.text();
+      console.log('Gemini holidays response:', text.substring(0, 200) + '...');
+      
+      const holidaysData = JSON.parse(text);
+      if (Array.isArray(holidaysData)) {
+        console.log(`✅ Gemini found ${holidaysData.length} holidays/festivals for ${dateRange}`);
+        return holidaysData;
+      } else {
+        console.log('⚠️ Gemini returned non-array response for holidays');
+        return [];
+      }
+  } catch (error) {
+    console.log('Gemini holiday fetching failed:', error.message);
+    return [];
+  }
+}
+
 app.post('/api/prompt', async (req, res) => {
   try{
     const ctx = req.body?.ctx;
@@ -922,6 +1014,30 @@ app.post('/api/search-enhanced', async (req, res) => {
   }
 });
 
+// Gemini-powered holiday and festival fetching endpoint
+app.post('/api/holidays-gemini', async (req, res) => {
+  try{
+    const { location, date } = req.body;
+    if(!location || !date){ 
+      return res.status(400).json({ ok:false, error:'Missing location or date' }); 
+    }
+
+    console.log('Gemini holiday fetch request for:', location, date);
+    
+    // Check if Gemini holiday fetching is enabled
+    if (!apiKeys.enable_gemini_holidays) {
+      return res.json({ ok: true, holidays: [], message: 'Gemini holiday fetching is disabled' });
+    }
+    
+    const holidays = await fetchHolidaysWithGemini(location, date);
+    
+    res.json({ ok: true, holidays, total: holidays.length });
+  } catch (err){
+    console.error('Gemini holiday fetch error:', err);
+    res.status(500).json({ ok:false, error: err.message || 'Gemini holiday fetch failed' });
+  }
+});
+
 // Settings endpoints for API key management
 app.get('/api/settings', (req, res) => {
   try {
@@ -934,6 +1050,8 @@ app.get('/api/settings', (req, res) => {
       ticketmaster_configured: !!apiKeys.ticketmaster_api_key,
       ai_provider: apiKeys.ai_provider || 'gemini',
       openrouter_model: apiKeys.openrouter_model || 'deepseek/deepseek-r1-0528-qwen3-8b:free',
+      enable_gemini_holidays: !!apiKeys.enable_gemini_holidays,
+      max_activities: apiKeys.max_activities || 20,
       // Show masked versions for UI feedback
       gemini_api_key_masked: apiKeys.gemini_api_key ? 
         apiKeys.gemini_api_key.substring(0, 8) + '...' + apiKeys.gemini_api_key.slice(-4) : '',
@@ -992,6 +1110,8 @@ app.post('/api/settings', (req, res) => {
       ticketmaster_configured: !!apiKeys.ticketmaster_api_key,
       ai_provider: apiKeys.ai_provider || 'gemini',
       openrouter_model: apiKeys.openrouter_model || 'deepseek/deepseek-chat-v3.1:free',
+      enable_gemini_holidays: !!apiKeys.enable_gemini_holidays,
+      max_activities: apiKeys.max_activities || 20,
       updated: updated
     };
     
@@ -1247,7 +1367,7 @@ async function callGeminiModel(prompt, maxRetries = 3) {
   }
 }
 
-async function callModelWithRetry(ctx, allowedCats, maxRetries = 3) {
+async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivities = null) {
   let webSearchResults = null;
   
   // Perform enhanced web search for additional context
@@ -1260,7 +1380,7 @@ async function callModelWithRetry(ctx, allowedCats, maxRetries = 3) {
     console.log('Web search failed, continuing without web insights:', error.message);
   }
 
-  const prompt = buildUserMessage(ctx, allowedCats, webSearchResults);
+  const prompt = buildUserMessage(ctx, allowedCats, webSearchResults, maxActivities);
   
   // Determine which AI provider to use
   const provider = apiKeys.ai_provider || 'gemini';
@@ -1312,6 +1432,7 @@ app.post('/api/activities', async (req, res) => {
   try{
     const ctx = req.body?.ctx;
     const allowed = req.body?.allowedCategories || JSON_SCHEMA.activities[0].category;
+    const maxActivities = req.body?.maxActivities || null;
     
     // Check if any AI provider is available
     const provider = apiKeys.ai_provider || 'gemini';
@@ -1342,7 +1463,7 @@ app.post('/api/activities', async (req, res) => {
     
     if(!ctx){ return res.status(400).json({ ok:false, error:'Missing ctx' }); }
 
-    const json = await callModelWithRetry(ctx, allowed);
+    const json = await callModelWithRetry(ctx, allowed, 3, maxActivities);
     
     // Save successful search to history
     try {

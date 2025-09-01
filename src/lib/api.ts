@@ -181,3 +181,47 @@ export async function fetchFestivalsWikidata(lat:number, lon:number, dateISO:str
     throw error;
   }
 }
+
+// Fetch holidays and festivals using Gemini AI as a fallback (3-day period)
+export async function fetchHolidaysWithGemini(location: string, date: string) {
+  const startTime = performance.now();
+  
+  console.log(`🎊 [${new Date().toISOString()}] Fetching holidays & festivals with Gemini: ${location} around ${date}`);
+  
+  try {
+    const response = await fetch('/api/holidays-gemini', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ location, date })
+    });
+    
+    const duration = performance.now() - startTime;
+    
+    if (!response.ok) {
+      console.error(`❌ [${new Date().toISOString()}] Gemini holidays fetch failed (${duration.toFixed(2)}ms): ${response.status}`);
+      return [];
+    }
+    
+    const data = await response.json();
+    
+    if (data.ok && Array.isArray(data.holidays)) {
+      console.log(`✅ [${new Date().toISOString()}] Gemini holidays & festivals fetch completed (${duration.toFixed(2)}ms): Found ${data.holidays.length} events`);
+      return data.holidays.map((h: any) => ({
+        name: h.name,
+        url: h.url || null,
+        start_date: h.start_date || null,
+        end_date: h.end_date || null,
+        lat: null,
+        lon: null,
+        distance_km: h.distance_km || null
+      }));
+    } else {
+      console.log(`⚠️ [${new Date().toISOString()}] Gemini holidays & festivals returned no results or invalid format`);
+      return [];
+    }
+  } catch (error) {
+    const duration = performance.now() - startTime;
+    console.error(`❌ [${new Date().toISOString()}] Gemini holidays & festivals fetch error (${duration.toFixed(2)}ms):`, error);
+    return [];
+  }
+}
