@@ -17,6 +17,7 @@ export type Context = {
     url: string | null;
     distance_km: number | null;
   }>;
+  extra_instructions?: string;
 };
 
 export type Activity = {

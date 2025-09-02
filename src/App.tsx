@@ -74,7 +74,7 @@ function ProgressBar({ progress, status }: { progress: number; status: string })
       </div>
       <div className="w-full bg-gray-200 rounded-full h-2">
         <div 
-          className="bg-gradient-to-r from-indigo-500 to-blue-500 h-2 rounded-full transition-all duration-300 ease-out"
+          className="bg-gradient-fun h-2 rounded-full transition-all duration-300 ease-out"
           style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
         />
       </div>
@@ -122,6 +122,7 @@ export default function App(){
   const [duration, setDuration] = useState<number | ''>('');
   const [ages, setAges] = useState<number[]>([]);
   const [ageInput, setAgeInput] = useState<string>('');
+  const [extraInstructions, setExtraInstructions] = useState<string>('');
   
   // Search history state
   const [searchHistory, setSearchHistory] = useState<SearchHistoryEntry[]>([]);
@@ -249,7 +250,7 @@ export default function App(){
       setDate(entry.date || '');
       setDuration(entry.duration || '');
       setAges(Array.isArray(entry.kidsAges) ? entry.kidsAges : []);
-      setAgeInput(Array.isArray(entry.kidsAges) ? entry.kidsAges.join(', ') : '');
+      setAgeInput(''); // Clear age input when loading from history
       setShowHistory(false);
     } catch (error) {
       console.error('Error loading from history:', error);
@@ -404,7 +405,8 @@ export default function App(){
           wind_speed_max_kmh: w.wind
         },
         is_public_holiday: isHoliday,
-        nearby_festivals: festivals.map(f=>({ name:f.name, start_date:f.start_date||null, end_date:f.end_date||null, url:f.url||null, distance_km:f.distance_km||null }))
+        nearby_festivals: festivals.map(f=>({ name:f.name, start_date:f.start_date||null, end_date:f.end_date||null, url:f.url||null, distance_km:f.distance_km||null })),
+        ...(extraInstructions.trim() && { extra_instructions: extraInstructions.trim() })
       };
       setCtx(context);
 
@@ -504,156 +506,202 @@ export default function App(){
     return list;
   }, [activities, fCat, fFree, fWeather]);
 
-  return (
-    <div className="hero min-h-screen">
-      <header className="mx-auto max-w-5xl px-4 pt-10 pb-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex-1"></div>
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={() => setShowExclusionManager(true)}
-              className="btn btn-secondary flex items-center gap-2 text-sm"
-              title="Manage Excluded Activities"
-            >
-              <span>🚫</span>
-              <span>Exclusions</span>
-            </button>
-            <button 
-              onClick={() => setShowSettings(true)}
-              className="btn btn-secondary flex items-center gap-2 text-sm"
-              title="API Settings"
-            >
-              <span>⚙️</span>
-              <span>Settings</span>
-            </button>
+    return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 pb-12">
+      {/* Hero Banner Section */}
+      <div className="mx-auto max-w-5xl px-4 pt-4">
+        <div className="relative overflow-hidden">
+          {/* Banner Image - Bigger to show comic title */}
+          <div className="relative h-[400px] md:h-[450px] w-full">
+            <img 
+              src="/banner2.PNG" 
+              alt="FunFindAI - Superhero Kids" 
+              className="w-full h-full object-cover rounded-3xl"
+              style={{objectPosition: '60% center'}}
+            />
+            {/* Rounded corners overlay */}
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-white/20 rounded-3xl"></div>
+            {/* Fade out edges */}
+            <div className="absolute inset-0 bg-gradient-to-r from-white/30 via-transparent to-white/30 rounded-3xl"></div>
+            <div className="absolute inset-0 bg-gradient-to-t from-white/40 via-transparent to-transparent rounded-3xl"></div>
+            
+            {/* Description Text Overlay */}
+            <div className="absolute inset-0 z-11 flex items-center justify-center pt-16">
+              <p className="text-white text-lg md:text-xl max-w-2xl mx-auto font-bold drop-shadow-lg text-center" style={{textShadow: '2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 0 2px 0 #000, 2px 0 0 #000, 0 -2px 0 #000, -2px 0 0 #000'}}>Discover amazing activities for your kids with our AI-powered search. Find age-appropriate, fun, and educational experiences in your area.</p>
+            </div>
           </div>
-        </div>
-        <div className="text-center">
-          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">Kids Activities Finder</h1>
-          <p className="mt-3 text-gray-600 max-w-2xl mx-auto">Discover fun and engaging activities for your children based on location, age, weather, and local events!</p>
-        </div>
-      </header>
 
-      <main className="mx-auto max-w-5xl px-4 pb-12 space-y-6">
-        <section className="card p-5 md:p-6">
-          {/* Search History Dropdown */}
-          {searchHistory.length > 0 && (
-            <div className="mb-4 relative">
-              <button
-                type="button"
-                onClick={() => setShowHistory(!showHistory)}
-                className="flex items-center gap-2 text-sm text-indigo-600 hover:text-indigo-800 font-medium"
-              >
-                <span>📋</span>
-                Recent Searches ({searchHistory.length})
-                <span className={`transform transition-transform ${showHistory ? 'rotate-180' : ''}`}>▼</span>
-              </button>
-              
-              {showHistory && (
-                <div className="absolute top-8 left-0 right-0 z-20 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
-                  {searchHistory && searchHistory.length > 0 ? searchHistory.map((entry) => {
-                    // Safety check for entry data
-                    if (!entry || !entry.id) return null;
-                    
-                    return (
-                      <div key={entry.id} className="p-3 border-b border-gray-100 hover:bg-gray-50 flex items-center justify-between group">
-                        <button
-                          type="button"
-                          onClick={() => loadFromHistory(entry)}
-                          className="flex-1 text-left"
-                        >
-                          <div className="font-medium text-gray-900">{entry.location || 'Unknown Location'}</div>
-                          <div className="text-sm text-gray-600">
-                            {entry.date || 'No date'} • {entry.duration || 0}h • Ages: {Array.isArray(entry.kidsAges) ? entry.kidsAges.join(', ') : 'No ages'}
+          {/* Search Form Overlapping Banner */}
+          <div className="relative z-10 -mt-24 w-full max-w-5xl mx-auto">
+            <div className="bg-orange/40 backdrop-blur-md rounded-3xl shadow-2xl border border-orange-200/50 p-6 md:p-8 relative overflow-hidden">
+              {/* Orange overlay for better transition */}
+              <div className="absolute inset-0 bg-gradient-to-b from-orange-100/20 to-orange-200/30 rounded-3xl"></div>
+              <div className="relative z-10">
+              {/* Settings buttons in search form */}
+              <div className="flex justify-end mb-4">
+                <div className="flex items-center gap-3">
+                  <button 
+                    onClick={() => setShowExclusionManager(true)}
+                    className="btn btn-secondary flex items-center gap-2 text-sm bg-gradient-to-r from-red-100 to-orange-100 hover:from-red-200 hover:to-orange-200 text-red-700 border border-red-200"
+                    title="Manage Excluded Activities"
+                  >
+                    <span>🚫</span>
+                    <span>Exclusions</span>
+                  </button>
+                  <button 
+                    onClick={() => setShowSettings(true)}
+                    className="btn btn-secondary flex items-center gap-2 text-sm bg-gradient-to-r from-blue-100 to-cyan-100 hover:from-blue-200 hover:to-cyan-200 text-blue-700 border border-blue-200"
+                    title="API Settings"
+                  >
+                    <span>⚙️</span>
+                    <span>Settings</span>
+                  </button>
+                </div>
+              </div>
+              {/* Search History Dropdown */}
+              {searchHistory.length > 0 && (
+                <div className="mb-6 relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowHistory(!showHistory)}
+                    className="flex items-center gap-2 text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+                  >
+                    <span>📋</span>
+                    Recent Searches ({searchHistory.length})
+                    <span className={`transform transition-transform ${showHistory ? 'rotate-180' : ''}`}>▼</span>
+                  </button>
+                  
+                  {showHistory && (
+                    <div className="absolute top-8 left-0 right-0 z-30 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                      {searchHistory && searchHistory.length > 0 ? searchHistory.map((entry) => {
+                        if (!entry || !entry.id) return null;
+                        
+                        return (
+                          <div key={entry.id} className="p-3 border-b border-gray-100 hover:bg-gray-50 flex items-center justify-between group">
+                            <button
+                              type="button"
+                              onClick={() => loadFromHistory(entry)}
+                              className="flex-1 text-left"
+                            >
+                              <div className="font-medium text-gray-900">{entry.location || 'Unknown Location'}</div>
+                              <div className="text-sm text-gray-600">
+                                {entry.date || 'No date'} • {entry.duration || 0}h • Ages: {Array.isArray(entry.kidsAges) ? entry.kidsAges.join(', ') : 'No ages'}
+                              </div>
+                              <div className="text-xs text-gray-400">
+                                {entry.timestamp ? new Date(entry.timestamp).toLocaleDateString() : 'Unknown date'}
+                              </div>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteHistoryEntry(entry.id);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-100 rounded"
+                              title="Delete this search"
+                            >
+                              <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
                           </div>
-                          <div className="text-xs text-gray-400">
-                            {entry.timestamp ? new Date(entry.timestamp).toLocaleDateString() : 'Unknown date'}
-                          </div>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteHistoryEntry(entry.id);
-                          }}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-100 rounded"
-                          title="Delete this search"
-                        >
-                                                    <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </div>
-                    );
-                    }) : (
-                      <div className="p-3 text-gray-500 text-center">No search history available</div>
-                    )}
+                        );
+                      }) : (
+                        <div className="p-3 text-gray-500 text-center">No search history available</div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
-          )}
 
-          <form className="grid grid-cols-1 md:grid-cols-2 gap-4" onSubmit={e=>{ e.preventDefault(); run(); }}>
-            <div>
-              <label className="block text-sm font-semibold mb-1 flex items-center gap-1">
-                <span>📍</span>
-                Location
-              </label>
-              <input className="input" value={location} onChange={e=>setLocation(e.target.value)} required />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold mb-1 flex items-center gap-1">
-                <span>📅</span>
-                Date
-              </label>
-              <input type="date" className="input" value={date} onChange={e=>setDate(e.target.value)} required />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold mb-1">Duration (hours)</label>
-              <input 
-                type="number" 
-                min={1} 
-                step={0.5} 
-                className="input" 
-                value={duration} 
-                onChange={e => {
-                  const val = e.target.value;
-                  setDuration(val === '' ? '' : parseFloat(val));
-                }} 
-                required 
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold mb-1">Kids' Ages</label>
-              <div className="flex flex-wrap gap-2 mb-2">
-                {ages.map(a=> (
-                  <span key={a} className="chip">{a} years <button className="ml-1" onClick={(e)=>{e.preventDefault(); removeAge(a);}}>✕</button></span>
-                ))}
-              </div>
-              <div className="flex items-center gap-2">
-                <input type="number" min={0} max={17} className="input w-32" placeholder="Age" value={ageInput} onChange={e=>setAgeInput(e.target.value)} />
-                <button type="button" className="btn btn-secondary" onClick={addAge}>+ Add</button>
-              </div>
-            </div>
-            <div className="md:col-span-2 pt-2">
-              <div className="flex items-center gap-3 mb-3">
-                <button className="btn btn-primary" type="submit" disabled={isLoading}>
-                  {isLoading ? (
-                    <>
-                      <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div>
-                      Searching...
-                    </>
-                  ) : (
-                    <>🔍 Find Activities</>
+              <form className="grid grid-cols-1 md:grid-cols-2 gap-6" onSubmit={e=>{ e.preventDefault(); run(); }}>
+                <div>
+                  <label className="block text-sm font-semibold mb-2 flex items-center gap-1 text-gray-700">
+                    <span>📍</span>
+                    Where?
+                  </label>
+                  <input className="input" value={location} onChange={e=>setLocation(e.target.value)} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-2 flex items-center gap-1 text-gray-700">
+                    <span>📅</span>
+                    When?
+                  </label>
+                  <input type="date" className="input" value={date} onChange={e=>setDate(e.target.value)} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-2 flex items-center gap-1 text-gray-700">
+                    <span>⏱️</span>
+                    For how long? (hours)
+                  </label>
+                  <input 
+                    type="number" 
+                    min={1} 
+                    step={0.5} 
+                    className="input" 
+                    value={duration} 
+                    onChange={e => {
+                      const val = e.target.value;
+                      setDuration(val === '' ? '' : parseFloat(val));
+                    }} 
+                    required 
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-2 flex items-center gap-1 text-gray-700">
+                    <span>👶</span>
+                    Kids' Ages
+                  </label>
+                  <div className="flex items-start gap-2">
+                    <input type="number" min={0} max={17} className="input flex-1" placeholder="Age" value={ageInput} onChange={e=>setAgeInput(e.target.value)} />
+                    <button type="button" className="btn btn-secondary bg-gradient-to-r from-green-100 to-emerald-100 hover:from-green-200 hover:to-emerald-200 text-green-700 border border-green-200 whitespace-nowrap" onClick={addAge}>+ Add</button>
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {ages.map(a=> (
+                      <span key={a} className="chip">{a} years <button className="ml-1" onClick={(e)=>{e.preventDefault(); removeAge(a);}}>✕</button></span>
+                    ))}
+                  </div>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-semibold mb-2 flex items-center gap-1 text-gray-700">
+                    <span>📝</span>
+                    What else should we know? (Optional) 
+                  </label>
+                  <textarea 
+                    className="input h-20 resize-none" 
+                    placeholder="Any special requirements, preferences, or specific activities you're looking for..."
+                    value={extraInstructions}
+                    onChange={e=>setExtraInstructions(e.target.value)}
+                  />
+                </div>
+                <div className="md:col-span-2 pt-8">
+                  <div className="flex justify-center mb-6">
+                    <button className="hero-button text-xl md:text-2xl lg:text-3xl px-12 md:px-16 py-4 md:py-6 text-white font-black rounded-2xl shadow-2xl hover:scale-110 transform transition-all duration-300 bg-gradient-to-r from-purple-600 via-pink-500 to-orange-500 hover:from-purple-700 hover:via-pink-600 hover:to-orange-600 border-4 border-white min-w-[280px] flex items-center justify-center" type="submit" disabled={isLoading}>
+                      {isLoading ? (
+                        <>
+                          <div className="animate-spin w-8 h-8 border-4 border-white border-t-transparent rounded-full"></div>
+                          <span className="ml-3">Searching...</span>
+                        </>
+                      ) : (
+                        <>🔍 Find Amazing Activities</>
+                      )}
+                    </button>
+                  </div>
+                  {isLoading && (
+                    <div className="mt-6">
+                      <ProgressBar progress={progress} status={status} />
+                    </div>
                   )}
-                </button>
+                </div>
+              </form>
               </div>
-              {isLoading && (
-                <ProgressBar progress={progress} status={status} />
-              )}
             </div>
-          </form>
-        </section>
+          </div>
+        </div>
+      </div>
+
+      {/* Results Section */}
+      <main className="mx-auto max-w-5xl px-4 py-12 pb-20 space-y-6">
 
         {ctx && (
           <section className="card p-5 md:p-6">
@@ -717,7 +765,7 @@ export default function App(){
                 <div className="absolute -bottom-2 -right-2 w-16 h-16 bg-white/10 rounded-full"></div>
                 <div className="absolute -top-4 -left-4 w-12 h-12 bg-white/5 rounded-full"></div>
               </div>
-              <div className="p-5 rounded-xl border border-gray-200 bg-gradient-to-br from-emerald-50 to-teal-50">
+              <div className="p-5 rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-50">
                 <div className="flex items-center gap-2 mb-3">
                   <span className="text-2xl">{ctx.is_public_holiday ? '🎉' : '📅'}</span>
                   <div>
@@ -736,7 +784,7 @@ export default function App(){
                 </div>
               </div>
               
-              <div className="p-5 rounded-xl border border-gray-200 bg-gradient-to-br from-purple-50 to-pink-50">
+              <div className="p-5 rounded-xl border border-purple-200 bg-gradient-to-br from-purple-50 to-pink-50">
                 <div className="flex items-center gap-2 mb-3">
                   <span className="text-2xl">🎪</span>
                   <div>
@@ -918,7 +966,8 @@ export default function App(){
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filtered.map((a, idx)=> (
-                <article key={idx} className="relative p-5 rounded-2xl border border-gray-200 bg-white hover:shadow-lg transition-shadow duration-200">
+                <article key={idx} className="relative rounded-2xl bg-gradient-border p-[2px] hover:shadow-lg transition-all duration-200">
+                  <div className="bg-white rounded-2xl p-5 h-full relative">
                   {/* Exclude button in top-right corner */}
                   <button
                     onClick={async () => {
@@ -982,6 +1031,7 @@ export default function App(){
                         ))}
                       </div>
                     )}
+                  </div>
                   </div>
                 </article>
               ))}

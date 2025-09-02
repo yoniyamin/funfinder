@@ -544,40 +544,6 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                   )}
                 </div>
 
-                {/* Activity Count Setting */}
-                <div className="border border-gray-200 rounded-lg p-4 bg-blue-50">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-semibold flex items-center gap-2">
-                      <span>🎯</span>
-                      Maximum Activities per Search
-                      <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs">Global Setting</span>
-                    </h3>
-                  </div>
-                  <p className="text-sm text-gray-600 mb-3">
-                    Set the maximum number of activity recommendations to generate per search. 
-                    Higher numbers provide more options but use more AI tokens and take longer to process.
-                  </p>
-                  <div className="flex items-center gap-3">
-                    <label className="block text-sm font-medium">Activities:</label>
-                    <select
-                      className="input w-32"
-                      value={apiKeys.max_activities}
-                      onChange={(e) => {
-                        handleApiKeyChange('max_activities', parseInt(e.target.value));
-                        setHasUnsavedChanges(true);
-                      }}
-                    >
-                      <option value={10}>10 (Fast)</option>
-                      <option value={15}>15 (Balanced)</option>
-                      <option value={20}>20 (Default)</option>
-                      <option value={25}>25 (More Options)</option>
-                      <option value={30}>30 (Maximum)</option>
-                    </select>
-                    <div className="text-xs text-gray-500">
-                      Current: {apiKeys.max_activities} activities
-                    </div>
-                  </div>
-                </div>
 
                 {/* OpenRouter */}
                 <div className="border border-gray-200 rounded-lg p-4">
@@ -645,6 +611,40 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
               )}
                 </div>
               </div>
+              {/* Activity Count Setting */}
+              <div className="border border-gray-200 rounded-lg p-4 bg-blue-50">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold flex items-center gap-2">
+                      <span>🎯</span>
+                      Maximum Activities per Search
+                      <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs">Global Setting</span>
+                    </h3>
+                  </div>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Set the maximum number of activity recommendations to generate per search. 
+                    Higher numbers provide more options but use more AI tokens and take longer to process.
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <label className="block text-sm font-medium">Activities:</label>
+                    <select
+                      className="input w-32"
+                      value={apiKeys.max_activities}
+                      onChange={(e) => {
+                        handleApiKeyChange('max_activities', parseInt(e.target.value));
+                        setHasUnsavedChanges(true);
+                      }}
+                    >
+                      <option value={10}>10 (Fast)</option>
+                      <option value={15}>15 (Balanced)</option>
+                      <option value={20}>20 (Default)</option>
+                      <option value={25}>25 (More Options)</option>
+                      <option value={30}>30 (Maximum)</option>
+                    </select>
+                    <div className="text-xs text-gray-500">
+                      Current: {apiKeys.max_activities} activities
+                    </div>
+                  </div>
+                </div>
             </div>
           )}
 
