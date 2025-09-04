@@ -38,3 +38,6 @@ dist-ssr
 server/.master-key
 .gitignore
 .master-key
+
+*storybook.log
+storybook-static

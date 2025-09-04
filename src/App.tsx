@@ -509,33 +509,35 @@ export default function App(){
     return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 pb-12">
       {/* Hero Banner Section */}
-      <div className="mx-auto max-w-5xl px-4 pt-4">
+      <div className="mx-auto max-w-5xl px-4 pt-4 sm:px-0 sm:pt-0 mobile-main-container">
         <div className="relative overflow-hidden">
-          {/* Banner Image - Bigger to show comic title */}
-          <div className="relative h-[400px] md:h-[450px] w-full">
+          {/* Banner Image - Mobile: full screen, Desktop: rounded */}
+          <div className="relative h-[65vh] md:h-[450px] w-full mobile-bg-container">
             <img 
-              src="/banner2.PNG" 
-              alt="FunFindAI - Superhero Kids" 
-              className="w-full h-full object-cover rounded-3xl"
+              src="/bg2.jpeg" 
+              alt="FunFindAI" 
+              className="w-full h-full object-cover rounded-3xl md:rounded-3xl sm:rounded-none mobile-bg-image"
               style={{objectPosition: '60% center'}}
             />
-            {/* Rounded corners overlay */}
-            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-white/20 rounded-3xl"></div>
+            {/* Mobile: no rounded overlay, Desktop: rounded overlay */}
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-white/20 rounded-3xl md:rounded-3xl sm:rounded-none mobile-overlay"></div>
             {/* Fade out edges */}
-            <div className="absolute inset-0 bg-gradient-to-r from-white/30 via-transparent to-white/30 rounded-3xl"></div>
-            <div className="absolute inset-0 bg-gradient-to-t from-white/40 via-transparent to-transparent rounded-3xl"></div>
+            <div className="absolute inset-0 bg-gradient-to-r from-white/30 via-transparent to-white/30 rounded-3xl md:rounded-3xl sm:rounded-none mobile-overlay"></div>
+            <div className="absolute inset-0 bg-gradient-to-t from-white/40 via-transparent to-transparent rounded-3xl md:rounded-3xl sm:rounded-none mobile-overlay"></div>
             
-            {/* Description Text Overlay */}
-            <div className="absolute inset-0 z-11 flex items-center justify-center pt-16">
-              <p className="text-white text-lg md:text-xl max-w-2xl mx-auto font-bold drop-shadow-lg text-center" style={{textShadow: '2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 0 2px 0 #000, 2px 0 0 #000, 0 -2px 0 #000, -2px 0 0 #000'}}>Discover amazing activities for your kids with our AI-powered search. Find age-appropriate, fun, and educational experiences in your area.</p>
+            {/* Description Text Overlay - Positioned just below the title in image */}
+            <div className="absolute inset-0 z-11 flex items-start justify-center pt-20 sm:pt-24 px-4">
+              <div className="text-center mobile-description-container">
+                <p className="text-white text-sm sm:text-lg md:text-xl max-w-2xl mx-auto font-bold drop-shadow-lg" style={{textShadow: '2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 0 2px 0 #000, 2px 0 0 #000, 0 -2px 0 #000, -2px 0 0 #000'}}>Discover amazing activities for your kids with our AI-powered search. Find age-appropriate, fun, and educational experiences in your area.</p>
+              </div>
             </div>
           </div>
 
           {/* Search Form Overlapping Banner */}
-          <div className="relative z-10 -mt-24 w-full max-w-5xl mx-auto">
+          <div className="relative z-10 -mt-72 sm:-mt-24 w-full max-w-5xl mx-auto mobile-search-form">
             <div className="bg-orange/40 backdrop-blur-md rounded-3xl shadow-2xl border border-orange-200/50 p-6 md:p-8 relative overflow-hidden">
               {/* Orange overlay for better transition */}
-              <div className="absolute inset-0 bg-gradient-to-b from-orange-100/20 to-orange-200/30 rounded-3xl"></div>
+              <div className="absolute inset-0 bg-gradient-to-b from-orange-100/30 via-orange-50/20 to-white/50 rounded-3xl"></div>
               <div className="relative z-10">
               {/* Settings buttons in search form */}
               <div className="flex justify-end mb-4">
@@ -620,7 +622,7 @@ export default function App(){
                     <span>📍</span>
                     Where?
                   </label>
-                  <input className="input" value={location} onChange={e=>setLocation(e.target.value)} required />
+                  <input className="input" value={location} onChange={e=>setLocation(e.target.value)} placeholder="Madrid, Spain" required />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold mb-2 flex items-center gap-1 text-gray-700">
@@ -644,6 +646,7 @@ export default function App(){
                       const val = e.target.value;
                       setDuration(val === '' ? '' : parseFloat(val));
                     }} 
+                    placeholder="3"
                     required 
                   />
                 </div>
@@ -653,7 +656,7 @@ export default function App(){
                     Kids' Ages
                   </label>
                   <div className="flex items-start gap-2">
-                    <input type="number" min={0} max={17} className="input flex-1" placeholder="Age" value={ageInput} onChange={e=>setAgeInput(e.target.value)} />
+                    <input type="number" min={0} max={17} className="input flex-1" placeholder="8" value={ageInput} onChange={e=>setAgeInput(e.target.value)} />
                     <button type="button" className="btn btn-secondary bg-gradient-to-r from-green-100 to-emerald-100 hover:from-green-200 hover:to-emerald-200 text-green-700 border border-green-200 whitespace-nowrap" onClick={addAge}>+ Add</button>
                   </div>
                   <div className="flex flex-wrap gap-2 mt-2">
@@ -669,7 +672,7 @@ export default function App(){
                   </label>
                   <textarea 
                     className="input h-20 resize-none" 
-                    placeholder="Any special requirements, preferences, or specific activities you're looking for..."
+                    placeholder="Outdoor activities, wheelchair accessible, near metro station..."
                     value={extraInstructions}
                     onChange={e=>setExtraInstructions(e.target.value)}
                   />

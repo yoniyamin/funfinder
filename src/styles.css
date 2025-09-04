@@ -63,6 +63,71 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
 }
 
+/* Mobile-specific background styling */
+@media (max-width: 640px) {
+  .mobile-main-container {
+    /* On mobile, remove padding and extend to edges */
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    padding-top: 0 !important;
+    max-width: 100vw !important;
+  }
+  
+  .mobile-bg-container {
+    /* On mobile, extend to full viewport width */
+    margin-left: 0;
+    margin-right: 0;
+    width: 100vw;
+  }
+  
+  .mobile-bg-image {
+    /* Remove rounded corners on mobile */
+    border-radius: 0 !important;
+    /* Ensure full coverage */
+    width: 100vw;
+    height: 100%;
+    object-fit: cover;
+  }
+  
+  .mobile-overlay {
+    /* Remove rounded corners from overlays on mobile */
+    border-radius: 0 !important;
+  }
+  
+  /* Adjust search form for mobile */
+  .mobile-search-form {
+    /* Adjust margins for mobile */
+    margin-left: 1rem;
+    margin-right: 1rem;
+    width: calc(100vw - 2rem);
+  }
+  
+  /* Mobile description positioning - positioned just below title in image */
+  .mobile-description-container {
+    /* Position description appropriately under the image title */
+    margin-top: 0;
+    padding: 40px 1rem;
+  }
+  
+  /* Mobile settings modal */
+  .mobile-settings-overlay {
+    padding: 0.5rem;
+  }
+  
+  .mobile-settings-modal {
+    /* On mobile, take up more of the screen */
+    max-width: 100%;
+    max-height: 95vh;
+    margin: 0.5rem;
+    border-radius: 1rem;
+  }
+  
+  /* Make sure modal content is scrollable on mobile */
+  .mobile-settings-modal .p-6 {
+    padding: 1rem;
+  }
+}
+
 /* Hero button special styling */
 .hero-button {
   position: relative;
