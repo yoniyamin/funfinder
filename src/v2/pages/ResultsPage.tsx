@@ -518,28 +518,57 @@ export default function ResultsPage({
 
         {/* Activities */}
         {activities && !loading.isLoading && (
-          <section id="activities" className="card p-5 md:p-6 bg-white/95 backdrop-blur-sm">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-3">
-                <h2 className="text-lg font-semibold">Activities</h2>
-                <span className="text-sm text-gray-500">({filtered.length} results)</span>
-              </div>
-              <div className="flex gap-2">
-                <select className="input w-44" value={fCat} onChange={e => setFCat(e.target.value)}>
-                  <option value="">All categories</option>
-                  {cats.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-                <select className="input w-36" value={fFree} onChange={e => setFFree(e.target.value)}>
-                  <option value="">Free & paid</option>
-                  <option value="true">Free only</option>
-                  <option value="false">Paid only</option>
-                </select>
-                <select className="input w-44" value={fWeather} onChange={e => setFWeather(e.target.value)}>
-                  <option value="">Any weather fit</option>
-                  <option value="good">Good</option>
-                  <option value="ok">OK</option>
-                  <option value="bad">Bad</option>
-                </select>
+          <section id="activities" className="card p-5 md:p-6 bg-white/95 backdrop-blur-sm relative">
+            {/* Results count badge */}
+            <div className="absolute top-3 right-3 bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full text-xs font-medium">
+              {filtered.length}
+            </div>
+            
+            <div className="flex flex-col gap-4 mb-4">
+              <h2 className="text-lg font-semibold">Activities</h2>
+              
+              {/* Improved Filters */}
+              <div className="flex flex-wrap gap-2">
+                <div className="flex items-center gap-1">
+                  <span className="text-sm text-gray-600">🏷️</span>
+                  <select className="text-xs border border-gray-300 rounded-lg px-2 py-1 bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" value={fCat} onChange={e => setFCat(e.target.value)}>
+                    <option value="">All Categories</option>
+                    {cats.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                
+                <div className="flex items-center gap-1">
+                  <span className="text-sm text-gray-600">💰</span>
+                  <select className="text-xs border border-gray-300 rounded-lg px-2 py-1 bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" value={fFree} onChange={e => setFFree(e.target.value)}>
+                    <option value="">Free & Paid</option>
+                    <option value="true">Free Only</option>
+                    <option value="false">Paid Only</option>
+                  </select>
+                </div>
+                
+                <div className="flex items-center gap-1">
+                  <span className="text-sm text-gray-600">🌤️</span>
+                  <select className="text-xs border border-gray-300 rounded-lg px-2 py-1 bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" value={fWeather} onChange={e => setFWeather(e.target.value)}>
+                    <option value="">Any Weather</option>
+                    <option value="good">Good Weather</option>
+                    <option value="ok">OK Weather</option>
+                    <option value="bad">Bad Weather</option>
+                  </select>
+                </div>
+                
+                {/* Clear filters button */}
+                {(fCat || fFree || fWeather) && (
+                  <button
+                    onClick={() => {
+                      setFCat('');
+                      setFFree('');
+                      setFWeather('');
+                    }}
+                    className="text-xs text-indigo-600 hover:text-indigo-800 underline ml-2"
+                  >
+                    Clear filters
+                  </button>
+                )}
               </div>
             </div>
             
@@ -629,7 +658,7 @@ export default function ResultsPage({
                     setFFree('');
                     setFWeather('');
                   }}
-                  className="mt-2 text-indigo-600 hover:text-indigo-800 underline"
+                  className="mt-2 text-indigo-600 hover:text-indigo-800 underline text-sm"
                 >
                   Clear all filters
                 </button>

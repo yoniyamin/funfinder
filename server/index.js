@@ -14,14 +14,34 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
-// Initialize AI providers
+// AI Provider Factory - Creates isolated instances per request
+class AIProviderFactory {
+  static createGeminiClient(apiKey) {
+    if (!apiKey) {
+      throw new Error('Gemini API key not provided');
+    }
+    const genAI = new GoogleGenerativeAI(apiKey);
+    return genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  }
+  
+  static createOpenRouterClient(apiKey) {
+    if (!apiKey) {
+      throw new Error('OpenRouter API key not provided');
+    }
+    return new OpenAI({
+      baseURL: 'https://openrouter.ai/api/v1',
+      apiKey: apiKey,
+    });
+  }
+}
+
+// Initialize AI providers (deprecated - kept for settings/test endpoints)
 let currentGeminiKey = process.env.GEMINI_API_KEY || '';
 let currentOpenRouterKey = process.env.OPENROUTER_API_KEY || '';
 let genAI = null;
 let model = null;
 let openAI = null;
 
-// Function to initialize AI providers
 function initializeAIProviders() {
   // Initialize Gemini
   const geminiKey = apiKeys.gemini_api_key || process.env.GEMINI_API_KEY || '';
@@ -109,13 +129,148 @@ let apiKeys = {
   max_activities: 20 // Maximum number of activities to generate
 };
 
-// Search History Storage
-const SEARCH_HISTORY_FILE = path.join(process.cwd(), '.search-history.json');
-let searchHistory = [];
+// Data Storage Managers - Isolated per request
+class DataStorageManager {
+  constructor() {
+    this.SEARCH_HISTORY_FILE = path.join(process.cwd(), '.search-history.json');
+    this.EXCLUSION_LIST_FILE = path.join(process.cwd(), '.exclusion-list.json');
+    this.fileLocks = new Map(); // Simple file locking mechanism
+  }
+  
+  async withFileLock(filePath, operation) {
+    while (this.fileLocks.get(filePath)) {
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    this.fileLocks.set(filePath, true);
+    try {
+      return await operation();
+    } finally {
+      this.fileLocks.delete(filePath);
+    }
+  }
+  
+  async loadSearchHistory() {
+    return this.withFileLock(this.SEARCH_HISTORY_FILE, () => {
+      try {
+        if (fs.existsSync(this.SEARCH_HISTORY_FILE)) {
+          const data = fs.readFileSync(this.SEARCH_HISTORY_FILE, 'utf8');
+          return JSON.parse(data);
+        }
+        return [];
+      } catch (error) {
+        console.error('Error loading search history:', error.message);
+        return [];
+      }
+    });
+  }
+  
+  async saveSearchHistory(history) {
+    return this.withFileLock(this.SEARCH_HISTORY_FILE, () => {
+      try {
+        fs.writeFileSync(this.SEARCH_HISTORY_FILE, JSON.stringify(history, null, 2));
+      } catch (error) {
+        console.error('Error saving search history:', error.message);
+        throw error;
+      }
+    });
+  }
+  
+  async loadExclusionList() {
+    return this.withFileLock(this.EXCLUSION_LIST_FILE, () => {
+      try {
+        if (fs.existsSync(this.EXCLUSION_LIST_FILE)) {
+          const data = fs.readFileSync(this.EXCLUSION_LIST_FILE, 'utf8');
+          return JSON.parse(data);
+        }
+        return {};
+      } catch (error) {
+        console.error('Error loading exclusion list:', error.message);
+        return {};
+      }
+    });
+  }
+  
+  async saveExclusionList(exclusions) {
+    return this.withFileLock(this.EXCLUSION_LIST_FILE, () => {
+      try {
+        fs.writeFileSync(this.EXCLUSION_LIST_FILE, JSON.stringify(exclusions, null, 2));
+      } catch (error) {
+        console.error('Error saving exclusion list:', error.message);
+        throw error;
+      }
+    });
+  }
+  
+  async addToSearchHistory(query) {
+    const history = await this.loadSearchHistory();
+    const { location, date, duration_hours, ages } = query;
+    
+    // Create a unique key for the search
+    const searchKey = `${location}-${date}-${duration_hours || ''}-${ages?.join(',') || ''}`;
+    
+    // Remove existing entry with same parameters if it exists
+    const filteredHistory = history.filter(entry => 
+      `${entry.location}-${entry.date}-${entry.duration || ''}-${entry.kidsAges?.join(',') || ''}` !== searchKey
+    );
+    
+    // Add new entry at the beginning
+    const historyEntry = {
+      id: Date.now().toString() + '-' + Math.random().toString(36).substr(2, 9),
+      location,
+      date,
+      duration: duration_hours || null,
+      kidsAges: ages || [],
+      timestamp: new Date().toISOString(),
+      searchCount: 1
+    };
+    
+    const newHistory = [historyEntry, ...filteredHistory].slice(0, 20);
+    await this.saveSearchHistory(newHistory);
+    return historyEntry;
+  }
+  
+  async addToExclusionList(location, attraction) {
+    const exclusions = await this.loadExclusionList();
+    
+    if (!exclusions[location]) {
+      exclusions[location] = [];
+    }
+    
+    if (!exclusions[location].includes(attraction)) {
+      exclusions[location].push(attraction);
+      await this.saveExclusionList(exclusions);
+      return true;
+    }
+    
+    return false;
+  }
+  
+  async removeFromExclusionList(location, attraction) {
+    const exclusions = await this.loadExclusionList();
+    
+    if (exclusions[location]) {
+      const initialLength = exclusions[location].length;
+      exclusions[location] = exclusions[location].filter(item => item !== attraction);
+      
+      if (exclusions[location].length === 0) {
+        delete exclusions[location];
+      }
+      
+      if (initialLength > (exclusions[location]?.length || 0)) {
+        await this.saveExclusionList(exclusions);
+        return true;
+      }
+    }
+    
+    return false;
+  }
+}
 
-// Exclusion List Storage
-const EXCLUSION_LIST_FILE = path.join(process.cwd(), '.exclusion-list.json');
-let exclusionList = {}; // Format: { location: ['attraction1', 'attraction2', ...] }
+const dataManager = new DataStorageManager();
+
+// Legacy global variables (deprecated - kept for backward compatibility)
+let searchHistory = [];
+let exclusionList = {};
 
 
 
@@ -251,84 +406,48 @@ function saveApiKeys() {
   }
 }
 
-// Search History Management
+// Legacy functions for backward compatibility (deprecated)
 function loadSearchHistory() {
-  try {
-    if (fs.existsSync(SEARCH_HISTORY_FILE)) {
-      const data = fs.readFileSync(SEARCH_HISTORY_FILE, 'utf8');
-      searchHistory = JSON.parse(data);
-      console.log(`Loaded ${searchHistory.length} search history entries`);
-    }
-  } catch (error) {
+  dataManager.loadSearchHistory().then(history => {
+    searchHistory = history;
+    console.log(`Loaded ${searchHistory.length} search history entries`);
+  }).catch(error => {
     console.error('Error loading search history:', error.message);
     searchHistory = [];
-  }
+  });
 }
 
-// Exclusion List Management
 function loadExclusionList() {
-  try {
-    if (fs.existsSync(EXCLUSION_LIST_FILE)) {
-      const data = fs.readFileSync(EXCLUSION_LIST_FILE, 'utf8');
-      exclusionList = JSON.parse(data);
-      const totalExclusions = Object.values(exclusionList).reduce((sum, list) => sum + list.length, 0);
-      console.log(`Loaded exclusion list for ${Object.keys(exclusionList).length} locations (${totalExclusions} total exclusions)`);
-    }
-  } catch (error) {
+  dataManager.loadExclusionList().then(list => {
+    exclusionList = list;
+    const totalExclusions = Object.values(exclusionList).reduce((sum, list) => sum + list.length, 0);
+    console.log(`Loaded exclusion list for ${Object.keys(exclusionList).length} locations (${totalExclusions} total exclusions)`);
+  }).catch(error => {
     console.error('Error loading exclusion list:', error.message);
     exclusionList = {};
-  }
+  });
 }
 
 function saveExclusionList() {
-  try {
-    fs.writeFileSync(EXCLUSION_LIST_FILE, JSON.stringify(exclusionList, null, 2));
-    console.log('Exclusion list saved successfully');
-  } catch (error) {
-    console.error('Error saving exclusion list:', error.message);
-  }
+  dataManager.saveExclusionList(exclusionList)
+    .then(() => console.log('Exclusion list saved successfully'))
+    .catch(error => console.error('Error saving exclusion list:', error.message));
 }
 
 function saveSearchHistory() {
-  try {
-    fs.writeFileSync(SEARCH_HISTORY_FILE, JSON.stringify(searchHistory, null, 2));
-  } catch (error) {
-    console.error('Error saving search history:', error.message);
-  }
+  dataManager.saveSearchHistory(searchHistory)
+    .catch(error => console.error('Error saving search history:', error.message));
 }
 
 function addToSearchHistory(query) {
   console.log('Adding to search history:', query);
-  
-  const { location, date, duration_hours, ages } = query;
-  
-  // Create a unique key for the search
-  const searchKey = `${location}-${date}-${duration_hours || ''}-${ages?.join(',') || ''}`;
-  
-  // Remove existing entry with same parameters if it exists
-  searchHistory = searchHistory.filter(entry => 
-    `${entry.location}-${entry.date}-${entry.duration || ''}-${entry.kidsAges?.join(',') || ''}` !== searchKey
-  );
-  
-  // Add new entry at the beginning
-  const historyEntry = {
-    id: Date.now().toString(),
-    location,
-    date,
-    duration: duration_hours || null, // Store as 'duration' for consistency
-    kidsAges: ages || [], // Store as 'kidsAges' for consistency
-    timestamp: new Date().toISOString(),
-    searchCount: 1
-  };
-  
-  console.log('Created history entry:', historyEntry);
-  
-  searchHistory.unshift(historyEntry);
-  
-  // Keep only last 20 searches
-  searchHistory = searchHistory.slice(0, 20);
-  
-  saveSearchHistory();
+  dataManager.addToSearchHistory(query)
+    .then(entry => {
+      console.log('Created history entry:', entry);
+      // Update legacy global for backward compatibility
+      searchHistory = [entry, ...searchHistory.filter(e => e.id !== entry.id)].slice(0, 20);
+    })
+    .catch(error => console.error('Error adding to search history:', error.message));
 }
 
 // Initialize API keys, search history, and exclusion list
@@ -407,12 +526,11 @@ function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActiviti
     );
   }
 
-  // Add exclusions context
-  const locationExclusions = exclusionList[ctx.location] || [];
-  if (locationExclusions.length > 0) {
+  // Add exclusions context (will be populated by the calling function)
+  if (ctx.exclusions && ctx.exclusions.length > 0) {
     basePrompt.push(
       'DO NOT SUGGEST THESE ATTRACTIONS/ACTIVITIES (user has excluded them):',
-      ...locationExclusions.map(item => `- ${item}`),
+      ...ctx.exclusions.map(item => `- ${item}`),
       'Please avoid suggesting these specific attractions, activities, or venues.',
       ''
     );
@@ -1240,12 +1358,15 @@ app.post('/api/test-apis', async (req, res) => {
   }
 });
 
-// Call OpenRouter API
+// Call OpenRouter API with isolated client
 async function callOpenRouterModel(prompt, maxRetries = 3) {
-  if (!openAI) {
-    throw new Error('OpenRouter client not initialized');
+  const openRouterKey = apiKeys.openrouter_api_key || process.env.OPENROUTER_API_KEY || '';
+  if (!openRouterKey) {
+    throw new Error('OpenRouter API key not available');
   }
   
+  // Create isolated client for this request
+  const openAI = AIProviderFactory.createOpenRouterClient(openRouterKey);
   const modelName = apiKeys.openrouter_model || 'deepseek/deepseek-chat-v3.1:free';
   
 for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -1336,24 +1457,15 @@ for (let attempt = 1; attempt <= maxRetries; attempt++) {
   }
 }
 
-// Call Gemini API
+// Call Gemini API with isolated client
 async function callGeminiModel(prompt, maxRetries = 3) {
-  // Ensure Gemini model is initialized
   const geminiKey = apiKeys.gemini_api_key || process.env.GEMINI_API_KEY || '';
   if (!geminiKey) {
     throw new Error('Gemini API key not available');
   }
   
-  if (!model || currentGeminiKey !== geminiKey) {
-    console.log('Reinitializing Gemini model...');
-    currentGeminiKey = geminiKey;
-    genAI = new GoogleGenerativeAI(currentGeminiKey);
-    model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-  }
-  
-  if (!model) {
-    throw new Error('Gemini model failed to initialize');
-  }
+  // Create isolated model for this request
+  const model = AIProviderFactory.createGeminiClient(geminiKey);
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     const startTime = performance.now();
@@ -1394,6 +1506,16 @@ async function callGeminiModel(prompt, maxRetries = 3) {
 async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivities = null) {
   let webSearchResults = null;
   
+  // Load exclusions for this location to add to context
+  const exclusions = await dataManager.loadExclusionList();
+  const locationExclusions = exclusions[ctx.location] || [];
+  
+  // Add exclusions to context for prompt building
+  const enrichedCtx = {
+    ...ctx,
+    exclusions: locationExclusions
+  };
+  
   // Perform enhanced web search for additional context
   try {
     console.log('Performing enhanced web search for current events and family activities...');
@@ -1404,7 +1526,7 @@ async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivitie
     console.log('Web search failed, continuing without web insights:', error.message);
   }
 
-  const prompt = buildUserMessage(ctx, allowedCats, webSearchResults, maxActivities);
+  const prompt = buildUserMessage(enrichedCtx, allowedCats, webSearchResults, maxActivities);
   
   // Determine which AI provider to use
   const provider = apiKeys.ai_provider || 'gemini';
@@ -1489,9 +1611,9 @@ app.post('/api/activities', async (req, res) => {
 
     const json = await callModelWithRetry(ctx, allowed, 3, maxActivities);
     
-    // Save successful search to history
+    // Save successful search to history (isolated per request)
     try {
-      addToSearchHistory(ctx);
+      await dataManager.addToSearchHistory(ctx);
     } catch (historyError) {
       console.log('Failed to save search history (non-blocking):', historyError.message);
     }
@@ -1504,23 +1626,27 @@ app.post('/api/activities', async (req, res) => {
 });
 
 // Search History endpoints
-app.get('/api/search-history', (req, res) => {
+app.get('/api/search-history', async (req, res) => {
   try {
-    res.json({ ok: true, history: searchHistory });
+    const history = await dataManager.loadSearchHistory();
+    res.json({ ok: true, history });
   } catch (error) {
     console.error('Error getting search history:', error);
     res.status(500).json({ ok: false, error: 'Failed to get search history' });
   }
 });
 
-app.delete('/api/search-history/:id', (req, res) => {
+app.delete('/api/search-history/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const initialLength = searchHistory.length;
-    searchHistory = searchHistory.filter(entry => entry.id !== id);
+    const history = await dataManager.loadSearchHistory();
+    const initialLength = history.length;
+    const filteredHistory = history.filter(entry => entry.id !== id);
     
-    if (searchHistory.length < initialLength) {
-      saveSearchHistory();
+    if (filteredHistory.length < initialLength) {
+      await dataManager.saveSearchHistory(filteredHistory);
+      // Update legacy global for backward compatibility
+      searchHistory = filteredHistory;
       res.json({ ok: true, message: 'Search history entry deleted' });
     } else {
       res.status(404).json({ ok: false, error: 'Search history entry not found' });
@@ -1532,16 +1658,17 @@ app.delete('/api/search-history/:id', (req, res) => {
 });
 
 // Exclusion List endpoints
-app.get('/api/exclusion-list', (req, res) => {
+app.get('/api/exclusion-list', async (req, res) => {
   try {
-    res.json({ ok: true, exclusions: exclusionList });
+    const exclusions = await dataManager.loadExclusionList();
+    res.json({ ok: true, exclusions });
   } catch (error) {
     console.error('Error getting exclusion list:', error);
     res.status(500).json({ ok: false, error: 'Failed to get exclusion list' });
   }
 });
 
-app.post('/api/exclusion-list', (req, res) => {
+app.post('/api/exclusion-list', async (req, res) => {
   try {
     const { location, attraction } = req.body;
     
@@ -1549,19 +1676,17 @@ app.post('/api/exclusion-list', (req, res) => {
       return res.status(400).json({ ok: false, error: 'Location and attraction are required' });
     }
     
-    // Initialize location array if it doesn't exist
-    if (!exclusionList[location]) {
-      exclusionList[location] = [];
-    }
+    const added = await dataManager.addToExclusionList(location, attraction);
+    const exclusions = await dataManager.loadExclusionList();
     
-    // Add attraction if not already excluded
-    if (!exclusionList[location].includes(attraction)) {
-      exclusionList[location].push(attraction);
-      saveExclusionList();
+    // Update legacy global for backward compatibility
+    exclusionList = exclusions;
+    
+    if (added) {
       console.log(`Added '${attraction}' to exclusion list for ${location}`);
-      res.json({ ok: true, message: 'Attraction added to exclusion list', exclusions: exclusionList });
+      res.json({ ok: true, message: 'Attraction added to exclusion list', exclusions });
     } else {
-      res.json({ ok: true, message: 'Attraction already in exclusion list', exclusions: exclusionList });
+      res.json({ ok: true, message: 'Attraction already in exclusion list', exclusions });
     }
   } catch (error) {
     console.error('Error adding to exclusion list:', error);
@@ -1569,30 +1694,23 @@ app.post('/api/exclusion-list', (req, res) => {
   }
 });
 
-app.delete('/api/exclusion-list/:location/:attraction', (req, res) => {
+app.delete('/api/exclusion-list/:location/:attraction', async (req, res) => {
   try {
     const { location, attraction } = req.params;
     const decodedLocation = decodeURIComponent(location);
     const decodedAttraction = decodeURIComponent(attraction);
     
-    if (exclusionList[decodedLocation]) {
-      const initialLength = exclusionList[decodedLocation].length;
-      exclusionList[decodedLocation] = exclusionList[decodedLocation].filter(item => item !== decodedAttraction);
-      
-      // Remove location entry if no exclusions left
-      if (exclusionList[decodedLocation].length === 0) {
-        delete exclusionList[decodedLocation];
-      }
-      
-      if (initialLength > (exclusionList[decodedLocation]?.length || 0)) {
-        saveExclusionList();
-        console.log(`Removed '${decodedAttraction}' from exclusion list for ${decodedLocation}`);
-        res.json({ ok: true, message: 'Attraction removed from exclusion list', exclusions: exclusionList });
-      } else {
-        res.status(404).json({ ok: false, error: 'Attraction not found in exclusion list' });
-      }
+    const removed = await dataManager.removeFromExclusionList(decodedLocation, decodedAttraction);
+    const exclusions = await dataManager.loadExclusionList();
+    
+    // Update legacy global for backward compatibility
+    exclusionList = exclusions;
+    
+    if (removed) {
+      console.log(`Removed '${decodedAttraction}' from exclusion list for ${decodedLocation}`);
+      res.json({ ok: true, message: 'Attraction removed from exclusion list', exclusions });
     } else {
-      res.status(404).json({ ok: false, error: 'Location not found in exclusion list' });
+      res.status(404).json({ ok: false, error: 'Attraction not found in exclusion list' });
     }
   } catch (error) {
     console.error('Error removing from exclusion list:', error);
