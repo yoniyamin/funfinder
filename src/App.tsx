@@ -539,27 +539,6 @@ export default function App(){
               {/* Orange overlay for better transition */}
               <div className="absolute inset-0 bg-gradient-to-b from-orange-100/30 via-orange-50/20 to-white/50 rounded-3xl"></div>
               <div className="relative z-10">
-              {/* Settings buttons in search form */}
-              <div className="flex justify-end mb-4">
-                <div className="flex items-center gap-3">
-                  <button 
-                    onClick={() => setShowExclusionManager(true)}
-                    className="btn btn-secondary flex items-center gap-2 text-sm bg-gradient-to-r from-red-100 to-orange-100 hover:from-red-200 hover:to-orange-200 text-red-700 border border-red-200"
-                    title="Manage Excluded Activities"
-                  >
-                    <span>🚫</span>
-                    <span>Exclusions</span>
-                  </button>
-                  <button 
-                    onClick={() => setShowSettings(true)}
-                    className="btn btn-secondary flex items-center gap-2 text-sm bg-gradient-to-r from-blue-100 to-cyan-100 hover:from-blue-200 hover:to-cyan-200 text-blue-700 border border-blue-200"
-                    title="API Settings"
-                  >
-                    <span>⚙️</span>
-                    <span>Settings</span>
-                  </button>
-                </div>
-              </div>
               {/* Search History Dropdown */}
               {searchHistory.length > 0 && (
                 <div className="mb-6 relative">
@@ -616,7 +595,7 @@ export default function App(){
                 </div>
               )}
 
-              <form className="grid grid-cols-1 md:grid-cols-2 gap-6" onSubmit={e=>{ e.preventDefault(); run(); }}>
+              <form className="grid grid-cols-1 md:grid-cols-2 gap-6" onSubmit={e=>{ e.preventDefault(); }}>
                 <div>
                   <label className="block text-sm font-semibold mb-2 flex items-center gap-1 text-gray-700">
                     <span>📍</span>
@@ -677,25 +656,12 @@ export default function App(){
                     onChange={e=>setExtraInstructions(e.target.value)}
                   />
                 </div>
-                <div className="md:col-span-2 pt-8">
-                  <div className="flex justify-center mb-6">
-                    <button className="hero-button text-xl md:text-2xl lg:text-3xl px-12 md:px-16 py-4 md:py-6 text-white font-black rounded-2xl shadow-2xl hover:scale-110 transform transition-all duration-300 bg-gradient-to-r from-purple-600 via-pink-500 to-orange-500 hover:from-purple-700 hover:via-pink-600 hover:to-orange-600 border-4 border-white min-w-[280px] flex items-center justify-center" type="submit" disabled={isLoading}>
-                      {isLoading ? (
-                        <>
-                          <div className="animate-spin w-8 h-8 border-4 border-white border-t-transparent rounded-full"></div>
-                          <span className="ml-3">Searching...</span>
-                        </>
-                      ) : (
-                        <>🔍 Find Amazing Activities</>
-                      )}
-                    </button>
+                {/* Loading progress bar */}
+                {isLoading && (
+                  <div className="md:col-span-2 mt-6">
+                    <ProgressBar progress={progress} status={status} />
                   </div>
-                  {isLoading && (
-                    <div className="mt-6">
-                      <ProgressBar progress={progress} status={status} />
-                    </div>
-                  )}
-                </div>
+                )}
               </form>
               </div>
             </div>
@@ -704,7 +670,7 @@ export default function App(){
       </div>
 
       {/* Results Section */}
-      <main className="mx-auto max-w-5xl px-4 py-12 pb-20 space-y-6">
+      <main className="mx-auto max-w-5xl px-4 py-12 pb-32 sm:pb-20 space-y-6">
 
         {ctx && (
           <section className="card p-5 md:p-6">
@@ -1042,6 +1008,69 @@ export default function App(){
           </section>
         )}
       </main>
+
+      {/* Bottom Navigation Bar */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50 sm:hidden">
+        <div className="flex justify-around items-center py-2 px-4">
+          {/* Search Button */}
+          <button 
+            onClick={() => run()}
+            disabled={isLoading}
+            className="flex flex-col items-center justify-center py-2 px-4 relative group"
+          >
+            {/* Gradient overlay effect */}
+            <div className="absolute inset-0 bg-gradient-to-r from-purple-500/20 via-pink-500/20 to-orange-500/20 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            
+            {/* Search icon with stars */}
+            <div className="relative z-10 mb-1">
+              {isLoading ? (
+                <div className="animate-spin w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full"></div>
+              ) : (
+                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  {/* Magnifying glass */}
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <path d="m21 21-4.35-4.35"></path>
+                  {/* Stars around */}
+                  <circle cx="6" cy="6" r="0.5" fill="currentColor"></circle>
+                  <circle cx="18" cy="6" r="0.5" fill="currentColor"></circle>
+                  <circle cx="6" cy="16" r="0.5" fill="currentColor"></circle>
+                  <circle cx="18" cy="16" r="0.5" fill="currentColor"></circle>
+                </svg>
+              )}
+            </div>
+            <span className="text-xs text-purple-600 font-medium">Search</span>
+          </button>
+
+          {/* Exclusions Button */}
+          <button 
+            onClick={() => setShowExclusionManager(true)}
+            className="flex flex-col items-center justify-center py-2 px-4 hover:bg-gray-100 rounded-xl transition-colors"
+          >
+            <div className="mb-1">
+              <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="15" y1="9" x2="9" y2="15"></line>
+                <line x1="9" y1="9" x2="15" y2="15"></line>
+              </svg>
+            </div>
+            <span className="text-xs text-red-600 font-medium">Exclusions</span>
+          </button>
+
+          {/* Settings Button */}
+          <button 
+            onClick={() => setShowSettings(true)}
+            className="flex flex-col items-center justify-center py-2 px-4 hover:bg-gray-100 rounded-xl transition-colors"
+          >
+            <div className="mb-1">
+              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1 1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+            </div>
+            <span className="text-xs text-blue-600 font-medium">Settings</span>
+          </button>
+        </div>
+      </div>
 
       {/* Settings Modal */}
       <Settings 

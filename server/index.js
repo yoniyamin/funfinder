@@ -388,6 +388,15 @@ function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActiviti
     ''
   ];
 
+  // Add extra instructions from context if provided
+  if (ctx.extra_instructions && ctx.extra_instructions.trim()) {
+    basePrompt.push(
+      'ADDITIONAL REQUIREMENTS:',
+      ctx.extra_instructions.trim(),
+      ''
+    );
+  }
+
   if (webSearchResults && webSearchResults.recommendations) {
     basePrompt.push(
       'CURRENT WEB INSIGHTS:',
@@ -421,9 +430,9 @@ function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActiviti
   return basePrompt.join('\n');
 }
 
-function buildUserMessageForDisplay(ctx, allowedCats, maxActivities = null){
+function buildUserMessageForDisplay(ctx, allowedCats, maxActivities = null, extraInstructions = ''){
   const activityCount = maxActivities || apiKeys.max_activities || 20;
-  return [
+  const basePrompt = [
     `You are a local family activities planner. Using the provided context JSON, suggest ${activityCount} kid-friendly activities.`,
     'HARD RULES:',
     '- Tailor to the exact city and date.',
@@ -432,12 +441,26 @@ function buildUserMessageForDisplay(ctx, allowedCats, maxActivities = null){
     '- Consider weather; set weather_fit to good/ok/bad.',
     '- Prefer options relevant to public holidays or nearby festivals when applicable.',
     '- Return ONLY a single JSON object matching the schema; NO markdown or commentary.',
-    '',
+    ''
+  ];
+
+  // Add extra instructions if provided
+  if (extraInstructions && extraInstructions.trim()) {
+    basePrompt.push(
+      'ADDITIONAL REQUIREMENTS:',
+      extraInstructions.trim(),
+      ''
+    );
+  }
+
+  basePrompt.push(
     'Allowed categories: ' + allowedCats + '.',
     '',
     'Context JSON:',
     JSON.stringify(ctx, null, 2)
-  ].join('\n');
+  );
+
+  return basePrompt.join('\n');
 }
 
 function cleanJsonString(text) {
@@ -975,9 +998,10 @@ app.post('/api/prompt', async (req, res) => {
   try{
     const ctx = req.body?.ctx;
     const allowed = req.body?.allowedCategories || JSON_SCHEMA.activities[0].category;
+    const extraInstructions = req.body?.extraInstructions || '';
     if(!ctx){ return res.status(400).json({ ok:false, error:'Missing ctx' }); }
 
-    const prompt = buildUserMessageForDisplay(ctx, allowed);
+    const prompt = buildUserMessageForDisplay(ctx, allowed, null, extraInstructions);
     res.json({ ok:true, prompt });
   } catch (err){
     console.error(err);

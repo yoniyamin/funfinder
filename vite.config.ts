@@ -11,5 +11,13 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom'
+  },
+  // Point to the new v2 entry point
+  build: {
+    rollupOptions: {
+      input: {
+        main: 'index.html'
+      }
+    }
   }
 });

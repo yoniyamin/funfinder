@@ -44,4 +44,5 @@ export type LLMResult = {
     url: string;
     source: string;
   }>;
+  ai_provider?: string;
 };
