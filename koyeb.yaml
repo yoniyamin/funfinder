@@ -1,0 +1,13 @@
+name: funfinder
+services:
+  web:
+    ports:
+      - port: 8787
+    build:
+      commands:
+        - npm ci
+        - npm run build
+    run:
+      cmd: ["node", "server/index.js"]
+    env:
+      NODE_ENV: production
