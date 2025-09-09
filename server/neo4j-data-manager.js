@@ -64,10 +64,10 @@ export class Neo4jDataManager {
   }
 
   // Search result caching methods
-  async getCachedSearchResults(location, date, duration_hours, ages, query, extra_instructions = '') {
+  async getCachedSearchResults(location, date, duration_hours, ages, query, extra_instructions = '', ai_provider = 'gemini') {
     await this.ensureConnection();
     
-    const searchKey = this.generateSearchKey(location, date, duration_hours, ages, query, extra_instructions);
+    const searchKey = this.generateSearchKey(location, date, duration_hours, ages, query, extra_instructions, ai_provider);
     const session = this.driver.session({ database: this.database });
     
     try {
@@ -107,10 +107,10 @@ export class Neo4jDataManager {
     return null;
   }
 
-  async cacheSearchResults(location, date, duration_hours, ages, query, results, extra_instructions = '') {
+  async cacheSearchResults(location, date, duration_hours, ages, query, results, extra_instructions = '', ai_provider = 'gemini') {
     await this.ensureConnection();
     
-    const searchKey = this.generateSearchKey(location, date, duration_hours, ages, query, extra_instructions);
+    const searchKey = this.generateSearchKey(location, date, duration_hours, ages, query, extra_instructions, ai_provider);
     const session = this.driver.session({ database: this.database });
     
     try {
@@ -125,6 +125,8 @@ export class Neo4jDataManager {
             s.duration_hours = $duration_hours,
             s.ages = $ages,
             s.query = $query,
+            s.extra_instructions = $extra_instructions,
+            s.ai_provider = $ai_provider,
             s.results = $results,
             s.timestamp = datetime(),
             s.lastAccessed = datetime()
@@ -135,6 +137,8 @@ export class Neo4jDataManager {
         duration_hours: duration_hours || null,
         ages: ages || [],
         query: query || '',
+        extra_instructions: extra_instructions || '',
+        ai_provider: ai_provider || 'gemini',
         results: resultsJson
       });
       
@@ -156,12 +160,13 @@ export class Neo4jDataManager {
     }
   }
 
-  generateSearchKey(location, date, duration_hours, ages, query, extra_instructions = '') {
+  generateSearchKey(location, date, duration_hours, ages, query, extra_instructions = '', ai_provider = 'gemini') {
     const normalizedLocation = location.toLowerCase().trim();
     const normalizedQuery = query?.toLowerCase().trim() || '';
     const agesStr = ages?.sort().join(',') || '';
     const normalizedInstructions = extra_instructions?.toLowerCase().trim() || '';
-    return `${normalizedLocation}-${date}-${duration_hours || ''}-${agesStr}-${normalizedQuery}-${normalizedInstructions}`;
+    const normalizedProvider = ai_provider?.toLowerCase().trim() || 'gemini';
+    return `${normalizedLocation}-${date}-${duration_hours || ''}-${agesStr}-${normalizedQuery}-${normalizedInstructions}-${normalizedProvider}`;
   }
 
   // Search history methods

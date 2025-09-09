@@ -249,10 +249,10 @@ class MongoDataManager {
   }
 
   // Search result caching methods
-  async getCachedSearchResults(location, date, duration_hours, ages, query, extra_instructions = '') {
+  async getCachedSearchResults(location, date, duration_hours, ages, query, extra_instructions = '', ai_provider = 'gemini') {
     await this.ensureConnection();
     
-    const searchKey = this.generateSearchKey(location, date, duration_hours, ages, query, extra_instructions);
+    const searchKey = this.generateSearchKey(location, date, duration_hours, ages, query, extra_instructions, ai_provider);
     
     try {
       const cached = await this.db.collection('searchCache').findOne({ searchKey });
@@ -297,10 +297,10 @@ class MongoDataManager {
     return null;
   }
 
-  async cacheSearchResults(location, date, duration_hours, ages, query, results, extra_instructions = '') {
+  async cacheSearchResults(location, date, duration_hours, ages, query, results, extra_instructions = '', ai_provider = 'gemini') {
     await this.ensureConnection();
     
-    const searchKey = this.generateSearchKey(location, date, duration_hours, ages, query, extra_instructions);
+    const searchKey = this.generateSearchKey(location, date, duration_hours, ages, query, extra_instructions, ai_provider);
     
     try {
       await this.db.collection('searchCache').replaceOne(
@@ -313,6 +313,7 @@ class MongoDataManager {
           ages,
           query,
           extra_instructions,
+          ai_provider,
           results,
           timestamp: new Date(),
           lastAccessed: new Date()
@@ -340,12 +341,13 @@ class MongoDataManager {
     }
   }
 
-  generateSearchKey(location, date, duration_hours, ages, query, extra_instructions = '') {
+  generateSearchKey(location, date, duration_hours, ages, query, extra_instructions = '', ai_provider = 'gemini') {
     const normalizedLocation = location.toLowerCase().trim();
     const normalizedQuery = query?.toLowerCase().trim() || '';
     const agesStr = ages?.sort().join(',') || '';
     const normalizedInstructions = extra_instructions?.toLowerCase().trim() || '';
-    return `${normalizedLocation}-${date}-${duration_hours || ''}-${agesStr}-${normalizedQuery}-${normalizedInstructions}`;
+    const normalizedProvider = ai_provider?.toLowerCase().trim() || 'gemini';
+    return `${normalizedLocation}-${date}-${duration_hours || ''}-${agesStr}-${normalizedQuery}-${normalizedInstructions}-${normalizedProvider}`;
   }
 
   // Search history methods (maintaining compatibility)
@@ -1778,7 +1780,8 @@ app.post('/api/search-enhanced', async (req, res) => {
           null, // no duration for enhanced search
           [], // no ages for enhanced search
           'enhanced-search',
-          '' // no extra instructions for enhanced search
+          '', // no extra instructions for enhanced search
+          'enhanced' // special provider for enhanced search
         );
         
         if (cachedResults) {
@@ -1818,7 +1821,8 @@ app.post('/api/search-enhanced', async (req, res) => {
             [], // no ages for enhanced search
             'enhanced-search',
             enhancedData,
-            '' // no extra instructions for enhanced search
+            '', // no extra instructions for enhanced search
+            'enhanced' // special provider for enhanced search
           );
         } catch (cacheError) {
           console.log('Failed to cache enhanced search results (non-blocking):', cacheError.message);
@@ -2367,6 +2371,10 @@ app.post('/api/activities', async (req, res) => {
     let json = null;
     if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
       try {
+        const provider = apiKeys.ai_provider || 'gemini';
+        const modelName = provider === 'openrouter' 
+          ? `openrouter-${apiKeys.openrouter_model || 'deepseek/deepseek-chat-v3.1:free'}`
+          : provider;
         const cacheKey = `${allowed}-${maxActivities || 'default'}`;
         const cachedResults = await dataManager.getCachedSearchResults(
           ctx.location, 
@@ -2374,7 +2382,8 @@ app.post('/api/activities', async (req, res) => {
           ctx.duration_hours, 
           ctx.ages, 
           cacheKey,
-          ctx.extra_instructions || ''
+          ctx.extra_instructions || '',
+          modelName
         );
         
         if (cachedResults) {
@@ -2416,6 +2425,10 @@ app.post('/api/activities', async (req, res) => {
       // Cache the results (only if using Neo4j)
       if (isNeo4jConnected && dataManager instanceof Neo4jDataManager && json) {
         try {
+          const provider = apiKeys.ai_provider || 'gemini';
+          const modelName = provider === 'openrouter' 
+            ? `openrouter-${apiKeys.openrouter_model || 'deepseek/deepseek-chat-v3.1:free'}`
+            : provider;
           const cacheKey = `${allowed}-${maxActivities || 'default'}`;
           await dataManager.cacheSearchResults(
             ctx.location, 
@@ -2424,7 +2437,8 @@ app.post('/api/activities', async (req, res) => {
             ctx.ages, 
             cacheKey, 
             json,
-            ctx.extra_instructions || ''
+            ctx.extra_instructions || '',
+            modelName
           );
         } catch (cacheError) {
           console.log('Failed to cache search results (non-blocking):', cacheError.message);
