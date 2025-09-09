@@ -87,7 +87,7 @@ export default function SearchPage({
   const [showAgeModal, setShowAgeModal] = useState(false);
   const [showDateModal, setShowDateModal] = useState(false);
   const [showInstructionsModal, setShowInstructionsModal] = useState(false);
-  const [extraInstructions, setExtraInstructions] = useState('');
+  const [extraInstructions, setExtraInstructions] = useState(searchParams.extraInstructions || '');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [cities, setCities] = useState<City[]>([]);
   const [showLocationModal, setShowLocationModal] = useState(false);
@@ -110,11 +110,17 @@ export default function SearchPage({
       location: '',
       date: '',
       duration: 1,
-      ages: []
+      ages: [],
+      extraInstructions: ''
     });
     setExtraInstructions('');
     setShowHistory(false);
   };
+
+  // Sync local extraInstructions with searchParams when they change
+  useEffect(() => {
+    setExtraInstructions(searchParams.extraInstructions || '');
+  }, [searchParams.extraInstructions]);
 
   // Load cities from CSV
   useEffect(() => {
@@ -289,15 +295,33 @@ export default function SearchPage({
       {/* Background Image */}
       <div className="glass-bg-container">
         <img
+          src="/bgpc.jpeg"
+          alt="Nature background with kids playing"
+          className="glass-bg-image glass-bg-image-desktop"
+        />
+        <img
           src="/bg5.jpeg"
           alt="Nature background with kids playing"
-          className="glass-bg-image"
+          className="glass-bg-image glass-bg-image-mobile"
         />
         <div className="glass-bg-overlay"></div>
       </div>
 
       {/* Content Container */}
       <div className="glass-content">
+        
+        {/* Instructions Preview - Top of Screen */}
+        {searchParams.extraInstructions && !loading.isLoading && (
+          <div className="instructions-top-preview">
+            <div className="flex items-center gap-2 mb-1">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-yellow-600 flex-shrink-0">
+                <path d="M14.828 2.828a4 4 0 015.657 0L22 4.343a4 4 0 010 5.657L20.828 11.172 7.172 24.828 1 23l1.828-6.172L16.586 3.414zm0 0L17.657 6.171" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <span className="text-sm font-medium text-yellow-800">Special Instructions</span>
+            </div>
+            <p className="text-sm text-yellow-700 break-words">{searchParams.extraInstructions}</p>
+          </div>
+        )}
         
         {/* Loading Animation */}
         {loading.isLoading && (
@@ -415,12 +439,13 @@ export default function SearchPage({
                 <button
                   type="button"
                   onClick={() => setShowHistory(!showHistory)}
-                  className="glass-action-btn"
+                  className="glass-action-btn-with-label"
                   title="Recent searches"
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                     <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
+                  <span className="action-label">History</span>
                 </button>
                 
                 {showHistory && (
@@ -429,7 +454,10 @@ export default function SearchPage({
                       <div key={entry.id} className="glass-history-item">
                         <button
                           type="button"
-                          onClick={() => loadFromHistory(entry)}
+                          onClick={() => {
+                            loadFromHistory(entry);
+                            setShowHistory(false);
+                          }}
                           className="glass-history-button"
                         >
                           <div className="glass-history-title">{entry.location}</div>
@@ -461,25 +489,27 @@ export default function SearchPage({
             <button
               type="button"
               onClick={handleResetForm}
-              className="glass-action-btn"
+              className="glass-action-btn-with-label"
               title="Reset form"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                 <path d="M1 4v6h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
+              <span className="action-label">Reset</span>
             </button>
 
             {/* Instructions */}
             <button
               type="button"
               onClick={() => setShowInstructionsModal(true)}
-              className={`glass-action-btn ${extraInstructions ? 'has-instructions' : ''}`}
+              className={`glass-action-btn-with-label ${extraInstructions ? 'has-instructions' : ''}`}
               title={extraInstructions ? 'Instructions saved - click to edit' : 'Add other instructions'}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                 <path d="M14.828 2.828a4 4 0 015.657 0L22 4.343a4 4 0 010 5.657L20.828 11.172 7.172 24.828 1 23l1.828-6.172L16.586 3.414zm0 0L17.657 6.171" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
+              <span className="action-label">Instructions</span>
             </button>
           </div>
         </div>
@@ -710,6 +740,7 @@ export default function SearchPage({
                       type="button"
                       onClick={() => {
                         setExtraInstructions('');
+                        updateSearchParams({ extraInstructions: '' });
                       }}
                       className="instructions-btn instructions-btn-clear"
                     >
@@ -717,7 +748,10 @@ export default function SearchPage({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setShowInstructionsModal(false)}
+                      onClick={() => {
+                        updateSearchParams({ extraInstructions: extraInstructions });
+                        setShowInstructionsModal(false);
+                      }}
                       className="instructions-btn instructions-btn-save"
                     >
                       Save Instructions

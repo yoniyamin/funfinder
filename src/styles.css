@@ -397,7 +397,25 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: 50% 30%; /* Better positioning to show kids */
+}
+
+.glass-bg-image-mobile {
+  display: none;
+}
+
+.glass-bg-image-desktop {
+  display: block;
+}
+
+/* Show mobile background image only on mobile devices */
+@media (max-width: 640px) {
+  .glass-bg-image-mobile {
+    display: block;
+  }
+  
+  .glass-bg-image-desktop {
+    display: none;
+  }
 }
 
 .glass-bg-overlay {
@@ -593,10 +611,10 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
   gap: 12px;
   padding: 14px 16px;
   border-radius: var(--radius-lg);
-  background: var(--glass-item);
+  background: rgba(255,255,255,0.95);
   -webkit-backdrop-filter: blur(12px) saturate(140%);
           backdrop-filter: blur(12px) saturate(140%);
-  border: 1px solid rgba(255,255,255,0.26);
+  border: 2px solid rgb(206 76 71);
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,0.55),
     inset 0 -1px 0 rgba(255,255,255,0.12);
@@ -605,7 +623,7 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
 }
 
 .glass-row:hover {
-  background: rgba(255,255,255,0.22);
+  background: rgba(255,255,255,1.0);
   transform: translateY(-1px);
 }
 
@@ -919,6 +937,11 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
   
   .dock-btn {
     padding: 10px 8px;
+  }
+  
+  /* Remove duplicate mobile styles - now handled in main mobile section */
+  .glass-card-actions {
+    gap: 4px;
   }
 }
 
@@ -1403,6 +1426,20 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
     height: 28px;
   }
   
+  /* Mobile styles for action buttons with labels */
+  .glass-action-btn-with-label {
+    padding: 4px 8px !important;
+    font-size: 11px !important;
+    gap: 4px !important;
+    border-radius: 12px !important;
+  }
+  
+  .glass-action-btn-with-label .action-label {
+    display: inline !important; /* Show labels on mobile */
+    font-size: 10px !important;
+    white-space: nowrap;
+  }
+  
   .glass-history-dropdown-top {
     position: fixed;
     top: 50%;
@@ -1420,6 +1457,18 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
   
   .instructions-actions {
     flex-direction: column;
+  }
+  
+  /* Removed old instructions preview styles - now using top preview */
+  
+  /* Mobile styles for instructions context in results */
+  .instructions-context-mobile {
+    padding: 12px !important;
+  }
+  
+  .instructions-context-mobile .text-sm {
+    font-size: 13px !important;
+    line-height: 1.4 !important;
   }
 }
 
@@ -1626,9 +1675,9 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.95);
   backdrop-filter: blur(20px) saturate(145%);
-  border: 1px solid rgba(255,255,255,0.25);
+  border: 2px solid rgb(206 76 71);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1638,19 +1687,96 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
 }
 
 .glass-action-btn:hover {
-  background: rgba(255,255,255,0.22);
+  background: rgba(255,255,255,1.0);
   transform: translateY(-1px);
   color: #2d3748;
 }
 
 .glass-action-btn.has-instructions {
-  background: rgba(255,215,0,0.2);
+  background: rgba(255,240,180,0.95);
   border-color: rgba(255,215,0,0.4);
   color: #b7791f;
 }
 
 .glass-action-btn.has-instructions:hover {
-  background: rgba(255,215,0,0.3);
+  background: rgba(255,240,180,1.0);
+}
+
+/* Glass action buttons with labels */
+.glass-action-btn-with-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.95);
+  backdrop-filter: blur(20px) saturate(145%);
+  border: 2px solid rgb(206 76 71);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #718096;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.glass-action-btn-with-label:hover {
+  background: rgba(255,255,255,1.0);
+  transform: translateY(-1px);
+  color: #2d3748;
+}
+
+.glass-action-btn-with-label.has-instructions {
+  background: rgba(255,240,180,0.95);
+  border-color: rgba(255,215,0,0.4);
+  color: #b7791f;
+}
+
+.glass-action-btn-with-label.has-instructions:hover {
+  background: rgba(255,240,180,1.0);
+}
+
+.action-label {
+  white-space: nowrap;
+  font-family: 'Baloo 2', sans-serif;
+}
+
+/* Line clamp utility */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Instructions preview at top of screen */
+.instructions-top-preview {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 90vw;
+  width: auto;
+  padding: 12px 16px;
+  background: rgba(255, 248, 190, 0.95);
+  backdrop-filter: blur(20px) saturate(145%);
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  border-radius: 12px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+  z-index: 100;
+  margin: 0 16px;
+}
+
+@media (max-width: 640px) {
+  .instructions-top-preview {
+    top: 16px;
+    max-width: calc(100vw - 32px);
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+  
+  .instructions-top-preview .text-sm {
+    font-size: 12px !important;
+  }
 }
 
 .glass-history-dropdown-top {

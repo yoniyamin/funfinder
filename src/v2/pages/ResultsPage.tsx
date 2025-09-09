@@ -196,23 +196,6 @@ export default function ResultsPage({
             <span>📋</span>
             Context
           </button>
-          {webSources && webSources.length > 0 && (
-            <button 
-              onClick={() => {
-                const element = document.getElementById('web-sources');
-                if (element) {
-                  const headerHeight = 120;
-                  const elementPosition = element.getBoundingClientRect().top;
-                  const offsetPosition = elementPosition + window.pageYOffset - headerHeight;
-                  window.scrollTo({ top: offsetPosition, behavior: 'smooth' });
-                }
-              }}
-              className="flex items-center gap-1 px-3 py-1 text-xs bg-white/80 hover:bg-white border border-gray-200 rounded-full whitespace-nowrap"
-            >
-              <span>🌐</span>
-              Web Sources
-            </button>
-          )}
           {activities && activities.length > 0 && (
             <button 
               onClick={() => {
@@ -228,6 +211,23 @@ export default function ResultsPage({
             >
               <span>🎯</span>
               Activities ({activities.length})
+            </button>
+          )}
+          {webSources && webSources.length > 0 && (
+            <button 
+              onClick={() => {
+                const element = document.getElementById('web-sources');
+                if (element) {
+                  const headerHeight = 120;
+                  const elementPosition = element.getBoundingClientRect().top;
+                  const offsetPosition = elementPosition + window.pageYOffset - headerHeight;
+                  window.scrollTo({ top: offsetPosition, behavior: 'smooth' });
+                }
+              }}
+              className="flex items-center gap-1 px-3 py-1 text-xs bg-white/80 hover:bg-white border border-gray-200 rounded-full whitespace-nowrap"
+            >
+              <span>🌐</span>
+              Web Sources
             </button>
           )}
           {showPrompt && prompt && (
@@ -274,6 +274,19 @@ export default function ResultsPage({
                 <div className="text-sm text-gray-500">{ctx.location}</div>
               </div>
             </div>
+            
+            {/* Extra Instructions */}
+            {searchParams.extraInstructions && (
+              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg instructions-context-mobile">
+                <div className="flex items-center gap-2 mb-1">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-yellow-600 flex-shrink-0">
+                    <path d="M14.828 2.828a4 4 0 015.657 0L22 4.343a4 4 0 010 5.657L20.828 11.172 7.172 24.828 1 23l1.828-6.172L16.586 3.414zm0 0L17.657 6.171" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  <span className="text-sm font-medium text-yellow-800">Special Instructions</span>
+                </div>
+                <p className="text-sm text-yellow-700 break-words">{searchParams.extraInstructions}</p>
+              </div>
+            )}
             
             {/* Compact Context Grid */}
             <div className="space-y-4">
@@ -437,85 +450,6 @@ export default function ResultsPage({
           <LoadingSkeleton />
         )}
 
-        {/* Web Sources */}
-        {webSources && webSources.length > 0 && !loading.isLoading && (
-          <section id="web-sources" className="card p-5 md:p-6 bg-white/95 backdrop-blur-sm">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">🌐</span>
-                <h2 className="text-lg font-semibold">Enhanced with Current Web Intelligence</h2>
-                <div className="flex items-center gap-1 bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 px-2 py-1 rounded-full text-xs font-medium border border-green-200">
-                  <span>⚡</span>
-                  <span>Live Data</span>
-                </div>
-              </div>
-            </div>
-            <div className="text-sm text-gray-600 mb-4">
-              These activity recommendations were enhanced using current information from trusted travel sources and event platforms:
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {webSources.map((source, idx) => {
-                const isEventSource = source.source.toLowerCase().includes('event') || 
-                                     source.source.toLowerCase().includes('tourism') || 
-                                     source.source.toLowerCase().includes('intelligence');
-                return (
-                  <div key={idx} className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
-                    isEventSource 
-                      ? 'border-purple-200 bg-purple-50 hover:bg-purple-100' 
-                      : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
-                  }`}>
-                    <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                      isEventSource 
-                        ? 'bg-purple-100' 
-                        : 'bg-indigo-100'
-                    }`}>
-                      {isEventSource ? (
-                        <span className="text-purple-600 text-sm">🎪</span>
-                      ) : (
-                        <span className={`${isEventSource ? 'text-purple-600' : 'text-indigo-600'} text-xs font-bold`}>
-                          {source.source.substring(0, 2).toUpperCase()}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <a 
-                        href={source.url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className={`text-sm font-medium hover:underline block truncate ${
-                          isEventSource ? 'text-purple-700 hover:text-purple-900' : 'text-indigo-600 hover:text-indigo-800'
-                        }`}
-                      >
-                        {source.title}
-                      </a>
-                      <div className="text-xs text-gray-500 mt-1 flex items-center gap-1">
-                        {isEventSource && <span>📅</span>}
-                        <span>{source.source}</span>
-                      </div>
-                    </div>
-                    <div className="flex-shrink-0">
-                      <a 
-                        href={source.url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className={`transition-colors ${
-                          isEventSource 
-                            ? 'text-purple-400 hover:text-purple-600' 
-                            : 'text-gray-400 hover:text-indigo-600'
-                        }`}
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                        </svg>
-                      </a>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
         {/* Activities */}
         {activities && !loading.isLoading && (
           <section id="activities" className="card p-5 md:p-6 bg-white/95 backdrop-blur-sm relative">
@@ -664,6 +598,85 @@ export default function ResultsPage({
                 </button>
               </div>
             )}
+          </section>
+        )}
+
+        {/* Web Sources */}
+        {webSources && webSources.length > 0 && !loading.isLoading && (
+          <section id="web-sources" className="card p-5 md:p-6 bg-white/95 backdrop-blur-sm">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🌐</span>
+                <h2 className="text-lg font-semibold">Enhanced with Current Web Intelligence</h2>
+                <div className="flex items-center gap-1 bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 px-2 py-1 rounded-full text-xs font-medium border border-green-200">
+                  <span>⚡</span>
+                  <span>Live Data</span>
+                </div>
+              </div>
+            </div>
+            <div className="text-sm text-gray-600 mb-4">
+              These activity recommendations were enhanced using current information from trusted travel sources and event platforms:
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {webSources.map((source, idx) => {
+                const isEventSource = source.source.toLowerCase().includes('event') || 
+                                     source.source.toLowerCase().includes('tourism') || 
+                                     source.source.toLowerCase().includes('intelligence');
+                return (
+                  <div key={idx} className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
+                    isEventSource 
+                      ? 'border-purple-200 bg-purple-50 hover:bg-purple-100' 
+                      : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+                  }`}>
+                    <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+                      isEventSource 
+                        ? 'bg-purple-100' 
+                        : 'bg-indigo-100'
+                    }`}>
+                      {isEventSource ? (
+                        <span className="text-purple-600 text-sm">🎪</span>
+                      ) : (
+                        <span className={`${isEventSource ? 'text-purple-600' : 'text-indigo-600'} text-xs font-bold`}>
+                          {source.source.substring(0, 2).toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <a 
+                        href={source.url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className={`text-sm font-medium hover:underline block truncate ${
+                          isEventSource ? 'text-purple-700 hover:text-purple-900' : 'text-indigo-600 hover:text-indigo-800'
+                        }`}
+                      >
+                        {source.title}
+                      </a>
+                      <div className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                        {isEventSource && <span>📅</span>}
+                        <span>{source.source}</span>
+                      </div>
+                    </div>
+                    <div className="flex-shrink-0">
+                      <a 
+                        href={source.url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className={`transition-colors ${
+                          isEventSource 
+                            ? 'text-purple-400 hover:text-purple-600' 
+                            : 'text-gray-400 hover:text-indigo-600'
+                        }`}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </a>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </section>
         )}
 

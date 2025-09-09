@@ -64,10 +64,10 @@ export class Neo4jDataManager {
   }
 
   // Search result caching methods
-  async getCachedSearchResults(location, date, duration_hours, ages, query) {
+  async getCachedSearchResults(location, date, duration_hours, ages, query, extra_instructions = '') {
     await this.ensureConnection();
     
-    const searchKey = this.generateSearchKey(location, date, duration_hours, ages, query);
+    const searchKey = this.generateSearchKey(location, date, duration_hours, ages, query, extra_instructions);
     const session = this.driver.session({ database: this.database });
     
     try {
@@ -107,10 +107,10 @@ export class Neo4jDataManager {
     return null;
   }
 
-  async cacheSearchResults(location, date, duration_hours, ages, query, results) {
+  async cacheSearchResults(location, date, duration_hours, ages, query, results, extra_instructions = '') {
     await this.ensureConnection();
     
-    const searchKey = this.generateSearchKey(location, date, duration_hours, ages, query);
+    const searchKey = this.generateSearchKey(location, date, duration_hours, ages, query, extra_instructions);
     const session = this.driver.session({ database: this.database });
     
     try {
@@ -156,11 +156,12 @@ export class Neo4jDataManager {
     }
   }
 
-  generateSearchKey(location, date, duration_hours, ages, query) {
+  generateSearchKey(location, date, duration_hours, ages, query, extra_instructions = '') {
     const normalizedLocation = location.toLowerCase().trim();
     const normalizedQuery = query?.toLowerCase().trim() || '';
     const agesStr = ages?.sort().join(',') || '';
-    return `${normalizedLocation}-${date}-${duration_hours || ''}-${agesStr}-${normalizedQuery}`;
+    const normalizedInstructions = extra_instructions?.toLowerCase().trim() || '';
+    return `${normalizedLocation}-${date}-${duration_hours || ''}-${agesStr}-${normalizedQuery}-${normalizedInstructions}`;
   }
 
   // Search history methods

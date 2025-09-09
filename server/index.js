@@ -249,10 +249,10 @@ class MongoDataManager {
   }
 
   // Search result caching methods
-  async getCachedSearchResults(location, date, duration_hours, ages, query) {
+  async getCachedSearchResults(location, date, duration_hours, ages, query, extra_instructions = '') {
     await this.ensureConnection();
     
-    const searchKey = this.generateSearchKey(location, date, duration_hours, ages, query);
+    const searchKey = this.generateSearchKey(location, date, duration_hours, ages, query, extra_instructions);
     
     try {
       const cached = await this.db.collection('searchCache').findOne({ searchKey });
@@ -264,6 +264,30 @@ class MongoDataManager {
           { searchKey },
           { $set: { lastAccessed: new Date() } }
         );
+        
+        // Apply exclusion filtering to cached results
+        if (cached.results && cached.results.activities) {
+          const exclusions = await this.loadExclusionList();
+          const locationExclusions = exclusions[location] || [];
+          
+          if (locationExclusions.length > 0) {
+            console.log(`🚫 Filtering ${locationExclusions.length} excluded activities from Mongo cached results`);
+            const originalCount = cached.results.activities.length;
+            
+            // Filter out excluded activities (case-insensitive matching)
+            cached.results.activities = cached.results.activities.filter(activity => {
+              const activityTitle = (activity.title || '').toLowerCase();
+              const isExcluded = locationExclusions.some(excluded => 
+                activityTitle.includes(excluded.toLowerCase()) || 
+                excluded.toLowerCase().includes(activityTitle)
+              );
+              return !isExcluded;
+            });
+            
+            console.log(`✅ Filtered Mongo cached results: ${originalCount} → ${cached.results.activities.length} activities`);
+          }
+        }
+        
         return cached.results;
       }
     } catch (error) {
@@ -273,10 +297,10 @@ class MongoDataManager {
     return null;
   }
 
-  async cacheSearchResults(location, date, duration_hours, ages, query, results) {
+  async cacheSearchResults(location, date, duration_hours, ages, query, results, extra_instructions = '') {
     await this.ensureConnection();
     
-    const searchKey = this.generateSearchKey(location, date, duration_hours, ages, query);
+    const searchKey = this.generateSearchKey(location, date, duration_hours, ages, query, extra_instructions);
     
     try {
       await this.db.collection('searchCache').replaceOne(
@@ -288,6 +312,7 @@ class MongoDataManager {
           duration_hours,
           ages,
           query,
+          extra_instructions,
           results,
           timestamp: new Date(),
           lastAccessed: new Date()
@@ -315,11 +340,12 @@ class MongoDataManager {
     }
   }
 
-  generateSearchKey(location, date, duration_hours, ages, query) {
+  generateSearchKey(location, date, duration_hours, ages, query, extra_instructions = '') {
     const normalizedLocation = location.toLowerCase().trim();
     const normalizedQuery = query?.toLowerCase().trim() || '';
     const agesStr = ages?.sort().join(',') || '';
-    return `${normalizedLocation}-${date}-${duration_hours || ''}-${agesStr}-${normalizedQuery}`;
+    const normalizedInstructions = extra_instructions?.toLowerCase().trim() || '';
+    return `${normalizedLocation}-${date}-${duration_hours || ''}-${agesStr}-${normalizedQuery}-${normalizedInstructions}`;
   }
 
   // Search history methods (maintaining compatibility)
@@ -1751,7 +1777,8 @@ app.post('/api/search-enhanced', async (req, res) => {
           searchDate, 
           null, // no duration for enhanced search
           [], // no ages for enhanced search
-          'enhanced-search'
+          'enhanced-search',
+          '' // no extra instructions for enhanced search
         );
         
         if (cachedResults) {
@@ -1790,7 +1817,8 @@ app.post('/api/search-enhanced', async (req, res) => {
             null, // no duration for enhanced search
             [], // no ages for enhanced search
             'enhanced-search',
-            enhancedData
+            enhancedData,
+            '' // no extra instructions for enhanced search
           );
         } catch (cacheError) {
           console.log('Failed to cache enhanced search results (non-blocking):', cacheError.message);
@@ -2345,11 +2373,34 @@ app.post('/api/activities', async (req, res) => {
           ctx.date, 
           ctx.duration_hours, 
           ctx.ages, 
-          cacheKey
+          cacheKey,
+          ctx.extra_instructions || ''
         );
         
         if (cachedResults) {
           console.log('⚡ Using cached search results for:', ctx.location, ctx.date);
+          
+          // Apply exclusion filtering to cached results
+          const exclusions = await dataManager.loadExclusionList();
+          const locationExclusions = exclusions[ctx.location] || [];
+          
+          if (locationExclusions.length > 0 && cachedResults.activities) {
+            console.log(`🚫 Filtering ${locationExclusions.length} excluded activities from cached results`);
+            const originalCount = cachedResults.activities.length;
+            
+            // Filter out excluded activities (case-insensitive matching)
+            cachedResults.activities = cachedResults.activities.filter(activity => {
+              const activityTitle = (activity.title || '').toLowerCase();
+              const isExcluded = locationExclusions.some(excluded => 
+                activityTitle.includes(excluded.toLowerCase()) || 
+                excluded.toLowerCase().includes(activityTitle)
+              );
+              return !isExcluded;
+            });
+            
+            console.log(`✅ Filtered cached results: ${originalCount} → ${cachedResults.activities.length} activities`);
+          }
+          
           json = cachedResults;
         }
       } catch (cacheError) {
@@ -2372,7 +2423,8 @@ app.post('/api/activities', async (req, res) => {
             ctx.duration_hours, 
             ctx.ages, 
             cacheKey, 
-            json
+            json,
+            ctx.extra_instructions || ''
           );
         } catch (cacheError) {
           console.log('Failed to cache search results (non-blocking):', cacheError.message);

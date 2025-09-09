@@ -11,7 +11,7 @@ function fetchWithTimeout(url: string | URL, options: RequestInit = {}, timeoutM
   ]);
 }
 
-export async function geocode(name: string){
+export async function geocode(name: string, signal?: AbortSignal){
   const startTime = performance.now();
   const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
   url.searchParams.set('name', name);
@@ -21,7 +21,7 @@ export async function geocode(name: string){
   console.log(`📍 [${new Date().toISOString()}] Geocoding: ${name}`);
   
   try {
-    const r = await fetch(url);
+    const r = await fetch(url, { signal });
     const duration = performance.now() - startTime;
     
     if(!r.ok) {
@@ -44,7 +44,7 @@ export async function geocode(name: string){
   }
 }
 
-export async function fetchWeatherDaily(lat:number, lon:number, dateISO:string){
+export async function fetchWeatherDaily(lat:number, lon:number, dateISO:string, signal?: AbortSignal){
   const startTime = performance.now();
   const url = new URL('https://api.open-meteo.com/v1/forecast');
   url.searchParams.set('latitude', String(lat));
@@ -57,7 +57,7 @@ export async function fetchWeatherDaily(lat:number, lon:number, dateISO:string){
   console.log(`🌤️ [${new Date().toISOString()}] Fetching weather: ${lat}, ${lon} on ${dateISO}`);
   
   try {
-    const r = await fetch(url);
+    const r = await fetch(url, { signal });
     const duration = performance.now() - startTime;
     
     if(!r.ok) {
@@ -82,14 +82,14 @@ export async function fetchWeatherDaily(lat:number, lon:number, dateISO:string){
   }
 }
 
-export async function fetchHolidays(code:string, year:string){
+export async function fetchHolidays(code:string, year:string, signal?: AbortSignal){
   const startTime = performance.now();
   const url = `https://date.nager.at/api/v3/PublicHolidays/${year}/${code}`;
   
   console.log(`🗓️ [${new Date().toISOString()}] Fetching holidays: ${url}`);
   
   try {
-    const r = await fetchWithTimeout(url, {}, 8000); // 8 second timeout for holidays
+    const r = await fetchWithTimeout(url, { signal }, 8000); // 8 second timeout for holidays
     const duration = performance.now() - startTime;
     
     if(!r.ok) {
@@ -120,7 +120,7 @@ const haversine = (lat1:number, lon1:number, lat2:number, lon2:number) => {
   return 2*R*Math.asin(Math.sqrt(a));
 };
 
-export async function fetchFestivalsWikidata(lat:number, lon:number, dateISO:string, radiusKm=60){
+export async function fetchFestivalsWikidata(lat:number, lon:number, dateISO:string, radiusKm=60, signal?: AbortSignal){
   const startTime = performance.now();
   
   console.log(`🎪 [${new Date().toISOString()}] Fetching festivals: ${lat}, ${lon} on ${dateISO} (radius: ${radiusKm}km)`);
@@ -145,7 +145,7 @@ export async function fetchFestivalsWikidata(lat:number, lon:number, dateISO:str
     url.searchParams.set('format','json');
     url.searchParams.set('query', query);
     
-    const r = await fetch(url, { headers: { 'Accept': 'application/sparql-results+json' } });
+    const r = await fetch(url, { headers: { 'Accept': 'application/sparql-results+json' }, signal });
     const duration = performance.now() - startTime;
     
     if(!r.ok) {
@@ -183,7 +183,7 @@ export async function fetchFestivalsWikidata(lat:number, lon:number, dateISO:str
 }
 
 // Fetch holidays and festivals using Gemini AI as a fallback (3-day period)
-export async function fetchHolidaysWithGemini(location: string, date: string) {
+export async function fetchHolidaysWithGemini(location: string, date: string, signal?: AbortSignal) {
   const startTime = performance.now();
   
   console.log(`🎊 [${new Date().toISOString()}] Fetching holidays & festivals with Gemini: ${location} around ${date}`);
@@ -192,7 +192,8 @@ export async function fetchHolidaysWithGemini(location: string, date: string) {
     const response = await fetch('/api/holidays-gemini', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ location, date })
+      body: JSON.stringify({ location, date }),
+      signal
     });
     
     const duration = performance.now() - startTime;

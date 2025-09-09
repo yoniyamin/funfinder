@@ -27,6 +27,7 @@ interface BottomNavBarProps {
   removeFromExclusionList: (location: string, attraction: string) => Promise<boolean>;
   onSearch?: () => void; // Add search handler
   setLoading?: (loading: any) => void; // Add cancel functionality
+  onCancelSearch?: () => void; // Add proper cancel search handler
   searchParams?: {
     location: string;
     date: string;
@@ -68,6 +69,7 @@ export default function BottomNavBar({
   removeFromExclusionList,
   onSearch,
   setLoading,
+  onCancelSearch,
   searchParams
 }: BottomNavBarProps) {
   const [showExclusionManager, setShowExclusionManager] = useState(false);
@@ -114,7 +116,7 @@ export default function BottomNavBar({
           label: loading.isLoading ? 'Cancel' : 'Search',
           color: 'text-white',
           action: loading.isLoading 
-            ? () => setLoading && setLoading({ isLoading: false, progress: 0, status: '' })
+            ? () => onCancelSearch && onCancelSearch()
             : () => canSearch && onSearch && onSearch(),
           disabled: loading.isLoading ? false : !canSearch,
           isPrimary: true
@@ -135,22 +137,8 @@ export default function BottomNavBar({
         }
       ];
     } else {
-      // Results page - fit all buttons in one row
+      // Results page - fit all buttons in one row (removing search button as requested)
       return [
-        {
-          id: 'search',
-          icon: (
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <circle cx="11" cy="11" r="8"></circle>
-              <path d="m21 21-4.35-4.35"></path>
-            </svg>
-          ),
-          label: 'Search',
-          color: 'text-indigo-600',
-          action: () => setCurrentPage('search'),
-          disabled: false,
-          compact: true
-        },
         {
           id: 'exclusions',
           icon: (

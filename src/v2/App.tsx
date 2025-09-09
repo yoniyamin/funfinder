@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import SearchPage from './pages/SearchPage';
 import ResultsPage from './pages/ResultsPage';
 import BottomNavBar from './components/BottomNavBar';
@@ -115,6 +115,11 @@ export default function App() {
     exclusionList: {},
     showSettings: false
   });
+
+  // Add AbortController ref for search cancellation
+  const searchAbortController = useRef<AbortController | null>(null);
+  // Add ref to store the showResults timeout so it can be cancelled
+  const showResultsTimeout = useRef<NodeJS.Timeout | null>(null);
 
   // Load initial data
   useEffect(() => {
@@ -311,18 +316,21 @@ export default function App() {
         return;
       }
 
+      // Create new AbortController for this search
+      searchAbortController.current = new AbortController();
+
       // Clear existing results and reset states
       setLoading({ isLoading: true, progress: 0, status: 'Starting search...' });
       setSearchResults({ activities: null, webSources: null, ctx: null });
       
       setLoading({ isLoading: true, progress: 10, status: 'Geocoding location…' });
-      const g = await geocode(location);
+      const g = await geocode(location, searchAbortController.current?.signal);
       const { latitude: lat, longitude: lon, country_code, name, country } = g as any;
 
       setLoading({ isLoading: true, progress: 25, status: 'Fetching weather forecast…' });
       let w: { tmax: number | null; tmin: number | null; pprob: number | null; wind: number | null } = { tmax: null, tmin: null, pprob: null, wind: null };
       try {
-        w = await fetchWeatherDaily(lat, lon, date);
+        w = await fetchWeatherDaily(lat, lon, date, searchAbortController.current?.signal);
       } catch (error) {
         console.warn('Weather data not available for this date, using default values:', error);
       }
@@ -330,7 +338,7 @@ export default function App() {
       setLoading({ isLoading: true, progress: 40, status: 'Checking public holidays…' });
       let isHoliday = false;
       try {
-        const hol = await fetchHolidays(country_code, date.slice(0,4));
+        const hol = await fetchHolidays(country_code, date.slice(0,4), searchAbortController.current?.signal);
         const matches = hol.filter((h:any)=>h.date===date);
         isHoliday = matches.length>0;
       } catch (error) {
@@ -340,12 +348,12 @@ export default function App() {
       setLoading({ isLoading: true, progress: 55, status: 'Searching for nearby festivals…' });
       let festivals: Array<{name:string; url:string|null; start_date:string|null; end_date:string|null; lat:number|null; lon:number|null; distance_km:number|null}> = [];
       try {
-        festivals = await fetchFestivalsWikidata(lat, lon, date);
+        festivals = await fetchFestivalsWikidata(lat, lon, date, 60, searchAbortController.current?.signal);
         
         if (festivals.length === 0) {
           console.log('No festivals found from Wikidata, trying Gemini comprehensive search...');
           try {
-            const geminiEvents = await fetchHolidaysWithGemini(`${name}, ${country}`, date);
+            const geminiEvents = await fetchHolidaysWithGemini(`${name}, ${country}`, date, searchAbortController.current?.signal);
             if (geminiEvents.length > 0) {
               console.log(`✨ Gemini found ${geminiEvents.length} holidays/festivals in 3-day period around ${date}`);
               
@@ -366,7 +374,7 @@ export default function App() {
       } catch (error) {
         console.warn('Failed to fetch festivals, trying Gemini comprehensive search...', error);
         try {
-          const geminiEvents = await fetchHolidaysWithGemini(`${name}, ${country}`, date);
+          const geminiEvents = await fetchHolidaysWithGemini(`${name}, ${country}`, date, searchAbortController.current?.signal);
           if (geminiEvents.length > 0) {
             console.log(`✨ Gemini comprehensive search found ${geminiEvents.length} holidays/festivals`);
             
@@ -435,7 +443,12 @@ export default function App() {
         const activitySearchStart = Date.now();
         console.log('🚀 [Activity Search] Starting activity search request...');
         
-        const resp = await fetch('/api/activities', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ctx: context, allowedCategories: ALLOWED_CATS }) });
+        const resp = await fetch('/api/activities', { 
+          method:'POST', 
+          headers:{ 'Content-Type':'application/json' }, 
+          body: JSON.stringify({ ctx: context, allowedCategories: ALLOWED_CATS }),
+          signal: searchAbortController.current?.signal
+        });
         
         if(!resp.ok){ 
           const errorText = await resp.text();
@@ -465,23 +478,47 @@ export default function App() {
         
         reloadSearchHistory();
         
-        setTimeout(() => {
+        showResultsTimeout.current = setTimeout(() => {
           setLoading({ isLoading: false, progress: 0, status: '' });
           showResults();
+          showResultsTimeout.current = null;
         }, 1000);
         
       } catch(err:any){
-        console.error(err);
-        setLoading({ isLoading: false, progress: 0, status: err.message || 'Something went wrong' });
+        if (err.name === 'AbortError') {
+          console.log('Search was cancelled by user');
+          setLoading({ isLoading: false, progress: 0, status: 'Search cancelled' });
+        } else {
+          console.error(err);
+          setLoading({ isLoading: false, progress: 0, status: err.message || 'Something went wrong' });
+        }
       } finally {
         clearInterval(messageInterval);
         clearTimeout(messageTimeout);
       }
       
     } catch(err:any){
-      console.error(err);
-      setLoading({ isLoading: false, progress: 0, status: err.message || 'Something went wrong' });
+      if (err.name === 'AbortError') {
+        console.log('Search was cancelled by user');
+        setLoading({ isLoading: false, progress: 0, status: 'Search cancelled' });
+      } else {
+        console.error(err);
+        setLoading({ isLoading: false, progress: 0, status: err.message || 'Something went wrong' });
+      }
     }
+  };
+
+  const handleCancelSearch = () => {
+    if (searchAbortController.current) {
+      searchAbortController.current.abort();
+      searchAbortController.current = null;
+    }
+    // Clear the showResults timeout to prevent results from appearing
+    if (showResultsTimeout.current) {
+      clearTimeout(showResultsTimeout.current);
+      showResultsTimeout.current = null;
+    }
+    setLoading({ isLoading: false, progress: 0, status: '' });
   };
 
   return (
@@ -528,6 +565,7 @@ export default function App() {
         removeFromExclusionList={removeFromExclusionList}
         onSearch={handleSearch}
         setLoading={setLoading}
+        onCancelSearch={handleCancelSearch}
         searchParams={state.searchParams}
       />
 
