@@ -610,16 +610,7 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
 }
 
 /* soft highlight strip near the top of each row */
-.glass-row::after {
-  content:"";
-  position:absolute;
-  left:16px; right:16px; top:8px;
-  height:10px;
-  border-radius: 999px;
-  background: radial-gradient(120% 120% at 50% 0%,
-             rgba(255,255,255,0.55), transparent 70%);
-  pointer-events:none;
-}
+.glass-row::after { background: none; /* or display:none; */ }
 
 .glass-row-icon {
   font-size: 16px;

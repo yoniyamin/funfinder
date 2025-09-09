@@ -25,6 +25,23 @@ interface ApiTestResults {
   openwebninja: { configured: boolean; working: boolean; error: string | null };
 }
 
+interface Neo4jTestResult {
+  configured: boolean;
+  working: boolean;
+  error: string | null;
+  message?: string;
+  response?: string;
+  timestamp?: string;
+  connection_type?: string;
+  database_info?: {
+    version: string;
+    edition: string;
+    uri: string;
+    database: string;
+  };
+  suggestions?: string[];
+}
+
 interface SettingsProps {
   isOpen: boolean;
   onClose: () => void;
@@ -47,9 +64,11 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResults, setTestResults] = useState<ApiTestResults | null>(null);
+  const [neo4jTesting, setNeo4jTesting] = useState(false);
+  const [neo4jTestResult, setNeo4jTestResult] = useState<Neo4jTestResult | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showSetupGuide, setShowSetupGuide] = useState(false);
-  const [activeTab, setActiveTab] = useState<'ai' | 'search'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'search' | 'database'>('ai');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   useEffect(() => {
@@ -155,6 +174,26 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
     }
   };
 
+  const testNeo4jConnection = async () => {
+    setNeo4jTesting(true);
+    setNeo4jTestResult(null);
+    
+    try {
+      const response = await fetch('/api/test-neo4j');
+      const data = await response.json();
+      setNeo4jTestResult(data);
+    } catch (error) {
+      console.error('Failed to test Neo4j connection:', error);
+      setNeo4jTestResult({
+        configured: false,
+        working: false,
+        error: 'Failed to connect to server'
+      });
+    } finally {
+      setNeo4jTesting(false);
+    }
+  };
+
   const handleApiKeyChange = (key: string, value: string | boolean | number) => {
     setApiKeys(prev => ({ ...prev, [key]: value }));
     setHasUnsavedChanges(true);
@@ -219,6 +258,16 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
               }`}
             >
               🔍 Search APIs
+            </button>
+            <button
+              onClick={() => setActiveTab('database')}
+              className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'database'
+                  ? 'bg-white text-indigo-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              🗄️ Database
             </button>
           </div>
         </div>
@@ -763,6 +812,135 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                 value={apiKeys.ticketmaster_api_key}
                 onChange={(e) => handleApiKeyChange('ticketmaster_api_key', e.target.value)}
               />
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'database' && (
+            <div className="space-y-6">
+              {/* Neo4j Connection Status */}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="text-2xl">🗄️</span>
+                  <div>
+                    <h3 className="font-semibold text-gray-800">Neo4j AuraDB Connection</h3>
+                    <p className="text-sm text-gray-600">
+                      Test your graph database connectivity for enhanced data storage and performance
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 mb-4">
+                  <button 
+                    onClick={testNeo4jConnection}
+                    disabled={neo4jTesting}
+                    className="btn btn-primary flex items-center gap-2"
+                  >
+                    {neo4jTesting ? (
+                      <>
+                        <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div>
+                        Testing Connection...
+                      </>
+                    ) : (
+                      <>🔧 Test Neo4j Connection</>
+                    )}
+                  </button>
+                </div>
+
+                {/* Neo4j Test Results */}
+                {neo4jTestResult && (
+                  <div className={`p-4 rounded-lg border ${
+                    neo4jTestResult.working 
+                      ? 'bg-green-50 border-green-200' 
+                      : neo4jTestResult.configured
+                        ? 'bg-red-50 border-red-200'
+                        : 'bg-yellow-50 border-yellow-200'
+                  }`}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className={
+                        neo4jTestResult.working 
+                          ? 'text-green-600' 
+                          : neo4jTestResult.configured 
+                            ? 'text-red-600' 
+                            : 'text-yellow-600'
+                      }>
+                        {neo4jTestResult.working ? '✅' : neo4jTestResult.configured ? '❌' : '⚠️'}
+                      </span>
+                      <span className="font-medium">
+                        {neo4jTestResult.working 
+                          ? 'Connection Successful' 
+                          : neo4jTestResult.configured 
+                            ? 'Connection Failed' 
+                            : 'Not Configured'
+                        }
+                      </span>
+                      {neo4jTestResult.connection_type && (
+                        <span className={`px-2 py-1 rounded-full text-xs ${
+                          neo4jTestResult.connection_type === 'Currently Active'
+                            ? 'bg-green-100 text-green-700'
+                            : neo4jTestResult.connection_type === 'Available (Not Active)'
+                              ? 'bg-blue-100 text-blue-700'
+                              : 'bg-gray-100 text-gray-700'
+                        }`}>
+                          {neo4jTestResult.connection_type}
+                        </span>
+                      )}
+                    </div>
+
+                    {neo4jTestResult.working && neo4jTestResult.database_info && (
+                      <div className="text-sm text-green-700 space-y-1">
+                        <p><strong>Database URI:</strong> {neo4jTestResult.database_info.uri}</p>
+                        <p><strong>Database Name:</strong> {neo4jTestResult.database_info.database}</p>
+                        <p><strong>Version:</strong> {neo4jTestResult.database_info.version}</p>
+                        <p><strong>Edition:</strong> {neo4jTestResult.database_info.edition}</p>
+                        {neo4jTestResult.response && (
+                          <p><strong>Response:</strong> {neo4jTestResult.response}</p>
+                        )}
+                        {neo4jTestResult.timestamp && (
+                          <p><strong>Tested at:</strong> {new Date(neo4jTestResult.timestamp).toLocaleString()}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {neo4jTestResult.error && (
+                      <div className="text-sm text-red-700 mt-2">
+                        <p><strong>Error:</strong> {neo4jTestResult.error}</p>
+                        {neo4jTestResult.suggestions && neo4jTestResult.suggestions.length > 0 && (
+                          <div className="mt-2">
+                            <p><strong>Suggestions:</strong></p>
+                            <ul className="list-disc list-inside mt-1">
+                              {neo4jTestResult.suggestions.map((suggestion, index) => (
+                                <li key={index}>{suggestion}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Environment Variables Info */}
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                  <h4 className="font-medium text-gray-800 mb-2">Environment Variables Required:</h4>
+                  <div className="text-sm text-gray-600 space-y-1">
+                    <code className="bg-white px-2 py-1 rounded border">NEO4J_URI=neo4j+s://your-database-id.databases.neo4j.io</code>
+                    <code className="bg-white px-2 py-1 rounded border">NEO4J_USER=neo4j</code>
+                    <code className="bg-white px-2 py-1 rounded border">NEO4J_PASSWORD=your-database-password</code>
+                    <code className="bg-white px-2 py-1 rounded border">NEO4J_DATABASE=neo4j (optional)</code>
+                  </div>
+                </div>
+
+                {/* Migration Info */}
+                <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <h4 className="font-medium text-blue-800 mb-2">🔄 Database Migration</h4>
+                  <div className="text-sm text-blue-700 space-y-1">
+                    <p>✅ Migrated from MongoDB to Neo4j AuraDB for better performance</p>
+                    <p>✅ Graph database provides enhanced relationship modeling</p>
+                    <p>✅ Automatic fallback to local file storage if connection fails</p>
+                    <p>✅ All existing data will be migrated automatically on first connection</p>
+                  </div>
+                </div>
               </div>
             </div>
           )}

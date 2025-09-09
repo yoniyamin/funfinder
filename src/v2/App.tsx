@@ -423,7 +423,7 @@ export default function App() {
         setLoading({ isLoading: true, progress: activitySearchStartProgress, status: loadingMessages[messageIndex] });
       }, 15000);
       
-      setTimeout(() => {
+      const messageTimeout = setTimeout(() => {
         if (messageIndex === 0) {
           messageIndex = 1;
           setLoading({ isLoading: true, progress: activitySearchStartProgress, status: loadingMessages[messageIndex] });
@@ -475,6 +475,7 @@ export default function App() {
         setLoading({ isLoading: false, progress: 0, status: err.message || 'Something went wrong' });
       } finally {
         clearInterval(messageInterval);
+        clearTimeout(messageTimeout);
       }
       
     } catch(err:any){

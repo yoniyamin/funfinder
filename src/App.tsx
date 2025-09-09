@@ -441,7 +441,7 @@ export default function App(){
       }, 15000); // Change message every 15 seconds for better user experience
       
       // Also change the first message after a shorter delay to show it's working
-      setTimeout(() => {
+      const messageTimeout = setTimeout(() => {
         if (messageIndex === 0) { // Only if we haven't moved yet
           messageIndex = 1;
           setStatus(loadingMessages[messageIndex]);
@@ -485,8 +485,9 @@ export default function App(){
         setIsLoading(false);
         setProgress(0);
       } finally {
-        // Always clear the interval when done
+        // Always clear the interval and timeout when done
         clearInterval(messageInterval);
+        clearTimeout(messageTimeout);
       }
       
     } catch(err:any){

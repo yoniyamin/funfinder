@@ -6,6 +6,9 @@ import OpenAI from 'openai';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { MongoClient } from 'mongodb';
+import neo4j from 'neo4j-driver';
+import { Neo4jDataManager } from './neo4j-data-manager.js';
 
 dotenv.config();
 
@@ -78,42 +81,93 @@ const CONFIG_FILE = path.join(process.cwd(), '.api-config.json');
 const MASTER_KEY_FILE = path.join(process.cwd(), '.master-key');
 
 // Master key management - ensures persistence across sessions
-function getOrCreateMasterKey() {
-  // First try environment variable
+async function getOrCreateMasterKey() {
+  // First try environment variable (highest priority)
   if (process.env.ENCRYPTION_KEY) {
-    console.log('Using encryption key from environment variable');
+    console.log('🔑 Using encryption key from environment variable');
     return process.env.ENCRYPTION_KEY;
   }
   
-  // Try to load existing master key file
+  // If Neo4j is connected, try to get master key from there
+  if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+    try {
+      const neo4jMasterKey = await dataManager.getMasterKey();
+      if (neo4jMasterKey && neo4jMasterKey.length === 64) {
+        console.log('🔑 Loaded master key from Neo4j');
+        // Update access time for tracking
+        await dataManager.updateMasterKeyAccess();
+        return neo4jMasterKey;
+      }
+    } catch (error) {
+      console.log('⚠️  Could not load master key from Neo4j:', error.message);
+    }
+  }
+  
+  // Try to load existing master key from local file
+  let existingMasterKey = null;
   try {
     if (fs.existsSync(MASTER_KEY_FILE)) {
       const masterKey = fs.readFileSync(MASTER_KEY_FILE, 'utf8').trim();
       if (masterKey && masterKey.length === 64) { // 32 bytes = 64 hex chars
-        console.log('Loaded existing master key from file');
-        return masterKey;
+        existingMasterKey = masterKey;
+        console.log('🔑 Found existing master key in local file');
       } else {
-        console.log('Invalid master key found, generating new one');
+        console.log('⚠️  Invalid master key found in local file, will generate new one');
       }
     }
   } catch (error) {
-    console.log('Error reading master key file:', error.message);
+    console.log('⚠️  Error reading master key file:', error.message);
   }
   
-  // Generate new master key and save it
+  // If we have an existing key from file, try to migrate it to Neo4j
+  if (existingMasterKey && isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+    try {
+      const saved = await dataManager.saveMasterKey(existingMasterKey);
+      if (saved) {
+        console.log('🔄 Migrated existing master key from file to Neo4j');
+        return existingMasterKey;
+      }
+    } catch (error) {
+      console.log('⚠️  Failed to migrate master key to Neo4j:', error.message);
+    }
+  }
+  
+  // If we found an existing key but Neo4j isn't available, use it
+  if (existingMasterKey) {
+    console.log('🔑 Using existing master key from local file');
+    return existingMasterKey;
+  }
+  
+  // Generate new master key
   const newMasterKey = crypto.randomBytes(32).toString('hex');
+  console.log('🆕 Generated new master key');
+  
+  // Save to Neo4j if available
+  if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+    try {
+      const saved = await dataManager.saveMasterKey(newMasterKey);
+      if (saved) {
+        console.log('💾 Saved new master key to Neo4j');
+      }
+    } catch (error) {
+      console.log('⚠️  Failed to save master key to Neo4j:', error.message);
+    }
+  }
+  
+  // Always save to local file as backup
   try {
     fs.writeFileSync(MASTER_KEY_FILE, newMasterKey, { mode: 0o600 }); // Read/write for owner only
-    console.log('Generated and saved new master key to file');
+    console.log('💾 Saved new master key to local file (backup)');
   } catch (error) {
-    console.error('Error saving master key file:', error.message);
-    console.log('Continuing with in-memory key (will not persist across restarts)');
+    console.error('❌ Error saving master key file:', error.message);
+    console.log('⚠️  Continuing with in-memory key (will not persist across restarts)');
   }
   
   return newMasterKey;
 }
 
-const ENCRYPTION_KEY = getOrCreateMasterKey();
+// ENCRYPTION_KEY will be initialized asynchronously
+let ENCRYPTION_KEY = null;
 
 // API Key Storage
 let apiKeys = {
@@ -129,7 +183,434 @@ let apiKeys = {
   max_activities: 20 // Maximum number of activities to generate
 };
 
-// Data Storage Managers - Isolated per request
+// MongoDB Data Manager - Replaces file-based storage with cloud storage
+class MongoDataManager {
+  constructor() {
+    this.client = null;
+    this.db = null;
+    this.isConnected = false;
+    this.connectionString = process.env.MONGODB_URI;
+    this.dbName = process.env.MONGODB_DB_NAME || 'funfinder';
+    
+    if (!this.connectionString) {
+      throw new Error('MONGODB_URI environment variable is required for MongoDB integration');
+    }
+  }
+
+  async connect() {
+    if (this.isConnected) return;
+    
+    try {
+      this.client = new MongoClient(this.connectionString, {
+        maxPoolSize: 10,
+        serverSelectionTimeoutMS: 5000,
+        socketTimeoutMS: 45000,
+      });
+      
+      await this.client.connect();
+      this.db = this.client.db(this.dbName);
+      this.isConnected = true;
+      
+      // Create indexes for better performance
+      await this.createIndexes();
+      console.log('Connected to MongoDB Atlas successfully');
+    } catch (error) {
+      console.error('Failed to connect to MongoDB:', error.message);
+      this.isConnected = false;
+      throw error;
+    }
+  }
+
+  async createIndexes() {
+    try {
+      // Create indexes for search cache
+      await this.db.collection('searchCache').createIndex({ searchKey: 1 }, { unique: true });
+      await this.db.collection('searchCache').createIndex({ timestamp: 1 });
+      await this.db.collection('searchCache').createIndex({ lastAccessed: 1 });
+      
+      // Create indexes for search history
+      await this.db.collection('searchHistory').createIndex({ timestamp: -1 });
+      await this.db.collection('searchHistory').createIndex({ searchKey: 1 });
+      
+      // Create indexes for exclusion list
+      await this.db.collection('exclusions').createIndex({ location: 1 });
+      
+      // Create indexes for system configuration (master key, etc.)
+      await this.db.collection('systemConfig').createIndex({ type: 1 }, { unique: true });
+    } catch (error) {
+      console.warn('Index creation warning (may already exist):', error.message);
+    }
+  }
+
+  async ensureConnection() {
+    if (!this.isConnected) {
+      await this.connect();
+    }
+  }
+
+  // Search result caching methods
+  async getCachedSearchResults(location, date, duration_hours, ages, query) {
+    await this.ensureConnection();
+    
+    const searchKey = this.generateSearchKey(location, date, duration_hours, ages, query);
+    
+    try {
+      const cached = await this.db.collection('searchCache').findOne({ searchKey });
+      
+      if (cached) {
+        console.log('⚡ Returning cached search results for:', searchKey);
+        // Update the access timestamp to track when this cache was last used
+        await this.db.collection('searchCache').updateOne(
+          { searchKey },
+          { $set: { lastAccessed: new Date() } }
+        );
+        return cached.results;
+      }
+    } catch (error) {
+      console.error('Error retrieving cached results:', error.message);
+    }
+    
+    return null;
+  }
+
+  async cacheSearchResults(location, date, duration_hours, ages, query, results) {
+    await this.ensureConnection();
+    
+    const searchKey = this.generateSearchKey(location, date, duration_hours, ages, query);
+    
+    try {
+      await this.db.collection('searchCache').replaceOne(
+        { searchKey },
+        {
+          searchKey,
+          location,
+          date,
+          duration_hours,
+          ages,
+          query,
+          results,
+          timestamp: new Date(),
+          lastAccessed: new Date()
+        },
+        { upsert: true }
+      );
+      
+      // Keep only last 20 search results per collection size limit
+      const count = await this.db.collection('searchCache').countDocuments();
+      if (count > 20) {
+        // Remove oldest cached results based on last access time, not creation time
+        const oldestDocs = await this.db.collection('searchCache')
+          .find({})
+          .sort({ lastAccessed: 1 })
+          .limit(count - 20)
+          .toArray();
+        
+        const idsToDelete = oldestDocs.map(doc => doc._id);
+        await this.db.collection('searchCache').deleteMany({ _id: { $in: idsToDelete } });
+      }
+      
+      console.log('💾 Cached search results for:', searchKey);
+    } catch (error) {
+      console.error('Error caching search results:', error.message);
+    }
+  }
+
+  generateSearchKey(location, date, duration_hours, ages, query) {
+    const normalizedLocation = location.toLowerCase().trim();
+    const normalizedQuery = query?.toLowerCase().trim() || '';
+    const agesStr = ages?.sort().join(',') || '';
+    return `${normalizedLocation}-${date}-${duration_hours || ''}-${agesStr}-${normalizedQuery}`;
+  }
+
+  // Search history methods (maintaining compatibility)
+  async loadSearchHistory() {
+    await this.ensureConnection();
+    
+    try {
+      const history = await this.db.collection('searchHistory')
+        .find({})
+        .sort({ timestamp: -1 })
+        .limit(20)
+        .toArray();
+      
+      return history.map(doc => ({
+        id: doc._id.toString(),
+        location: doc.location,
+        date: doc.date,
+        duration: doc.duration,
+        kidsAges: doc.kidsAges,
+        timestamp: doc.timestamp,
+        searchCount: doc.searchCount || 1
+      }));
+    } catch (error) {
+      console.error('Error loading search history from MongoDB:', error.message);
+      return [];
+    }
+  }
+
+  async saveSearchHistory(history) {
+    await this.ensureConnection();
+    
+    try {
+      // Clear existing history and insert new one
+      await this.db.collection('searchHistory').deleteMany({});
+      
+      if (history.length > 0) {
+        const docs = history.map(entry => ({
+          location: entry.location,
+          date: entry.date,
+          duration: entry.duration,
+          kidsAges: entry.kidsAges,
+          timestamp: entry.timestamp,
+          searchCount: entry.searchCount || 1
+        }));
+        
+        await this.db.collection('searchHistory').insertMany(docs);
+      }
+    } catch (error) {
+      console.error('Error saving search history to MongoDB:', error.message);
+      throw error;
+    }
+  }
+
+  async addToSearchHistory(query) {
+    await this.ensureConnection();
+    
+    const { location, date, duration_hours, ages } = query;
+    const searchKey = `${location}-${date}-${duration_hours || ''}-${ages?.join(',') || ''}`;
+    
+    try {
+      // Remove existing entry with same parameters if it exists
+      await this.db.collection('searchHistory').deleteMany({
+        location,
+        date,
+        duration: duration_hours,
+        kidsAges: ages
+      });
+      
+      // Add new entry
+      const historyEntry = {
+        location,
+        date,
+        duration: duration_hours || null,
+        kidsAges: ages || [],
+        timestamp: new Date().toISOString(),
+        searchCount: 1
+      };
+      
+      const result = await this.db.collection('searchHistory').insertOne(historyEntry);
+      
+      // Keep only last 20 entries
+      const count = await this.db.collection('searchHistory').countDocuments();
+      if (count > 20) {
+        const oldestDocs = await this.db.collection('searchHistory')
+          .find({})
+          .sort({ timestamp: 1 })
+          .limit(count - 20)
+          .toArray();
+        
+        const idsToDelete = oldestDocs.map(doc => doc._id);
+        await this.db.collection('searchHistory').deleteMany({ _id: { $in: idsToDelete } });
+      }
+      
+      return {
+        id: result.insertedId.toString(),
+        ...historyEntry
+      };
+    } catch (error) {
+      console.error('Error adding to search history:', error.message);
+      throw error;
+    }
+  }
+
+  // Exclusion list methods (maintaining compatibility)
+  async loadExclusionList() {
+    await this.ensureConnection();
+    
+    try {
+      const exclusions = await this.db.collection('exclusions').find({}).toArray();
+      
+      const result = {};
+      exclusions.forEach(doc => {
+        result[doc.location] = doc.attractions || [];
+      });
+      
+      return result;
+    } catch (error) {
+      console.error('Error loading exclusion list from MongoDB:', error.message);
+      return {};
+    }
+  }
+
+  async saveExclusionList(exclusions) {
+    await this.ensureConnection();
+    
+    try {
+      // Clear existing exclusions and insert new ones
+      await this.db.collection('exclusions').deleteMany({});
+      
+      const docs = Object.entries(exclusions).map(([location, attractions]) => ({
+        location,
+        attractions
+      }));
+      
+      if (docs.length > 0) {
+        await this.db.collection('exclusions').insertMany(docs);
+      }
+    } catch (error) {
+      console.error('Error saving exclusion list to MongoDB:', error.message);
+      throw error;
+    }
+  }
+
+  async addToExclusionList(location, attraction) {
+    await this.ensureConnection();
+    
+    try {
+      const existing = await this.db.collection('exclusions').findOne({ location });
+      
+      if (existing) {
+        if (!existing.attractions.includes(attraction)) {
+          await this.db.collection('exclusions').updateOne(
+            { location },
+            { $push: { attractions: attraction } }
+          );
+          return true;
+        }
+      } else {
+        await this.db.collection('exclusions').insertOne({
+          location,
+          attractions: [attraction]
+        });
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Error adding to exclusion list:', error.message);
+      return false;
+    }
+  }
+
+  async removeFromExclusionList(location, attraction) {
+    await this.ensureConnection();
+    
+    try {
+      const result = await this.db.collection('exclusions').updateOne(
+        { location },
+        { $pull: { attractions: attraction } }
+      );
+      
+      if (result.modifiedCount > 0) {
+        // Check if attractions array is now empty and remove the document if so
+        const updated = await this.db.collection('exclusions').findOne({ location });
+        if (updated && updated.attractions.length === 0) {
+          await this.db.collection('exclusions').deleteOne({ location });
+        }
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Error removing from exclusion list:', error.message);
+      return false;
+    }
+  }
+
+  // Master key methods for encryption
+  async getMasterKey() {
+    await this.ensureConnection();
+    
+    try {
+      const keyDoc = await this.db.collection('systemConfig').findOne({ type: 'masterKey' });
+      return keyDoc ? keyDoc.value : null;
+    } catch (error) {
+      console.error('Error retrieving master key from MongoDB:', error.message);
+      return null;
+    }
+  }
+
+  async saveMasterKey(masterKey) {
+    await this.ensureConnection();
+    
+    try {
+      await this.db.collection('systemConfig').replaceOne(
+        { type: 'masterKey' },
+        {
+          type: 'masterKey',
+          value: masterKey,
+          createdAt: new Date(),
+          lastAccessed: new Date()
+        },
+        { upsert: true }
+      );
+      
+      console.log('Master key saved to MongoDB');
+      return true;
+    } catch (error) {
+      console.error('Error saving master key to MongoDB:', error.message);
+      return false;
+    }
+  }
+
+  async updateMasterKeyAccess() {
+    await this.ensureConnection();
+    
+    try {
+      await this.db.collection('systemConfig').updateOne(
+        { type: 'masterKey' },
+        { $set: { lastAccessed: new Date() } }
+      );
+    } catch (error) {
+      console.log('Note: Could not update master key access time:', error.message);
+    }
+  }
+
+  // API Configuration methods
+  async getApiConfig() {
+    await this.ensureConnection();
+    
+    try {
+      const configDoc = await this.db.collection('systemConfig').findOne({ type: 'apiConfig' });
+      return configDoc ? configDoc.value : null;
+    } catch (error) {
+      console.error('Error retrieving API config from MongoDB:', error.message);
+      return null;
+    }
+  }
+
+  async saveApiConfig(apiConfig) {
+    await this.ensureConnection();
+    
+    try {
+      await this.db.collection('systemConfig').replaceOne(
+        { type: 'apiConfig' },
+        {
+          type: 'apiConfig',
+          value: apiConfig,
+          updatedAt: new Date()
+        },
+        { upsert: true }
+      );
+      
+      console.log('💾 API configuration saved to MongoDB');
+      return true;
+    } catch (error) {
+      console.error('Error saving API config to MongoDB:', error.message);
+      return false;
+    }
+  }
+
+  async close() {
+    if (this.client) {
+      await this.client.close();
+      this.isConnected = false;
+      console.log('MongoDB connection closed');
+    }
+  }
+}
+
+// Legacy file-based DataStorageManager for fallback
 class DataStorageManager {
   constructor() {
     this.SEARCH_HISTORY_FILE = path.join(process.cwd(), '.search-history.json');
@@ -266,7 +747,69 @@ class DataStorageManager {
   }
 }
 
-const dataManager = new DataStorageManager();
+// Initialize Neo4j data manager (with fallback to file-based storage)
+let dataManager;
+let isNeo4jConnected = false;
+
+async function initializeDataManager() {
+  try {
+    // Check if Neo4j environment variables are configured
+    if (!process.env.NEO4J_URI || !process.env.NEO4J_USER || !process.env.NEO4J_PASSWORD) {
+      console.log('⚠️  Neo4j environment variables not found (NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)');
+      console.log('📝 Using local file storage. See ENVIRONMENT_SETUP.md for Neo4j setup instructions.');
+      dataManager = new DataStorageManager();
+      isNeo4jConnected = false;
+      return;
+    }
+
+    console.log('🔗 Neo4j credentials found, attempting connection...');
+    dataManager = new Neo4jDataManager();
+    await dataManager.connect();
+    isNeo4jConnected = true;
+    console.log('✅ Using Neo4j AuraDB for data storage');
+  } catch (error) {
+    console.warn('❌ Neo4j connection failed, falling back to file-based storage');
+    console.warn('Error details:', error.message);
+    console.log('📝 Check your Neo4j credentials in .env file. See ENVIRONMENT_SETUP.md for setup instructions.');
+    dataManager = new DataStorageManager();
+    isNeo4jConnected = false;
+  }
+}
+
+// Initialize encryption key and data manager
+async function initializeSystem() {
+  // First initialize the data manager
+  await initializeDataManager();
+  
+  // Then initialize the encryption key (which may depend on Neo4j)
+  try {
+    ENCRYPTION_KEY = await getOrCreateMasterKey();
+    console.log('🔐 Encryption system initialized');
+    
+    // Load API keys after encryption is ready
+    await loadApiKeys();
+    loadSearchHistory();
+    loadExclusionList();
+    
+    // Initialize AI providers with loaded keys
+    initializeAIProviders();
+  } catch (error) {
+    console.error('Failed to initialize encryption key:', error.message);
+    // Generate a temporary key for this session
+    ENCRYPTION_KEY = crypto.randomBytes(32).toString('hex');
+    console.log('⚠️  Using temporary encryption key for this session');
+  }
+}
+
+// Initialize the system
+initializeSystem().catch(error => {
+  console.error('Failed to initialize system:', error.message);
+  // Fallback initialization
+  dataManager = new DataStorageManager();
+  isNeo4jConnected = false;
+  ENCRYPTION_KEY = crypto.randomBytes(32).toString('hex');
+  console.log('⚠️  Running with fallback configuration');
+});
 
 // Legacy global variables (deprecated - kept for backward compatibility)
 let searchHistory = [];
@@ -277,6 +820,11 @@ let exclusionList = {};
 // Encryption utilities
 function encrypt(text) {
   if (!text) return '';
+  if (!ENCRYPTION_KEY) {
+    console.log('⚠️  Encryption key not ready, returning text as-is');
+    return text;
+  }
+  
   try {
     const algorithm = 'aes-256-cbc';
     const key = crypto.scryptSync(ENCRYPTION_KEY, 'salt', 32);
@@ -287,12 +835,17 @@ function encrypt(text) {
     return iv.toString('hex') + ':' + encrypted;
   } catch (error) {
     console.log('Encryption error:', error.message);
-    return '';
+    return text; // Return unencrypted if encryption fails
   }
 }
 
 function decrypt(encryptedText) {
   if (!encryptedText) return '';
+  if (!ENCRYPTION_KEY) {
+    console.log('⚠️  Encryption key not ready, returning text as-is');
+    return encryptedText;
+  }
+  
   try {
     // Handle both old format (without IV) and new format (with IV)
     if (encryptedText.includes(':')) {
@@ -321,8 +874,42 @@ function decrypt(encryptedText) {
 }
 
 // Load API keys on startup
-function loadApiKeys() {
+async function loadApiKeys() {
   try {
+    // First try to load from Neo4j if available
+    if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+      try {
+        const neo4jConfig = await dataManager.getApiConfig();
+        if (neo4jConfig) {
+          let loadedAnyKey = false;
+          
+          Object.keys(apiKeys).forEach(key => {
+            if (neo4jConfig[key]) {
+              if (typeof neo4jConfig[key] === 'string') {
+                const decryptedValue = decrypt(neo4jConfig[key]);
+                if (decryptedValue) {
+                  apiKeys[key] = decryptedValue;
+                  loadedAnyKey = true;
+                }
+              } else {
+                // Non-string values are stored directly
+                apiKeys[key] = neo4jConfig[key];
+                loadedAnyKey = true;
+              }
+            }
+          });
+          
+          if (loadedAnyKey) {
+            console.log('☁️ API keys loaded from Neo4j');
+            return;
+          }
+        }
+      } catch (neo4jError) {
+        console.log('⚠️  Could not load API config from Neo4j:', neo4jError.message);
+      }
+    }
+
+    // Fallback to local file
     if (fs.existsSync(CONFIG_FILE)) {
       try {
         const encryptedConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
@@ -345,20 +932,31 @@ function loadApiKeys() {
         });
         
         if (loadedAnyKey) {
-          console.log('API keys loaded from encrypted storage');
+          console.log('💾 API keys loaded from local file');
+          
+          // Migrate to Neo4j if connected
+          if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+            try {
+              await dataManager.saveApiConfig(encryptedConfig);
+              console.log('🔄 Migrated API configuration from file to Neo4j');
+            } catch (migrateError) {
+              console.log('⚠️  Failed to migrate API config to Neo4j:', migrateError.message);
+            }
+          }
+          
+          return;
         } else {
           console.log('No valid encrypted keys found, falling back to environment variables');
-          loadFromEnvironment();
         }
       } catch (configError) {
         console.log('Configuration file corrupted, clearing and using environment variables:', configError.message);
         // Delete corrupted config file
         fs.unlinkSync(CONFIG_FILE);
-        loadFromEnvironment();
       }
-    } else {
-      loadFromEnvironment();
     }
+    
+    // Final fallback to environment variables
+    loadFromEnvironment();
   } catch (error) {
     console.error('Error loading API keys:', error.message);
     loadFromEnvironment();
@@ -385,7 +983,7 @@ function loadFromEnvironment() {
 }
 
 // Save API keys securely
-function saveApiKeys() {
+async function saveApiKeys() {
   try {
     const encryptedConfig = {};
     Object.keys(apiKeys).forEach(key => {
@@ -399,8 +997,20 @@ function saveApiKeys() {
         }
       }
     });
+
+    // Save to Neo4j first if available
+    if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+      try {
+        await dataManager.saveApiConfig(encryptedConfig);
+        console.log('☁️ API keys saved to Neo4j');
+      } catch (neo4jError) {
+        console.log('⚠️  Failed to save API config to Neo4j:', neo4jError.message);
+      }
+    }
+
+    // Always save to local file as backup
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(encryptedConfig, null, 2));
-    console.log('API keys saved to encrypted storage');
+    console.log('💾 API keys saved to local file (backup)');
   } catch (error) {
     console.error('Error saving API keys:', error.message);
   }
@@ -450,12 +1060,7 @@ function addToSearchHistory(query) {
     .catch(error => console.error('Error adding to search history:', error.message));
 }
 
-// Initialize API keys, search history, and exclusion list
-loadApiKeys();
-loadSearchHistory();
-loadExclusionList();
-// Initialize AI providers with loaded keys
-initializeAIProviders();
+// System initialization is now handled by initializeSystem() function
 
 const JSON_SCHEMA = {
   query: {
@@ -1135,19 +1740,63 @@ app.post('/api/search-enhanced', async (req, res) => {
 
     console.log('Enhanced search request for:', location, date || 'no date specified');
     
-    // Get detailed search results including events
-    const searchResults = await searchWeb('comprehensive family activities events', location, date, 10);
-    const eventResults = await searchCurrentEvents(location, date);
+    // Check for cached enhanced search results first (only if using Neo4j)
+    let enhancedData = null;
+    const searchDate = date || new Date().toISOString().split('T')[0];
     
-    // Combine and structure results
-    const enhancedData = {
-      location: location,
-      search_date: date || new Date().toISOString().split('T')[0],
-      travel_sources: searchResults.filter(r => r.source !== 'Event Search'),
-      event_intelligence: eventResults,
-      total_sources: searchResults.length + eventResults.length,
-      search_quality: eventResults.length > 0 ? 'enhanced' : 'standard'
-    };
+    if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+      try {
+        const cachedResults = await dataManager.getCachedSearchResults(
+          location, 
+          searchDate, 
+          null, // no duration for enhanced search
+          [], // no ages for enhanced search
+          'enhanced-search'
+        );
+        
+        if (cachedResults) {
+          console.log('⚡ Using cached enhanced search results for:', location, searchDate);
+          enhancedData = cachedResults;
+        }
+      } catch (cacheError) {
+        console.log('Enhanced search cache retrieval failed (non-blocking):', cacheError.message);
+      }
+    }
+
+    // If no cached results, perform new enhanced search
+    if (!enhancedData) {
+      console.log('🔍 No cached enhanced search results found, performing new search...');
+      
+      // Get detailed search results including events
+      const searchResults = await searchWeb('comprehensive family activities events', location, searchDate, 10);
+      const eventResults = await searchCurrentEvents(location, searchDate);
+      
+      // Combine and structure results
+      enhancedData = {
+        location: location,
+        search_date: searchDate,
+        travel_sources: searchResults.filter(r => r.source !== 'Event Search'),
+        event_intelligence: eventResults,
+        total_sources: searchResults.length + eventResults.length,
+        search_quality: eventResults.length > 0 ? 'enhanced' : 'standard'
+      };
+      
+      // Cache the enhanced search results (only if using Neo4j)
+      if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+        try {
+          await dataManager.cacheSearchResults(
+            location, 
+            searchDate, 
+            null, // no duration for enhanced search
+            [], // no ages for enhanced search
+            'enhanced-search',
+            enhancedData
+          );
+        } catch (cacheError) {
+          console.log('Failed to cache enhanced search results (non-blocking):', cacheError.message);
+        }
+      }
+    }
     
     res.json({ ok: true, data: enhancedData });
   } catch (err){
@@ -1216,7 +1865,7 @@ app.get('/api/settings', (req, res) => {
   }
 });
 
-app.post('/api/settings', (req, res) => {
+app.post('/api/settings', async (req, res) => {
   try {
     const { apiKeyUpdates } = req.body;
     
@@ -1238,7 +1887,7 @@ app.post('/api/settings', (req, res) => {
     });
     
     if (updated) {
-      saveApiKeys();
+      await saveApiKeys();
       // Reinitialize AI providers if keys were updated
       initializeAIProviders();
     }
@@ -1265,6 +1914,83 @@ app.post('/api/settings', (req, res) => {
 });
 
 // Test API connections endpoint
+// Neo4j connection test endpoint
+app.get('/api/test-neo4j', async (req, res) => {
+  try {
+    if (!process.env.NEO4J_URI || !process.env.NEO4J_USER || !process.env.NEO4J_PASSWORD) {
+      return res.json({
+        ok: false,
+        configured: false,
+        working: false,
+        error: 'Neo4j environment variables not configured (NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)',
+        connection_type: 'Not configured'
+      });
+    }
+
+    // Test if we can create a connection
+    const testDriver = neo4j.driver(
+      process.env.NEO4J_URI, 
+      neo4j.auth.basic(process.env.NEO4J_USER, process.env.NEO4J_PASSWORD)
+    );
+    
+    const session = testDriver.session({ database: process.env.NEO4J_DATABASE || 'neo4j' });
+    
+    try {
+      // Test basic connectivity
+      const result = await session.run('RETURN "Hello Neo4j!" as message, datetime() as timestamp');
+      const record = result.records[0];
+      const message = record.get('message');
+      const timestamp = record.get('timestamp');
+      
+      // Test if our current dataManager is Neo4j
+      const isCurrentlyUsed = isNeo4jConnected && dataManager instanceof Neo4jDataManager;
+      
+      // Get some basic database info
+      const dbInfo = await session.run('CALL dbms.components() YIELD name, versions, edition RETURN name, versions[0] as version, edition');
+      const version = dbInfo.records.length > 0 ? dbInfo.records[0].get('version') : 'Unknown';
+      const edition = dbInfo.records.length > 0 ? dbInfo.records[0].get('edition') : 'Unknown';
+      
+      res.json({
+        ok: true,
+        configured: true,
+        working: true,
+        error: null,
+        message: `Successfully connected to Neo4j`,
+        response: message,
+        timestamp: timestamp.toString(),
+        connection_type: isCurrentlyUsed ? 'Currently Active' : 'Available (Not Active)',
+        database_info: {
+          version: version,
+          edition: edition,
+          uri: process.env.NEO4J_URI,
+          database: process.env.NEO4J_DATABASE || 'neo4j'
+        }
+      });
+      
+    } finally {
+      await session.close();
+      await testDriver.close();
+    }
+    
+  } catch (error) {
+    console.error('Neo4j test connection failed:', error);
+    
+    res.json({
+      ok: false,
+      configured: true,
+      working: false,
+      error: error.message,
+      connection_type: 'Failed',
+      suggestions: [
+        'Check your Neo4j AuraDB credentials',
+        'Ensure your database is running',
+        'Verify network connectivity',
+        'Check if NEO4J_URI format is correct (neo4j+s://...)'
+      ]
+    });
+  }
+});
+
 app.post('/api/test-apis', async (req, res) => {
   try {
     const results = {
@@ -1609,7 +2335,50 @@ app.post('/api/activities', async (req, res) => {
     
     if(!ctx){ return res.status(400).json({ ok:false, error:'Missing ctx' }); }
 
-    const json = await callModelWithRetry(ctx, allowed, 3, maxActivities);
+    // Check for cached results first (only if using Neo4j)
+    let json = null;
+    if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+      try {
+        const cacheKey = `${allowed}-${maxActivities || 'default'}`;
+        const cachedResults = await dataManager.getCachedSearchResults(
+          ctx.location, 
+          ctx.date, 
+          ctx.duration_hours, 
+          ctx.ages, 
+          cacheKey
+        );
+        
+        if (cachedResults) {
+          console.log('⚡ Using cached search results for:', ctx.location, ctx.date);
+          json = cachedResults;
+        }
+      } catch (cacheError) {
+        console.log('Cache retrieval failed (non-blocking):', cacheError.message);
+      }
+    }
+
+    // If no cached results, perform new search
+    if (!json) {
+      console.log('🔍 No cached results found, performing new search...');
+      json = await callModelWithRetry(ctx, allowed, 3, maxActivities);
+      
+      // Cache the results (only if using Neo4j)
+      if (isNeo4jConnected && dataManager instanceof Neo4jDataManager && json) {
+        try {
+          const cacheKey = `${allowed}-${maxActivities || 'default'}`;
+          await dataManager.cacheSearchResults(
+            ctx.location, 
+            ctx.date, 
+            ctx.duration_hours, 
+            ctx.ages, 
+            cacheKey, 
+            json
+          );
+        } catch (cacheError) {
+          console.log('Failed to cache search results (non-blocking):', cacheError.message);
+        }
+      }
+    }
     
     // Save successful search to history (isolated per request)
     try {
@@ -1718,6 +2487,25 @@ app.delete('/api/exclusion-list/:location/:attraction', async (req, res) => {
   }
 });
 
+// Graceful shutdown handler
+process.on('SIGINT', async () => {
+  console.log('\n🛑 Received SIGINT, shutting down gracefully...');
+  if (dataManager && typeof dataManager.close === 'function') {
+    await dataManager.close();
+  }
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('\n🛑 Received SIGTERM, shutting down gracefully...');
+  if (dataManager && typeof dataManager.close === 'function') {
+    await dataManager.close();
+  }
+  process.exit(0);
+});
+
 app.listen(PORT, () => {
   console.log('Server listening on http://localhost:' + PORT);
+  console.log('🚀 Kids Activities Finder server started successfully');
+  console.log('📊 Data storage:', isNeo4jConnected ? 'Neo4j AuraDB' : 'Local files');
 });
