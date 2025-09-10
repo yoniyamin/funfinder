@@ -17,6 +17,13 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
+// Serve static files from dist directory in production
+if (process.env.NODE_ENV === 'production') {
+  const distPath = path.join(process.cwd(), 'dist');
+  console.log(`📁 Serving static files from: ${distPath}`);
+  app.use(express.static(distPath));
+}
+
 // AI Provider Factory - Creates isolated instances per request
 class AIProviderFactory {
   static createGeminiClient(apiKey) {
@@ -2117,7 +2124,7 @@ app.post('/api/test-apis', async (req, res) => {
 });
 
 // Call OpenRouter API with isolated client
-async function callOpenRouterModel(prompt, maxRetries = 3) {
+async function callOpenRouterModel(prompt, maxRetries = 3, abortSignal = null) {
   const openRouterKey = apiKeys.openrouter_api_key || process.env.OPENROUTER_API_KEY || '';
   if (!openRouterKey) {
     throw new Error('OpenRouter API key not available');
@@ -2128,6 +2135,11 @@ async function callOpenRouterModel(prompt, maxRetries = 3) {
   const modelName = apiKeys.openrouter_model || 'deepseek/deepseek-chat-v3.1:free';
   
 for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    // Check for cancellation before each attempt
+    if (abortSignal?.aborted) {
+      throw new Error('Request was cancelled');
+    }
+    
     const startTime = performance.now();
     try {
       console.log(`🤖 [${new Date().toISOString()}] OpenRouter attempt ${attempt}/${maxRetries} using model: ${modelName}`);
@@ -2216,7 +2228,7 @@ for (let attempt = 1; attempt <= maxRetries; attempt++) {
 }
 
 // Call Gemini API with isolated client
-async function callGeminiModel(prompt, maxRetries = 3) {
+async function callGeminiModel(prompt, maxRetries = 3, abortSignal = null) {
   const geminiKey = apiKeys.gemini_api_key || process.env.GEMINI_API_KEY || '';
   if (!geminiKey) {
     throw new Error('Gemini API key not available');
@@ -2226,6 +2238,11 @@ async function callGeminiModel(prompt, maxRetries = 3) {
   const model = AIProviderFactory.createGeminiClient(geminiKey);
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    // Check for cancellation before each attempt
+    if (abortSignal?.aborted) {
+      throw new Error('Request was cancelled');
+    }
+    
     const startTime = performance.now();
     try {
       console.log(`🤖 [${new Date().toISOString()}] Gemini attempt ${attempt}/${maxRetries}`);
@@ -2261,7 +2278,7 @@ async function callGeminiModel(prompt, maxRetries = 3) {
   }
 }
 
-async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivities = null) {
+async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivities = null, abortSignal = null) {
   let webSearchResults = null;
   
   // Load exclusions for this location to add to context
@@ -2274,6 +2291,11 @@ async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivitie
     exclusions: locationExclusions
   };
   
+  // Check for cancellation before web search
+  if (abortSignal?.aborted) {
+    throw new Error('Request was cancelled');
+  }
+
   // Perform enhanced web search for additional context
   try {
     console.log('Performing enhanced web search for current events and family activities...');
@@ -2282,6 +2304,11 @@ async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivitie
     console.log(`Found ${searchResults.length} web search results including event data`);
   } catch (error) {
     console.log('Web search failed, continuing without web insights:', error.message);
+  }
+
+  // Check for cancellation before AI call
+  if (abortSignal?.aborted) {
+    throw new Error('Request was cancelled');
   }
 
   const prompt = buildUserMessage(enrichedCtx, allowedCats, webSearchResults, maxActivities);
@@ -2293,22 +2320,31 @@ async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivitie
   let json;
   try {
     if (provider === 'openrouter') {
-      json = await callOpenRouterModel(prompt, maxRetries);
+      json = await callOpenRouterModel(prompt, maxRetries, abortSignal);
     } else {
-      json = await callGeminiModel(prompt, maxRetries);
+      json = await callGeminiModel(prompt, maxRetries, abortSignal);
     }
   } catch (error) {
+    // Check if it was a cancellation
+    if (abortSignal?.aborted || error.message.includes('cancelled')) {
+      throw error;
+    }
+    
     // If selected provider fails, try the other one as fallback
     console.log(`Primary provider (${provider}) failed, trying fallback...`);
     try {
       if (provider === 'openrouter') {
-        json = await callGeminiModel(prompt, maxRetries);
+        json = await callGeminiModel(prompt, maxRetries, abortSignal);
         console.log('Fallback to Gemini successful');
       } else {
-        json = await callOpenRouterModel(prompt, maxRetries);
+        json = await callOpenRouterModel(prompt, maxRetries, abortSignal);
         console.log('Fallback to OpenRouter successful');
       }
     } catch (fallbackError) {
+      // Check if fallback was cancelled
+      if (abortSignal?.aborted || fallbackError.message.includes('cancelled')) {
+        throw fallbackError;
+      }
       throw new Error(`Both AI providers failed. Primary: ${error.message}, Fallback: ${fallbackError.message}`);
     }
   }
@@ -2333,10 +2369,47 @@ async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivitie
 }
 
 app.post('/api/activities', async (req, res) => {
+  // Handle request cancellation
+  let isCancelled = false;
+  const abortController = new AbortController();
+  const requestId = Math.random().toString(36).substr(2, 9);
+  
+  console.log(`🚀 [SERVER DEBUG ${requestId}] New /api/activities request started`);
+  console.log(`🚀 [SERVER DEBUG ${requestId}] Request headers:`, req.headers);
+  
+  req.on('close', () => {
+    console.log(`🚫 [SERVER DEBUG ${requestId}] Request 'close' event triggered`);
+    console.log(`🚫 [SERVER DEBUG ${requestId}] Response headers sent:`, res.headersSent);
+    if (!res.headersSent) {
+      console.log(`⚠️ [SERVER DEBUG ${requestId}] Client disconnected, cancelling search request`);
+      isCancelled = true;
+      abortController.abort();
+      console.log(`🚫 [SERVER DEBUG ${requestId}] AbortController.abort() called`);
+    } else {
+      console.log(`ℹ️ [SERVER DEBUG ${requestId}] Response already sent, not cancelling`);
+    }
+  });
+  
+  req.on('error', (err) => {
+    console.log(`❌ [SERVER DEBUG ${requestId}] Request error:`, err.message);
+  });
+  
+  abortController.signal.addEventListener('abort', () => {
+    console.log(`🚫 [SERVER DEBUG ${requestId}] AbortController signal triggered on server`);
+  });
+
   try{
     const ctx = req.body?.ctx;
     const allowed = req.body?.allowedCategories || JSON_SCHEMA.activities[0].category;
     const maxActivities = req.body?.maxActivities || null;
+    
+    // Check if request was cancelled before we start
+    if (isCancelled) {
+      console.log(`🚫 [SERVER DEBUG ${requestId}] Request already cancelled, returning early`);
+      return;
+    }
+    
+    console.log(`✅ [SERVER DEBUG ${requestId}] Request validation passed, proceeding with search`);
     
     // Check if any AI provider is available
     const provider = apiKeys.ai_provider || 'gemini';
@@ -2419,8 +2492,14 @@ app.post('/api/activities', async (req, res) => {
 
     // If no cached results, perform new search
     if (!json) {
-      console.log('🔍 No cached results found, performing new search...');
-      json = await callModelWithRetry(ctx, allowed, 3, maxActivities);
+      // Check if request was cancelled before expensive AI call
+      if (isCancelled) {
+        console.log(`🚫 [SERVER DEBUG ${requestId}] Request cancelled before AI search, returning early`);
+        return;
+      }
+      
+      console.log(`🔍 [SERVER DEBUG ${requestId}] No cached results found, performing new search...`);
+      json = await callModelWithRetry(ctx, allowed, 3, maxActivities, abortController.signal);
       
       // Cache the results (only if using Neo4j)
       if (isNeo4jConnected && dataManager instanceof Neo4jDataManager && json) {
@@ -2455,7 +2534,17 @@ app.post('/api/activities', async (req, res) => {
     
     res.json({ ok:true, data: json });
   } catch (err){
-    console.error('Final error:', err);
+    console.log(`🚫 [SERVER DEBUG ${requestId}] Caught error:`, err.message);
+    console.log(`🚫 [SERVER DEBUG ${requestId}] isCancelled:`, isCancelled);
+    console.log(`🚫 [SERVER DEBUG ${requestId}] AbortController signal aborted:`, abortController.signal.aborted);
+    
+    // Handle cancellation gracefully
+    if (isCancelled || err.message.includes('cancelled') || err.message.includes('Request was cancelled')) {
+      console.log(`🚫 [SERVER DEBUG ${requestId}] Request was cancelled, not sending error response`);
+      return; // Don't send a response if cancelled
+    }
+    
+    console.error(`❌ [SERVER DEBUG ${requestId}] Final error:`, err);
     res.status(500).json({ ok:false, error: err.message || 'Server error' });
   }
 });
@@ -2552,6 +2641,18 @@ app.delete('/api/exclusion-list/:location/:attraction', async (req, res) => {
     res.status(500).json({ ok: false, error: 'Failed to remove from exclusion list' });
   }
 });
+
+// Catch-all handler: send back React's index.html file for client-side routing
+if (process.env.NODE_ENV === 'production') {
+  app.use((req, res, next) => {
+    // Skip API routes and static assets
+    if (req.path.startsWith('/api/') || req.path.includes('.')) {
+      return next();
+    }
+    console.log(`🔄 Serving index.html for route: ${req.path}`);
+    res.sendFile(path.join(process.cwd(), 'dist', 'index.html'));
+  });
+}
 
 // Graceful shutdown handler
 process.on('SIGINT', async () => {

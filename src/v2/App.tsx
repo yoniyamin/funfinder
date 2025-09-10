@@ -119,7 +119,10 @@ export default function App() {
   // Add AbortController ref for search cancellation
   const searchAbortController = useRef<AbortController | null>(null);
   // Add ref to store the showResults timeout so it can be cancelled
-  const showResultsTimeout = useRef<NodeJS.Timeout | null>(null);
+  const showResultsTimeout = useRef<number | null>(null);
+  // Add refs to store message intervals so they can be cancelled
+  const messageInterval = useRef<number | null>(null);
+  const messageTimeout = useRef<number | null>(null);
 
   // Load initial data
   useEffect(() => {
@@ -294,6 +297,12 @@ export default function App() {
   };
 
   const handleSearch = async () => {
+    // Prevent multiple concurrent searches
+    if (state.loading.isLoading) {
+      console.log('🚫 Search already in progress, ignoring new search request');
+      return;
+    }
+    
     const ALLOWED_CATS = 'outdoor|indoor|museum|park|playground|water|hike|creative|festival|show|seasonal|other';
     const { location, date, duration, ages, extraInstructions } = state.searchParams;
 
@@ -426,12 +435,23 @@ export default function App() {
       ];
       
       let messageIndex = 0;
-      const messageInterval = setInterval(() => {
+      
+      // Clear any existing intervals first
+      if (messageInterval.current) {
+        clearInterval(messageInterval.current);
+        messageInterval.current = null;
+      }
+      if (messageTimeout.current) {
+        clearTimeout(messageTimeout.current);
+        messageTimeout.current = null;
+      }
+      
+      messageInterval.current = setInterval(() => {
         messageIndex = (messageIndex + 1) % loadingMessages.length;
         setLoading({ isLoading: true, progress: activitySearchStartProgress, status: loadingMessages[messageIndex] });
       }, 15000);
       
-      const messageTimeout = setTimeout(() => {
+      messageTimeout.current = setTimeout(() => {
         if (messageIndex === 0) {
           messageIndex = 1;
           setLoading({ isLoading: true, progress: activitySearchStartProgress, status: loadingMessages[messageIndex] });
@@ -441,7 +461,7 @@ export default function App() {
       try {
         // Log activity search start
         const activitySearchStart = Date.now();
-        console.log('🚀 [Activity Search] Starting activity search request...');
+        console.log('🚀 Starting AI activity search...');
         
         const resp = await fetch('/api/activities', { 
           method:'POST', 
@@ -462,7 +482,7 @@ export default function App() {
         // Log activity search completion and duration
         const activitySearchEnd = Date.now();
         const duration = activitySearchEnd - activitySearchStart;
-        console.log(`✅ [Activity Search] Completed in ${(duration / 1000).toFixed(2)}s (${duration}ms)`);
+        console.log(`✅ AI search completed in ${(duration / 1000).toFixed(2)}s`);
         
         // Store search duration for future progress estimation
         storeSearchDuration(duration, data.data.ai_provider || 'unknown');
@@ -486,39 +506,64 @@ export default function App() {
         
       } catch(err:any){
         if (err.name === 'AbortError') {
-          console.log('Search was cancelled by user');
+          console.log('🚫 Search was cancelled by user');
           setLoading({ isLoading: false, progress: 0, status: 'Search cancelled' });
         } else {
-          console.error(err);
+          console.error('❌ Search error:', err.message);
           setLoading({ isLoading: false, progress: 0, status: err.message || 'Something went wrong' });
         }
       } finally {
-        clearInterval(messageInterval);
-        clearTimeout(messageTimeout);
+        // Cleanup intervals and timeouts
+        if (messageInterval.current) {
+          clearInterval(messageInterval.current);
+          messageInterval.current = null;
+        }
+        if (messageTimeout.current) {
+          clearTimeout(messageTimeout.current);
+          messageTimeout.current = null;
+        }
+        // Clear the AbortController now that search is completely done
+        if (searchAbortController.current) {
+          searchAbortController.current = null;
+        }
       }
-      
     } catch(err:any){
       if (err.name === 'AbortError') {
-        console.log('Search was cancelled by user');
+        console.log('🚫 Search was cancelled by user');
         setLoading({ isLoading: false, progress: 0, status: 'Search cancelled' });
       } else {
-        console.error(err);
+        console.error('❌ Search error:', err.message);
         setLoading({ isLoading: false, progress: 0, status: err.message || 'Something went wrong' });
       }
     }
   };
 
   const handleCancelSearch = () => {
+    console.log('🚫 Cancel button clicked');
+    
     if (searchAbortController.current) {
+      console.log('🚫 Aborting search...');
       searchAbortController.current.abort();
-      searchAbortController.current = null;
     }
-    // Clear the showResults timeout to prevent results from appearing
+    
+    // Clear timeouts and intervals to stop status updates
     if (showResultsTimeout.current) {
       clearTimeout(showResultsTimeout.current);
       showResultsTimeout.current = null;
     }
-    setLoading({ isLoading: false, progress: 0, status: '' });
+    
+    if (messageInterval.current) {
+      clearInterval(messageInterval.current);
+      messageInterval.current = null;
+    }
+    
+    if (messageTimeout.current) {
+      clearTimeout(messageTimeout.current);
+      messageTimeout.current = null;
+    }
+    
+    setLoading({ isLoading: false, progress: 0, status: 'Search cancelled by user' });
+    console.log('🚫 Search cancelled successfully');
   };
 
   return (
