@@ -15,15 +15,22 @@ dotenv.config();
 const PORT = process.env.PORT || 8787;
 const app = express();
 
-// Configure CORS for deployment
+// Configure CORS - allow all origins in development and same-origin in production
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
-    ? [process.env.FRONTEND_URL, /\.koyeb\.app$/, /\.herokuapp\.com$/, /\.railway\.app$/] 
-    : true,
+    ? true  // Allow same-origin requests in production (frontend served from same domain)
+    : true, // Allow all origins in development
   credentials: true
 }));
 
 app.use(express.json({ limit: '1mb' }));
+
+// Request logging middleware for debugging
+app.use((req, res, next) => {
+  const timestamp = new Date().toISOString();
+  console.log(`🌐 ${timestamp} - ${req.method} ${req.path} - ${req.ip || req.connection.remoteAddress}`);
+  next();
+});
 
 // Serve static files from dist directory in production
 if (process.env.NODE_ENV === 'production') {
@@ -2657,22 +2664,68 @@ app.delete('/api/exclusion-list/:location/:attraction', async (req, res) => {
   }
 });
 
-// Health check endpoint for deployment platforms
-app.get('/health', (req, res) => {
+// Simple root endpoint for debugging
+app.get('/api/status', (req, res) => {
+  console.log('📊 Status endpoint called');
   res.status(200).json({
-    status: 'healthy',
+    status: 'running',
+    message: 'FunFindAI API is running',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    environment: process.env.NODE_ENV || 'development',
-    port: PORT,
-    database: isNeo4jConnected ? 'Neo4j Connected' : 'Local Storage',
-    version: process.env.npm_package_version || '0.1.1'
+    environment: process.env.NODE_ENV || 'development'
   });
 });
 
+// Health check endpoint for deployment platforms
+app.get('/health', (req, res) => {
+  console.log('🏥 Health check endpoint called');
+  try {
+    const healthData = {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      environment: process.env.NODE_ENV || 'development',
+      port: PORT,
+      database: isNeo4jConnected ? 'Neo4j Connected' : 'Local Storage',
+      version: process.env.npm_package_version || '0.1.1'
+    };
+    console.log('🏥 Health check response:', healthData);
+    res.status(200).json(healthData);
+  } catch (error) {
+    console.error('❌ Health check failed:', error);
+    res.status(500).json({ status: 'unhealthy', error: error.message });
+  }
+});
+
 // Alternative health check endpoints for different platforms
-app.get('/healthz', (req, res) => res.status(200).send('OK'));
-app.get('/ping', (req, res) => res.status(200).send('pong'));
+app.get('/healthz', (req, res) => {
+  console.log('🏥 Simple health check (/healthz) called');
+  res.status(200).send('OK');
+});
+
+app.get('/ping', (req, res) => {
+  console.log('🏥 Ping endpoint called');
+  res.status(200).send('pong');
+});
+
+// Root API endpoint
+app.get('/', (req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    // In production, this should be handled by the catch-all handler below
+    return;
+  }
+  console.log('🏠 Root endpoint called (development)');
+  res.json({
+    name: 'FunFindAI API',
+    version: '0.1.1',
+    status: 'running',
+    endpoints: {
+      health: '/health',
+      healthz: '/healthz',
+      ping: '/ping',
+      status: '/api/status'
+    }
+  });
+});
 
 // Catch-all handler: send back React's index.html file for client-side routing
 if (process.env.NODE_ENV === 'production') {
