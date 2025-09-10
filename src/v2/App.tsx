@@ -91,6 +91,8 @@ const getEstimatedProgressSteps = () => {
 };
 
 export default function App() {
+  console.log('🔥 V2 App component mounting...');
+  
   const [state, setState] = useState<AppState>({
     currentPage: 'search',
     showSplash: true,
@@ -115,6 +117,8 @@ export default function App() {
     exclusionList: {},
     showSettings: false
   });
+  
+  console.log('🔥 V2 App state initialized:', state.currentPage);
 
   // Add AbortController ref for search cancellation
   const searchAbortController = useRef<AbortController | null>(null);
@@ -636,6 +640,8 @@ export default function App() {
     console.log('🚫 Search cancelled successfully');
   };
 
+  console.log('🔥 V2 App rendering, current page:', state.currentPage);
+  
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
       {/* Main Content */}
