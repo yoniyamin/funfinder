@@ -2745,10 +2745,11 @@ app.get('/ping', (req, res) => {
 });
 
 // Root API endpoint
-app.get('/', (req, res) => {
+app.get('/', (req, res, next) => {
   if (process.env.NODE_ENV === 'production') {
-    // In production, this should be handled by the catch-all handler below
-    return;
+    // In production, let the catch-all handler serve index.html
+    console.log('🏠 Root endpoint called (production) - passing to catch-all handler');
+    return next();
   }
   console.log('🏠 Root endpoint called (development)');
   res.json({
@@ -2773,13 +2774,19 @@ if (process.env.NODE_ENV === 'production') {
     }
     
     const indexPath = path.join(process.cwd(), 'dist', 'index.html');
+    const distPath = path.join(process.cwd(), 'dist');
+    
+    console.log(`🔄 Catch-all handler triggered for route: ${req.path}`);
+    console.log(`📁 Looking for index.html at: ${indexPath}`);
+    console.log(`📁 Dist directory exists: ${fs.existsSync(distPath)}`);
     
     // Check if index.html exists before serving
     if (fs.existsSync(indexPath)) {
-      console.log(`🔄 Serving index.html for route: ${req.path}`);
+      console.log(`✅ Serving index.html for route: ${req.path}`);
       res.sendFile(indexPath);
     } else {
       console.error('❌ index.html not found in dist directory');
+      console.log('📁 Dist directory contents:', fs.existsSync(distPath) ? fs.readdirSync(distPath) : 'Directory does not exist');
       res.status(500).send('Application not built. Please run "npm run build" first.');
     }
   });
