@@ -236,7 +236,11 @@ export default function SearchPage({
 
   const handleDateSelect = (day: number) => {
     const selectedDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
-    const dateString = selectedDate.toISOString().split('T')[0];
+    // Format date manually to avoid timezone conversion issues with toISOString()
+    const year = selectedDate.getFullYear();
+    const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+    const dayStr = String(selectedDate.getDate()).padStart(2, '0');
+    const dateString = `${year}-${month}-${dayStr}`;
     updateSearchParams({ date: dateString });
     setShowDateModal(false);
   };

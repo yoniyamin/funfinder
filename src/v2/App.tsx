@@ -138,6 +138,23 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
 
+  // Cleanup function to prevent memory leaks and request cancellation
+  useEffect(() => {
+    return () => {
+      // Only cleanup if we're actually unmounting, not just re-rendering
+      if (showResultsTimeout.current) {
+        clearTimeout(showResultsTimeout.current);
+      }
+      if (messageInterval.current) {
+        clearInterval(messageInterval.current);
+      }
+      if (messageTimeout.current) {
+        clearTimeout(messageTimeout.current);
+      }
+      // Don't abort the search controller here as it might cancel legitimate requests
+    };
+  }, []);
+
   const loadSearchHistory = async () => {
     try {
       const response = await fetch('/api/search-history');
@@ -302,6 +319,12 @@ export default function App() {
       console.log('🚫 Search already in progress, ignoring new search request');
       return;
     }
+
+    // Additional safety check - prevent rapid successive calls
+    if (searchAbortController.current && !searchAbortController.current.signal.aborted) {
+      console.log('🚫 Previous search controller still active, ignoring new search request');
+      return;
+    }
     
     const ALLOWED_CATS = 'outdoor|indoor|museum|park|playground|water|hike|creative|festival|show|seasonal|other';
     const { location, date, duration, ages, extraInstructions } = state.searchParams;
@@ -325,12 +348,26 @@ export default function App() {
         return;
       }
 
+      // Clear any existing AbortController first
+      if (searchAbortController.current) {
+        searchAbortController.current = null;
+      }
+      
       // Create new AbortController for this search
       searchAbortController.current = new AbortController();
+      
+      // Add debugging to track if AbortController gets triggered
+      searchAbortController.current.signal.addEventListener('abort', () => {
+        console.log('🚫 AbortController signal triggered during search');
+      });
 
       // Clear existing results and reset states
-      setLoading({ isLoading: true, progress: 0, status: 'Starting search...' });
+      console.log('🚀 Starting search process...');
       setSearchResults({ activities: null, webSources: null, ctx: null });
+      setLoading({ isLoading: true, progress: 0, status: 'Starting search...' });
+      
+      // Add small delay to ensure state is updated
+      await new Promise(resolve => setTimeout(resolve, 100));
       
       setLoading({ isLoading: true, progress: 10, status: 'Geocoding location…' });
       const g = await geocode(location, searchAbortController.current?.signal);
@@ -463,12 +500,21 @@ export default function App() {
         const activitySearchStart = Date.now();
         console.log('🚀 Starting AI activity search...');
         
+        // Check if signal is already aborted before making request
+        if (searchAbortController.current?.signal.aborted) {
+          console.error('🚫 AbortController signal already aborted before fetch!');
+          throw new Error('Request was cancelled before it started');
+        }
+        
+        console.log('📡 Making fetch request to /api/activities');
         const resp = await fetch('/api/activities', { 
           method:'POST', 
           headers:{ 'Content-Type':'application/json' }, 
           body: JSON.stringify({ ctx: context, allowedCategories: ALLOWED_CATS }),
           signal: searchAbortController.current?.signal
         });
+        
+        console.log('📡 Fetch request completed, status:', resp.status);
         
         if(!resp.ok){ 
           const errorText = await resp.text();
@@ -540,6 +586,7 @@ export default function App() {
 
   const handleCancelSearch = () => {
     console.log('🚫 Cancel button clicked');
+    console.trace('🚫 Cancel search stack trace:');
     
     if (searchAbortController.current) {
       console.log('🚫 Aborting search...');
