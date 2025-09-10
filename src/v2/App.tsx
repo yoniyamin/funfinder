@@ -123,6 +123,8 @@ export default function App() {
   // Add refs to store message intervals so they can be cancelled
   const messageInterval = useRef<number | null>(null);
   const messageTimeout = useRef<number | null>(null);
+  // Add a ref to track if a search is actively running to prevent StrictMode interference
+  const activeSearchRef = useRef<boolean>(false);
 
   // Load initial data
   useEffect(() => {
@@ -140,8 +142,13 @@ export default function App() {
 
   // Cleanup function to prevent memory leaks and request cancellation
   useEffect(() => {
+    console.log('🔄 App component mounted/updated');
     return () => {
-      // Only cleanup if we're actually unmounting, not just re-rendering
+      console.warn('🚨 App component cleanup triggered');
+      console.log('🚨 Active search status:', activeSearchRef.current);
+      
+      // Only cleanup timeouts and intervals, never abort active searches
+      // This prevents React StrictMode from cancelling legitimate requests
       if (showResultsTimeout.current) {
         clearTimeout(showResultsTimeout.current);
       }
@@ -151,9 +158,21 @@ export default function App() {
       if (messageTimeout.current) {
         clearTimeout(messageTimeout.current);
       }
-      // Don't abort the search controller here as it might cancel legitimate requests
+      
+      // NEVER abort searchAbortController here - let searches complete naturally
+      console.log('🔄 Cleanup completed without aborting active searches');
     };
   }, []);
+
+  // Add debug effect to track state changes
+  useEffect(() => {
+    console.log('📊 Loading state changed:', state.loading);
+  }, [state.loading]);
+
+  // Add debug effect to track page changes
+  useEffect(() => {
+    console.log('📄 Current page changed:', state.currentPage);
+  }, [state.currentPage]);
 
   const loadSearchHistory = async () => {
     try {
@@ -315,16 +334,14 @@ export default function App() {
 
   const handleSearch = async () => {
     // Prevent multiple concurrent searches
-    if (state.loading.isLoading) {
+    if (state.loading.isLoading || activeSearchRef.current) {
       console.log('🚫 Search already in progress, ignoring new search request');
       return;
     }
 
-    // Additional safety check - prevent rapid successive calls
-    if (searchAbortController.current && !searchAbortController.current.signal.aborted) {
-      console.log('🚫 Previous search controller still active, ignoring new search request');
-      return;
-    }
+    // Mark search as active to prevent StrictMode interference
+    activeSearchRef.current = true;
+    console.log('🔄 Search marked as active, StrictMode remounts will be ignored');
     
     const ALLOWED_CATS = 'outdoor|indoor|museum|park|playground|water|hike|creative|festival|show|seasonal|other';
     const { location, date, duration, ages, extraInstructions } = state.searchParams;
@@ -348,18 +365,13 @@ export default function App() {
         return;
       }
 
+      // Don't use AbortController for now - it's causing StrictMode issues
       // Clear any existing AbortController first
       if (searchAbortController.current) {
         searchAbortController.current = null;
       }
       
-      // Create new AbortController for this search
-      searchAbortController.current = new AbortController();
-      
-      // Add debugging to track if AbortController gets triggered
-      searchAbortController.current.signal.addEventListener('abort', () => {
-        console.log('🚫 AbortController signal triggered during search');
-      });
+      console.log('🔄 Search starting without AbortController to avoid StrictMode interference');
 
       // Clear existing results and reset states
       console.log('🚀 Starting search process...');
@@ -370,13 +382,13 @@ export default function App() {
       await new Promise(resolve => setTimeout(resolve, 100));
       
       setLoading({ isLoading: true, progress: 10, status: 'Geocoding location…' });
-      const g = await geocode(location, searchAbortController.current?.signal);
+      const g = await geocode(location);
       const { latitude: lat, longitude: lon, country_code, name, country } = g as any;
 
       setLoading({ isLoading: true, progress: 25, status: 'Fetching weather forecast…' });
       let w: { tmax: number | null; tmin: number | null; pprob: number | null; wind: number | null } = { tmax: null, tmin: null, pprob: null, wind: null };
       try {
-        w = await fetchWeatherDaily(lat, lon, date, searchAbortController.current?.signal);
+        w = await fetchWeatherDaily(lat, lon, date);
       } catch (error) {
         console.warn('Weather data not available for this date, using default values:', error);
       }
@@ -384,7 +396,7 @@ export default function App() {
       setLoading({ isLoading: true, progress: 40, status: 'Checking public holidays…' });
       let isHoliday = false;
       try {
-        const hol = await fetchHolidays(country_code, date.slice(0,4), searchAbortController.current?.signal);
+        const hol = await fetchHolidays(country_code, date.slice(0,4));
         const matches = hol.filter((h:any)=>h.date===date);
         isHoliday = matches.length>0;
       } catch (error) {
@@ -394,12 +406,12 @@ export default function App() {
       setLoading({ isLoading: true, progress: 55, status: 'Searching for nearby festivals…' });
       let festivals: Array<{name:string; url:string|null; start_date:string|null; end_date:string|null; lat:number|null; lon:number|null; distance_km:number|null}> = [];
       try {
-        festivals = await fetchFestivalsWikidata(lat, lon, date, 60, searchAbortController.current?.signal);
+        festivals = await fetchFestivalsWikidata(lat, lon, date, 60);
         
         if (festivals.length === 0) {
           console.log('No festivals found from Wikidata, trying Gemini comprehensive search...');
           try {
-            const geminiEvents = await fetchHolidaysWithGemini(`${name}, ${country}`, date, searchAbortController.current?.signal);
+            const geminiEvents = await fetchHolidaysWithGemini(`${name}, ${country}`, date);
             if (geminiEvents.length > 0) {
               console.log(`✨ Gemini found ${geminiEvents.length} holidays/festivals in 3-day period around ${date}`);
               
@@ -420,7 +432,7 @@ export default function App() {
       } catch (error) {
         console.warn('Failed to fetch festivals, trying Gemini comprehensive search...', error);
         try {
-          const geminiEvents = await fetchHolidaysWithGemini(`${name}, ${country}`, date, searchAbortController.current?.signal);
+          const geminiEvents = await fetchHolidaysWithGemini(`${name}, ${country}`, date);
           if (geminiEvents.length > 0) {
             console.log(`✨ Gemini comprehensive search found ${geminiEvents.length} holidays/festivals`);
             
@@ -484,21 +496,40 @@ export default function App() {
         const activitySearchStart = Date.now();
         console.log('🚀 Starting AI activity search...');
         
-        // Check if signal is already aborted before making request
-        if (searchAbortController.current?.signal.aborted) {
-          console.error('🚫 AbortController signal already aborted before fetch!');
-          throw new Error('Request was cancelled before it started');
-        }
-        
         console.log('📡 Making fetch request to /api/activities');
-        const resp = await fetch('/api/activities', { 
-          method:'POST', 
-          headers:{ 'Content-Type':'application/json' }, 
+        console.log('📡 Request payload size:', JSON.stringify({ ctx: context, allowedCategories: ALLOWED_CATS }).length, 'bytes');
+        console.log('📡 No AbortController - testing StrictMode fix');
+        
+        // Add a delay before fetch to ensure everything is ready
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Fix for connection close issue - use keepalive and proper headers
+        console.log('🔧 Using enhanced fetch configuration to prevent connection close');
+        
+        const fetchPromise = fetch('/api/activities', { 
+          method: 'POST', 
+          headers: { 
+            'Content-Type': 'application/json',
+            'Connection': 'keep-alive'
+          }, 
           body: JSON.stringify({ ctx: context, allowedCategories: ALLOWED_CATS }),
-          signal: searchAbortController.current?.signal
+          keepalive: true,
+          // Remove signal temporarily to isolate the issue
+          // signal: searchAbortController.current?.signal
         });
         
+        console.log('📡 Fetch promise created, waiting for response...');
+        
+        // Add timeout wrapper to detect hanging requests
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Request timeout after 60 seconds')), 60000);
+        });
+        
+        const resp = await Promise.race([fetchPromise, timeoutPromise]) as Response;
+        
         console.log('📡 Fetch request completed, status:', resp.status);
+        console.log('📡 Response content-type:', resp.headers.get('content-type'));
+        console.log('📡 Response content-length:', resp.headers.get('content-length'));
         
         if(!resp.ok){ 
           const errorText = await resp.text();
@@ -556,6 +587,9 @@ export default function App() {
         if (searchAbortController.current) {
           searchAbortController.current = null;
         }
+        // Mark search as no longer active
+        activeSearchRef.current = false;
+        console.log('🔄 Search marked as inactive, cleanup completed');
       }
     } catch(err:any){
       if (err.name === 'AbortError') {
@@ -565,11 +599,13 @@ export default function App() {
         console.error('❌ Search error:', err.message);
         setLoading({ isLoading: false, progress: 0, status: err.message || 'Something went wrong' });
       }
+      // Mark search as no longer active in case of error
+      activeSearchRef.current = false;
     }
   };
 
   const handleCancelSearch = () => {
-    console.log('🚫 Cancel button clicked');
+    console.log('🚫 Cancel button clicked - USER INITIATED CANCELLATION');
     console.trace('🚫 Cancel search stack trace:');
     
     if (searchAbortController.current) {
@@ -592,6 +628,9 @@ export default function App() {
       clearTimeout(messageTimeout.current);
       messageTimeout.current = null;
     }
+    
+    // Mark search as no longer active
+    activeSearchRef.current = false;
     
     setLoading({ isLoading: false, progress: 0, status: 'Search cancelled by user' });
     console.log('🚫 Search cancelled successfully');
