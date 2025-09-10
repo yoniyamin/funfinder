@@ -2432,8 +2432,12 @@ app.post('/api/activities', async (req, res) => {
   console.log(`🚀 [SERVER DEBUG ${requestId}] New /api/activities request started`);
   console.log(`🚀 [SERVER DEBUG ${requestId}] Request headers:`, req.headers);
   
-  req.on('close', () => {
-    console.log(`🚫 [SERVER DEBUG ${requestId}] Request 'close' event triggered`);
+  // Use the 'aborted' event which only fires when the client truly
+  // terminates the request before a response is sent. The previous
+  // implementation listened for 'close', which can fire in normal
+  // circumstances and led to legitimate searches being cancelled.
+  req.on('aborted', () => {
+    console.log(`🚫 [SERVER DEBUG ${requestId}] Request 'aborted' event triggered`);
     console.log(`🚫 [SERVER DEBUG ${requestId}] Response headers sent:`, res.headersSent);
     if (!res.headersSent) {
       console.log(`⚠️ [SERVER DEBUG ${requestId}] Client disconnected, cancelling search request`);
