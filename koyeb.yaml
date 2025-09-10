@@ -11,3 +11,9 @@ services:
       cmd: ["node", "server/index.js"]
     env:
       NODE_ENV: production
+    health_check:
+      http:
+        path: /health
+        port: 8787
+      initial_delay_seconds: 30
+      timeout_seconds: 10

@@ -14,14 +14,29 @@ dotenv.config();
 
 const PORT = process.env.PORT || 8787;
 const app = express();
-app.use(cors());
+
+// Configure CORS for deployment
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' 
+    ? [process.env.FRONTEND_URL, /\.koyeb\.app$/, /\.herokuapp\.com$/, /\.railway\.app$/] 
+    : true,
+  credentials: true
+}));
+
 app.use(express.json({ limit: '1mb' }));
 
 // Serve static files from dist directory in production
 if (process.env.NODE_ENV === 'production') {
   const distPath = path.join(process.cwd(), 'dist');
   console.log(`📁 Serving static files from: ${distPath}`);
-  app.use(express.static(distPath));
+  
+  // Check if dist directory exists
+  if (fs.existsSync(distPath)) {
+    app.use(express.static(distPath));
+    console.log('✅ Static files serving enabled');
+  } else {
+    console.warn('⚠️ Warning: dist directory not found. Run "npm run build" first.');
+  }
 }
 
 // AI Provider Factory - Creates isolated instances per request
@@ -2642,6 +2657,23 @@ app.delete('/api/exclusion-list/:location/:attraction', async (req, res) => {
   }
 });
 
+// Health check endpoint for deployment platforms
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || 'development',
+    port: PORT,
+    database: isNeo4jConnected ? 'Neo4j Connected' : 'Local Storage',
+    version: process.env.npm_package_version || '0.1.1'
+  });
+});
+
+// Alternative health check endpoints for different platforms
+app.get('/healthz', (req, res) => res.status(200).send('OK'));
+app.get('/ping', (req, res) => res.status(200).send('pong'));
+
 // Catch-all handler: send back React's index.html file for client-side routing
 if (process.env.NODE_ENV === 'production') {
   app.use((req, res, next) => {
@@ -2649,8 +2681,17 @@ if (process.env.NODE_ENV === 'production') {
     if (req.path.startsWith('/api/') || req.path.includes('.')) {
       return next();
     }
-    console.log(`🔄 Serving index.html for route: ${req.path}`);
-    res.sendFile(path.join(process.cwd(), 'dist', 'index.html'));
+    
+    const indexPath = path.join(process.cwd(), 'dist', 'index.html');
+    
+    // Check if index.html exists before serving
+    if (fs.existsSync(indexPath)) {
+      console.log(`🔄 Serving index.html for route: ${req.path}`);
+      res.sendFile(indexPath);
+    } else {
+      console.error('❌ index.html not found in dist directory');
+      res.status(500).send('Application not built. Please run "npm run build" first.');
+    }
   });
 }
 
@@ -2671,8 +2712,8 @@ process.on('SIGTERM', async () => {
   process.exit(0);
 });
 
-app.listen(PORT, () => {
-  console.log('Server listening on http://localhost:' + PORT);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('Server listening on http://0.0.0.0:' + PORT);
   console.log('🚀 Kids Activities Finder server started successfully');
   console.log('📊 Data storage:', isNeo4jConnected ? 'Neo4j AuraDB' : 'Local files');
 });
