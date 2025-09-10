@@ -458,22 +458,18 @@ export default function App() {
       const { activitySearchStartProgress } = getEstimatedProgressSteps();
       
       setLoading({ isLoading: true, progress: 75, status: 'Searching web for current events & recommendations…' });
+      
+      // Add small delay to prevent race conditions
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
       setLoading({ isLoading: true, progress: activitySearchStartProgress, status: 'Generating activity recommendations… This might take a while' });
       
-      const loadingMessages = [
-        'Generating activity recommendations… This might take a while',
-        'Free models are a bit slower… Thanks for your patience! 🤖',
-        'Analyzing local attractions and family-friendly activities… ⏳',
-        'Checking weather conditions and seasonal activities… 🌤️',
-        'Finding the perfect activities for your family… 👨‍👩‍👧‍👦',
-        'Searching for hidden gems and popular destinations… 💎',
-        'Considering age-appropriate activities and duration… 🎯',
-        'Almost ready with personalized recommendations… ✨'
-      ];
+      console.log(`🎯 Starting AI search at ${activitySearchStartProgress}% progress`);
       
-      let messageIndex = 0;
+      // Add another small delay to ensure loading state is rendered
+      await new Promise(resolve => setTimeout(resolve, 300));
       
-      // Clear any existing intervals first
+      // Clear any existing intervals first to prevent interference
       if (messageInterval.current) {
         clearInterval(messageInterval.current);
         messageInterval.current = null;
@@ -482,18 +478,6 @@ export default function App() {
         clearTimeout(messageTimeout.current);
         messageTimeout.current = null;
       }
-      
-      messageInterval.current = setInterval(() => {
-        messageIndex = (messageIndex + 1) % loadingMessages.length;
-        setLoading({ isLoading: true, progress: activitySearchStartProgress, status: loadingMessages[messageIndex] });
-      }, 15000);
-      
-      messageTimeout.current = setTimeout(() => {
-        if (messageIndex === 0) {
-          messageIndex = 1;
-          setLoading({ isLoading: true, progress: activitySearchStartProgress, status: loadingMessages[messageIndex] });
-        }
-      }, 5000);
       
       try {
         // Log activity search start

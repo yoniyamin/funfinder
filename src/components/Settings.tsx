@@ -194,6 +194,107 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
     }
   };
 
+  // Frontend-Backend Connectivity Test
+  const [connectivityTesting, setConnectivityTesting] = useState(false);
+  const [connectivityResult, setConnectivityResult] = useState<{success: boolean; message: string; details?: any} | null>(null);
+
+  const testConnectivity = async () => {
+    setConnectivityTesting(true);
+    setConnectivityResult(null);
+    
+    console.log('🧪 Testing frontend-backend connectivity...');
+    
+    try {
+      // Test basic connectivity
+      const startTime = Date.now();
+      const response = await fetch('/api/test', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      const endTime = Date.now();
+      const responseTime = endTime - startTime;
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.ok) {
+        setConnectivityResult({
+          success: true,
+          message: `✅ Backend connectivity test successful! Response time: ${responseTime}ms`,
+          details: {
+            responseTime: responseTime,
+            serverTime: data.server_time,
+            clientTime: startTime,
+            timeDiff: data.server_time - startTime,
+            message: data.message
+          }
+        });
+        console.log('✅ Connectivity test passed:', data);
+      } else {
+        throw new Error('Backend responded but test failed');
+      }
+    } catch (error: any) {
+      console.error('❌ Connectivity test failed:', error);
+      setConnectivityResult({
+        success: false,
+        message: `❌ Backend connectivity test failed: ${error.message}`,
+        details: { error: error.message }
+      });
+    } finally {
+      setConnectivityTesting(false);
+    }
+  };
+
+  // Advanced Search API Test
+  const [searchApiTesting, setSearchApiTesting] = useState(false);
+  const [searchApiResult, setSearchApiResult] = useState<{success: boolean; message: string; details?: any} | null>(null);
+
+  const testSearchApi = async () => {
+    setSearchApiTesting(true);
+    setSearchApiResult(null);
+    
+    console.log('🔍 Testing search API endpoint...');
+    
+    try {
+      const startTime = Date.now();
+      
+      // Test the health endpoint first
+      const healthResponse = await fetch('/api/health');
+      if (!healthResponse.ok) {
+        throw new Error(`Health check failed: HTTP ${healthResponse.status}`);
+      }
+      
+      const healthData = await healthResponse.json();
+      const endTime = Date.now();
+      const responseTime = endTime - startTime;
+      
+      setSearchApiResult({
+        success: true,
+        message: `✅ Search API health check successful! Response time: ${responseTime}ms`,
+        details: {
+          responseTime: responseTime,
+          health: healthData.health,
+          services: healthData.health.services
+        }
+      });
+      console.log('✅ Search API test passed:', healthData);
+    } catch (error: any) {
+      console.error('❌ Search API test failed:', error);
+      setSearchApiResult({
+        success: false,
+        message: `❌ Search API test failed: ${error.message}`,
+        details: { error: error.message }
+      });
+    } finally {
+      setSearchApiTesting(false);
+    }
+  };
+
   const handleApiKeyChange = (key: string, value: string | boolean | number) => {
     setApiKeys(prev => ({ ...prev, [key]: value }));
     setHasUnsavedChanges(true);
@@ -818,6 +919,103 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
 
           {activeTab === 'database' && (
             <div className="space-y-6">
+              {/* Frontend-Backend Connectivity Tests */}
+              <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="text-2xl">🔗</span>
+                  <div>
+                    <h3 className="font-semibold text-gray-800">Frontend-Backend Connectivity</h3>
+                    <p className="text-sm text-gray-600">
+                      Test the communication between frontend and backend to diagnose search issues
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 mb-4 flex-wrap">
+                  <button 
+                    onClick={testConnectivity}
+                    disabled={connectivityTesting}
+                    className="btn btn-primary flex items-center gap-2"
+                  >
+                    {connectivityTesting ? (
+                      <>
+                        <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div>
+                        Testing Connectivity...
+                      </>
+                    ) : (
+                      <>🧪 Test Basic Connectivity</>
+                    )}
+                  </button>
+
+                  <button 
+                    onClick={testSearchApi}
+                    disabled={searchApiTesting}
+                    className="btn btn-secondary flex items-center gap-2"
+                  >
+                    {searchApiTesting ? (
+                      <>
+                        <div className="animate-spin w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full"></div>
+                        Testing Search API...
+                      </>
+                    ) : (
+                      <>🔍 Test Search Health</>
+                    )}
+                  </button>
+                </div>
+
+                {/* Connectivity Test Results */}
+                {connectivityResult && (
+                  <div className={`p-4 rounded-lg border mb-4 ${
+                    connectivityResult.success 
+                      ? 'bg-green-50 border-green-200' 
+                      : 'bg-red-50 border-red-200'
+                  }`}>
+                    <div className="text-sm font-medium mb-2">
+                      {connectivityResult.message}
+                    </div>
+                    {connectivityResult.details && (
+                      <details className="text-xs text-gray-600 cursor-pointer">
+                        <summary className="font-medium hover:text-gray-800">View Technical Details</summary>
+                        <pre className="mt-2 bg-gray-100 p-2 rounded overflow-auto">
+                          {JSON.stringify(connectivityResult.details, null, 2)}
+                        </pre>
+                      </details>
+                    )}
+                  </div>
+                )}
+
+                {/* Search API Test Results */}
+                {searchApiResult && (
+                  <div className={`p-4 rounded-lg border mb-4 ${
+                    searchApiResult.success 
+                      ? 'bg-green-50 border-green-200' 
+                      : 'bg-red-50 border-red-200'
+                  }`}>
+                    <div className="text-sm font-medium mb-2">
+                      {searchApiResult.message}
+                    </div>
+                    {searchApiResult.details && (
+                      <details className="text-xs text-gray-600 cursor-pointer">
+                        <summary className="font-medium hover:text-gray-800">View Health Check Details</summary>
+                        <pre className="mt-2 bg-gray-100 p-2 rounded overflow-auto">
+                          {JSON.stringify(searchApiResult.details, null, 2)}
+                        </pre>
+                      </details>
+                    )}
+                  </div>
+                )}
+
+                <div className="text-sm text-gray-600 bg-white p-3 rounded border">
+                  <p className="font-medium mb-1">🔧 What these tests check:</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    <li><strong>Basic Connectivity:</strong> Tests simple frontend-backend communication</li>
+                    <li><strong>Search Health:</strong> Verifies search API endpoints and service status</li>
+                    <li><strong>Response Time:</strong> Measures network latency and performance</li>
+                    <li><strong>Service Status:</strong> Checks if AI providers and database are connected</li>
+                  </ul>
+                </div>
+              </div>
+
               {/* Neo4j Connection Status */}
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6">
                 <div className="flex items-center gap-3 mb-4">

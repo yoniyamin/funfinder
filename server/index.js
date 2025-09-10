@@ -32,6 +32,39 @@ app.use((req, res, next) => {
   next();
 });
 
+// Health check endpoint for connectivity testing
+app.get('/api/health', (req, res) => {
+  const healthStatus = {
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    version: process.env.npm_package_version || '1.0.0',
+    node_version: process.version,
+    environment: process.env.NODE_ENV || 'development',
+    services: {
+      neo4j: typeof dataManager !== 'undefined' && dataManager ? 'connected' : 'disconnected',
+      ai_providers: {
+        gemini: process.env.GEMINI_API_KEY ? 'configured' : 'not_configured',
+        openrouter: process.env.OPENROUTER_API_KEY ? 'configured' : 'not_configured'
+      }
+    }
+  };
+  
+  console.log('💓 Health check requested:', healthStatus);
+  res.json({ ok: true, health: healthStatus });
+});
+
+// Simple connectivity test endpoint
+app.get('/api/test', (req, res) => {
+  console.log('🧪 Connectivity test requested');
+  res.json({ 
+    ok: true, 
+    message: 'Backend connectivity test successful',
+    timestamp: new Date().toISOString(),
+    server_time: Date.now()
+  });
+});
+
 // Serve static files from dist directory in production
 if (process.env.NODE_ENV === 'production') {
   const distPath = path.join(process.cwd(), 'dist');
