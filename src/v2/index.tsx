@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import '../styles.css';
 import App from './App';
+import LoadingScreen from './components/LoadingScreen';
 
 // Temporarily disable StrictMode to prevent development-mode search cancellation issues
 // StrictMode causes components to mount/unmount/remount which cancels fetch requests
@@ -15,27 +16,15 @@ try {
     console.error('❌ Root element not found!');
     throw new Error('Root element not found');
   }
-  
+
   console.log('✅ Root element found, creating React root...');
   const root = ReactDOM.createRoot(rootElement);
-  
-  console.log('✅ React root created, rendering App...');
-  
-  // First try a simple test component to see if React is working
-  const TestComponent = () => {
-    console.log('🧪 Test component rendering...');
-    return (
-      <div style={{ padding: '20px', fontFamily: 'Arial', textAlign: 'center' }}>
-        <h1 style={{ color: 'green' }}>✅ React is Working!</h1>
-        <p>If you see this, React is loading correctly.</p>
-        <p>Loading main app...</p>
-      </div>
-    );
-  };
-  
-  // Render test component first
-  root.render(<TestComponent />);
-  
+
+  console.log('✅ React root created, rendering loading screen...');
+
+  // Render a UI-matched loading screen first
+  root.render(<LoadingScreen />);
+
   // Then after a delay, try to load the main app
   setTimeout(() => {
     console.log('🔄 Switching to main App...');
@@ -57,7 +46,7 @@ try {
       );
     }
   }, 1000);
-  
+
   console.log('✅ V2 App render complete!');
 } catch (error) {
   console.error('❌ Failed to render V2 App:', error);
