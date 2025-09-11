@@ -174,7 +174,17 @@ export default function ResultsPage({
           <div className="flex-1">
             <h1 className="text-lg font-semibold text-gray-900">Activity Results</h1>
             {ctx && (
-              <p className="text-sm text-gray-600">{ctx.location} • {new Date(ctx.date).toLocaleDateString()}</p>
+              <p className="text-sm text-gray-600">
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ctx.location)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:underline"
+                >
+                  {ctx.location}
+                </a>{' '}
+                • {new Date(ctx.date).toLocaleDateString()}
+              </p>
             )}
           </div>
         </div>
@@ -271,7 +281,16 @@ export default function ResultsPage({
                     {showPrompt ? '🔍 Hide Prompt' : '🔍 View AI Prompt'}
                   </button>
                 )}
-                <div className="text-sm text-gray-500">{ctx.location}</div>
+                <div className="text-sm text-gray-500">
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ctx.location)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:underline"
+                  >
+                    {ctx.location}
+                  </a>
+                </div>
               </div>
             </div>
             
@@ -534,9 +553,14 @@ export default function ResultsPage({
                           </div>
                         </div>
                         {a.address && (
-                          <div className="text-[13px] text-gray-600 mt-1 flex items-center gap-1">
+                          <a
+                            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a.address)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[13px] text-gray-600 mt-1 flex items-center gap-1 hover:underline"
+                          >
                             <span>📍</span>{a.address}
-                          </div>
+                          </a>
                         )}
                       </div>
                     </div>
