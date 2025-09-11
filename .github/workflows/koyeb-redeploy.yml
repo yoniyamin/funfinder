@@ -10,7 +10,7 @@ jobs:
     steps:
       - name: Install Koyeb CLI
         run: |
-          curl -fsSL https://github.com/koyeb/koyeb-cli/releases/latest/download/koyeb-linux-amd64 -o /usr/local/bin/koyeb
+          curl -fsSL https://github.com/koyeb/koyeb-cli/releases/download/v5.7.0/koyeb-cli_5.7.0_linux_amd64.tar.gz -o /usr/local/bin/koyeb
           chmod +x /usr/local/bin/koyeb
 
       - name: Trigger redeploy on Koyeb
