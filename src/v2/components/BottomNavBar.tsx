@@ -10,7 +10,6 @@ interface NavButton {
   disabled: boolean;
   isPrimary?: boolean;
   isSecondary?: boolean;
-  compact?: boolean;
 }
 
 interface BottomNavBarProps {
@@ -25,9 +24,9 @@ interface BottomNavBarProps {
   onSettingsOpen: () => void;
   exclusionList: {[location: string]: string[]};
   removeFromExclusionList: (location: string, attraction: string) => Promise<boolean>;
-  onSearch?: () => void; // Add search handler
-  setLoading?: (loading: any) => void; // Add cancel functionality
-  onCancelSearch?: () => void; // Add proper cancel search handler
+  onSearch?: () => void;
+  setLoading?: (loading: any) => void;
+  onCancelSearch?: () => void;
   searchParams?: {
     location: string;
     date: string;
@@ -85,108 +84,59 @@ export default function BottomNavBar({
     searchParams.duration > 0 &&
     searchParams.ages.length > 0;
 
-  // Button configuration for different states
+  // Button configuration for search page only
   const getButtons = (): NavButton[] => {
-    if (currentPage === 'search') {
-      return [
-        {
-          id: 'exclusions',
-          icon: (
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="15" y1="9" x2="9" y2="15"></line>
-              <line x1="9" y1="9" x2="15" y2="15"></line>
-            </svg>
-          ),
-          label: 'Exclusions',
-          color: 'text-white',
-          action: () => setShowExclusionManager(true),
-          disabled: false,
-          isSecondary: true
-        },
-        {
-          id: 'search',
-          icon: loading.isLoading ? (
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="15" y1="9" x2="9" y2="15"></line>
-              <line x1="9" y1="9" x2="15" y2="15"></line>
-            </svg>
-          ) : null,
-          label: loading.isLoading ? 'Cancel' : 'Search',
-          color: 'text-white',
-          action: loading.isLoading 
-            ? () => onCancelSearch && onCancelSearch()
-            : () => canSearch && onSearch && onSearch(),
-          disabled: loading.isLoading ? false : !canSearch,
-          isPrimary: true
-        },
-        {
-          id: 'settings',
-          icon: (
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <circle cx="12" cy="12" r="3"></circle>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1 1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-            </svg>
-          ),
-          label: 'Settings',
-          color: 'text-white',
-          action: onSettingsOpen,
-          disabled: false,
-          isSecondary: true
-        }
-      ];
-    } else {
-      // Results page - fit all buttons in one row (removing search button as requested)
-      return [
-        {
-          id: 'exclusions',
-          icon: (
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="15" y1="9" x2="9" y2="15"></line>
-              <line x1="9" y1="9" x2="15" y2="15"></line>
-            </svg>
-          ),
-          label: 'Exclude',
-          color: 'text-red-600',
-          action: () => setShowExclusionManager(true),
-          disabled: false,
-          compact: true
-        },
-        {
-          id: 'results',
-          icon: (
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-            </svg>
-          ),
-          label: 'Results',
-          color: 'text-green-600',
-          action: () => {},
-          disabled: true, // Already on results
-          compact: true
-        },
-        {
-          id: 'settings',
-          icon: (
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <circle cx="12" cy="12" r="3"></circle>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1 1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-            </svg>
-          ),
-          label: 'Settings',
-          color: 'text-blue-600',
-          action: onSettingsOpen,
-          disabled: false,
-          compact: true
-        }
-      ];
-    }
+    return [
+      {
+        id: 'exclusions',
+        icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="15" y1="9" x2="9" y2="15"></line>
+            <line x1="9" y1="9" x2="15" y2="15"></line>
+          </svg>
+        ),
+        label: 'Exclusions',
+        color: 'text-white',
+        action: () => setShowExclusionManager(true),
+        disabled: false,
+        isSecondary: true
+      },
+      {
+        id: 'search',
+        icon: loading.isLoading ? (
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="15" y1="9" x2="9" y2="15"></line>
+            <line x1="9" y1="9" x2="15" y2="15"></line>
+          </svg>
+        ) : null,
+        label: loading.isLoading ? 'Cancel' : 'Search',
+        color: 'text-white',
+        action: loading.isLoading 
+          ? () => onCancelSearch && onCancelSearch()
+          : () => canSearch && onSearch && onSearch(),
+        disabled: loading.isLoading ? false : !canSearch,
+        isPrimary: true
+      },
+      {
+        id: 'settings',
+        icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1 1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        ),
+        label: 'Settings',
+        color: 'text-white',
+        action: onSettingsOpen,
+        disabled: false,
+        isSecondary: true
+      }
+    ];
   };
 
   const buttons = getButtons();
-  const isCompact = currentPage === 'results';
 
   return (
     <>
@@ -225,27 +175,22 @@ export default function BottomNavBar({
                   key={button.id}
                   onClick={button.action}
                   disabled={button.disabled}
-                  className={`dock-btn flex flex-col items-center justify-center ${
-                    isCompact ? 'py-1 px-2' : 'py-2 px-4'
-                  } relative group transition-all duration-200 ${
+                  className={`dock-btn flex flex-col items-center justify-center py-2 px-4 relative group transition-all duration-200 ${
                     button.disabled ? 'opacity-50 cursor-not-allowed' : ''
                   }`}
                 >
                   {/* Icon */}
-                  <div className={`mb-1 ${button.color} ${isCompact ? 'text-sm' : ''}`}>
+                  <div className={`mb-1 ${button.color}`}>
                     {button.icon}
                   </div>
                   
                   {/* Label */}
-                  <span className={`${button.color} font-medium ${
-                    isCompact ? 'text-xs' : 'text-xs'
-                  }`}>
+                  <span className={`${button.color} font-medium text-xs`}>
                     {button.label}
                   </span>
                   
-                  {/* Active indicator for current page */}
-                  {((button.id === 'search' && currentPage === 'search') || 
-                    (button.id === 'results' && currentPage === 'results')) && (
+                  {/* Active indicator for search page */}
+                  {(button.id === 'search' && currentPage === 'search') && (
                     <div className="absolute -top-1 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-indigo-600 rounded-full"></div>
                   )}
                 </button>

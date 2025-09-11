@@ -2,7 +2,7 @@
   "name": "kids-activities-finder",
   "private": true,
   "type": "module",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "scripts": {
     "dev": "concurrently -k -n client,server -c auto \"npm:dev:client\" \"npm:dev:server\"",
     "dev:client": "vite --host 0.0.0.0 --port 5173",

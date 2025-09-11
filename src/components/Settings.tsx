@@ -318,7 +318,7 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 mobile-settings-overlay">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col mobile-settings-modal">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] sm:max-h-[90vh] max-h-[calc(100vh-2rem)] flex flex-col mobile-settings-modal">
         <div className="p-6 border-b border-gray-200 flex-shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">

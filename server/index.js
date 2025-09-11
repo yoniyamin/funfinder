@@ -2812,5 +2812,6 @@ process.on('SIGTERM', async () => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log('Server listening on http://0.0.0.0:' + PORT);
   console.log('🚀 Kids Activities Finder server started successfully');
+console.log('📦 Version 0.1.2 - Fixed white page deployment issue');
   console.log('📊 Data storage:', isNeo4jConnected ? 'Neo4j AuraDB' : 'Local files');
 });

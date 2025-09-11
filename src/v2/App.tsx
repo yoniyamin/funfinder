@@ -99,7 +99,7 @@ export default function App() {
     searchParams: {
       location: '',
       date: '',
-      duration: '',
+      duration: 1,
       ages: [],
       extraInstructions: ''
     },
@@ -645,7 +645,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
       {/* Main Content */}
-      <main className="pb-24">
+      <main className={state.currentPage === 'search' ? 'pb-24' : ''}>
         {state.currentPage === 'search' && (
           <SearchPage
             searchParams={state.searchParams}
@@ -675,20 +675,22 @@ export default function App() {
         )}
       </main>
 
-      {/* Bottom Navigation */}
-      <BottomNavBar
-        currentPage={state.currentPage}
-        setCurrentPage={setCurrentPage}
-        loading={state.loading}
-        hasResults={state.searchResults.activities !== null}
-        onSettingsOpen={() => setState(prev => ({ ...prev, showSettings: true }))}
-        exclusionList={state.exclusionList}
-        removeFromExclusionList={removeFromExclusionList}
-        onSearch={handleSearch}
-        setLoading={setLoading}
-        onCancelSearch={handleCancelSearch}
-        searchParams={state.searchParams}
-      />
+      {/* Bottom Navigation - Only show on search page */}
+      {state.currentPage === 'search' && (
+        <BottomNavBar
+          currentPage={state.currentPage}
+          setCurrentPage={setCurrentPage}
+          loading={state.loading}
+          hasResults={state.searchResults.activities !== null}
+          onSettingsOpen={() => setState(prev => ({ ...prev, showSettings: true }))}
+          exclusionList={state.exclusionList}
+          removeFromExclusionList={removeFromExclusionList}
+          onSearch={handleSearch}
+          setLoading={setLoading}
+          onCancelSearch={handleCancelSearch}
+          searchParams={state.searchParams}
+        />
+      )}
 
       {/* Settings Modal */}
       <Settings 
