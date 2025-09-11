@@ -1,22 +1,24 @@
 name: Koyeb redeploy
 on:
   push:
-    branches: [ main ]   # adjust if needed
-  workflow_dispatch: {}  # manual trigger
+    branches: [ main ]       # adjust if needed
+  workflow_dispatch: {}
 
 jobs:
   redeploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Install Koyeb CLI
+      - uses: actions/checkout@v4
+
+      - name: Install Koyeb CLI (official script)
         run: |
-          curl -fsSL https://github.com/koyeb/koyeb-cli/releases/download/v5.7.0/koyeb-cli_5.7.0_linux_amd64.tar.gz -o /usr/local/bin/koyeb
-          chmod +x /usr/local/bin/koyeb
+          curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
+          echo "$HOME/.koyeb/bin" >> $GITHUB_PATH
+      - name: Verify CLI
+        run: koyeb --version
 
       - name: Trigger redeploy on Koyeb
         env:
           KOYEB_TOKEN: ${{ secrets.KOYEB_TOKEN }}
         run: |
-          koyeb --token "$KOYEB_TOKEN" services redeploy "representative-vivie/funfinder"
-          # Add --use-cache to speed up builds when appropriate:
-          # koyeb --token "$KOYEB_TOKEN" services redeploy "representative-vivie/funfinder" --use-cache
+          koyeb --token "$KOYEB_TOKEN" services redeploy "representative-v_
