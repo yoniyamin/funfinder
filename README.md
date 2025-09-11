@@ -289,7 +289,7 @@ kef/
 ### Search Interface
 - **Location Input**: Smart city search with autocomplete
 - **Date Selection**: Calendar picker with date validation
-- **Duration**: Flexible time input (hours)
+- **Activity Duration**: Flexible time input (hours)
 - **Ages**: Multi-select age range picker
 - **Categories**: Filter by activity types
 - **Extra Instructions**: Custom requirements

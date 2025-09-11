@@ -393,7 +393,7 @@ export default function SearchPage({
               </div>
               <div className="glass-input flex flex-col">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-medium text-gray-700">Duration</span>
+                  <span className="text-sm font-medium text-gray-700">Activity Duration</span>
                   <span className="text-sm font-bold text-gray-800">
                     {searchParams.duration === 10 ? '10+' : searchParams.duration} hours
                   </span>
