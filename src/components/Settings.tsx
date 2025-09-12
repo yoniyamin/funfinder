@@ -73,10 +73,15 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
 
   useEffect(() => {
     if (isOpen) {
+      setActiveTab('ai'); // Always start with AI tab when modal opens
       loadSettings();
-      if (activeTab === 'caching') {
-        loadCacheStats();
-      }
+    }
+  }, [isOpen]);
+
+  // Separate effect for loading cache stats when caching tab is selected
+  useEffect(() => {
+    if (isOpen && activeTab === 'caching') {
+      loadCacheStats();
     }
   }, [isOpen, activeTab]);
 
@@ -399,48 +404,77 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
             Configure API keys to enhance activity recommendations with real-time data from Google Search and event platforms.
           </p>
           
-          {/* Tab Navigation */}
-          <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
-            <button
-              onClick={() => setActiveTab('ai')}
-              className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-                activeTab === 'ai'
-                  ? 'bg-white text-indigo-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              🤖 AI Providers
-            </button>
-            <button
-              onClick={() => setActiveTab('search')}
-              className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-                activeTab === 'search'
-                  ? 'bg-white text-indigo-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              🔍 Search APIs
-            </button>
-            <button
-              onClick={() => setActiveTab('database')}
-              className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-                activeTab === 'database'
-                  ? 'bg-white text-indigo-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              🗄️ Database
-            </button>
-            <button
-              onClick={() => setActiveTab('caching')}
-              className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-                activeTab === 'caching'
-                  ? 'bg-white text-indigo-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              💾 Caching
-            </button>
+          {/* Compact Tab Navigation */}
+          <div className="flex justify-center">
+            <div className="inline-flex bg-gray-100 p-1 rounded-xl">
+              <button
+                onClick={() => setActiveTab('ai')}
+                className={`group relative flex items-center justify-center min-w-[2.5rem] h-10 rounded-lg font-medium transition-all duration-200 ease-out ${
+                  activeTab === 'ai'
+                    ? 'bg-white text-indigo-600 shadow-md px-3'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
+                }`}
+                title="AI Providers"
+              >
+                <span className="text-lg">🤖</span>
+                {activeTab === 'ai' && (
+                  <span className="ml-2 text-sm whitespace-nowrap">
+                    AI Providers
+                  </span>
+                )}
+              </button>
+              
+              <button
+                onClick={() => setActiveTab('search')}
+                className={`group relative flex items-center justify-center min-w-[2.5rem] h-10 rounded-lg font-medium transition-all duration-200 ease-out ${
+                  activeTab === 'search'
+                    ? 'bg-white text-indigo-600 shadow-md px-3'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
+                }`}
+                title="Search APIs"
+              >
+                <span className="text-lg">🔍</span>
+                {activeTab === 'search' && (
+                  <span className="ml-2 text-sm whitespace-nowrap">
+                    Search APIs
+                  </span>
+                )}
+              </button>
+              
+              <button
+                onClick={() => setActiveTab('database')}
+                className={`group relative flex items-center justify-center min-w-[2.5rem] h-10 rounded-lg font-medium transition-all duration-200 ease-out ${
+                  activeTab === 'database'
+                    ? 'bg-white text-indigo-600 shadow-md px-3'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
+                }`}
+                title="Database"
+              >
+                <span className="text-lg">🗄️</span>
+                {activeTab === 'database' && (
+                  <span className="ml-2 text-sm whitespace-nowrap">
+                    Database
+                  </span>
+                )}
+              </button>
+              
+              <button
+                onClick={() => setActiveTab('caching')}
+                className={`group relative flex items-center justify-center min-w-[2.5rem] h-10 rounded-lg font-medium transition-all duration-200 ease-out ${
+                  activeTab === 'caching'
+                    ? 'bg-white text-indigo-600 shadow-md px-3'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
+                }`}
+                title="Caching"
+              >
+                <span className="text-lg">💾</span>
+                {activeTab === 'caching' && (
+                  <span className="ml-2 text-sm whitespace-nowrap">
+                    Caching
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -455,8 +489,8 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
             </div>
           )}
 
-          {/* Current Configuration Status */}
-          {settings && (
+          {/* Current Configuration Status - Only show on AI tab */}
+          {settings && activeTab === 'ai' && (
             <div className="mb-6 p-4 bg-gray-50 rounded-lg">
               <h3 className="font-semibold mb-3 flex items-center gap-2">
                 <span>📊</span>
@@ -1209,13 +1243,13 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
                   {/* Similarity Threshold */}
-                  <div className="space-y-3">
+                  <div className="space-y-2 sm:space-y-3">
                     <label className="block text-sm font-medium text-gray-700">
                       Similarity Threshold
                     </label>
-                    <div className="flex items-center space-x-3">
+                    <div className="flex items-center space-x-2 sm:space-x-3">
                       <input
                         type="range"
                         min="0.75"
@@ -1224,7 +1258,7 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                         defaultValue="0.90"
                         className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                       />
-                      <span className="text-sm font-medium text-gray-600 w-12">90%</span>
+                      <span className="text-sm font-medium text-gray-600 w-10 sm:w-12">90%</span>
                     </div>
                     <p className="text-xs text-gray-500">
                       Minimum similarity required to reuse cached results (currently 90%)
@@ -1232,11 +1266,11 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                   </div>
 
                   {/* Location Weight */}
-                  <div className="space-y-3">
+                  <div className="space-y-2 sm:space-y-3">
                     <label className="block text-sm font-medium text-gray-700">
                       Location Weight
                     </label>
-                    <div className="flex items-center space-x-3">
+                    <div className="flex items-center space-x-2 sm:space-x-3">
                       <input
                         type="range"
                         min="0.1"
@@ -1245,7 +1279,7 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                         defaultValue="0.20"
                         className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                       />
-                      <span className="text-sm font-medium text-gray-600 w-12">20%</span>
+                      <span className="text-sm font-medium text-gray-600 w-10 sm:w-12">20%</span>
                     </div>
                     <p className="text-xs text-gray-500">
                       How much location similarity affects cache matching
@@ -1253,11 +1287,11 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                   </div>
 
                   {/* Weather Weight */}
-                  <div className="space-y-3">
+                  <div className="space-y-2 sm:space-y-3">
                     <label className="block text-sm font-medium text-gray-700">
                       Weather Weight
                     </label>
-                    <div className="flex items-center space-x-3">
+                    <div className="flex items-center space-x-2 sm:space-x-3">
                       <input
                         type="range"
                         min="0.2"
@@ -1266,7 +1300,7 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                         defaultValue="0.40"
                         className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                       />
-                      <span className="text-sm font-medium text-gray-600 w-12">40%</span>
+                      <span className="text-sm font-medium text-gray-600 w-10 sm:w-12">40%</span>
                     </div>
                     <p className="text-xs text-gray-500">
                       How much weather similarity affects cache matching
@@ -1274,11 +1308,11 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                   </div>
 
                   {/* Temporal Weight */}
-                  <div className="space-y-3">
+                  <div className="space-y-2 sm:space-y-3">
                     <label className="block text-sm font-medium text-gray-700">
                       Temporal Weight
                     </label>
-                    <div className="flex items-center space-x-3">
+                    <div className="flex items-center space-x-2 sm:space-x-3">
                       <input
                         type="range"
                         min="0.1"
@@ -1287,7 +1321,7 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                         defaultValue="0.30"
                         className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                       />
-                      <span className="text-sm font-medium text-gray-600 w-12">30%</span>
+                      <span className="text-sm font-medium text-gray-600 w-10 sm:w-12">30%</span>
                     </div>
                     <p className="text-xs text-gray-500">
                       How much time/date similarity affects cache matching
@@ -1313,7 +1347,7 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                   Cache Management
                 </h3>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                   {/* Search Results Cache */}
                   <div className="border border-gray-200 rounded-lg p-4 bg-white">
                     <div className="flex items-center gap-2 mb-3">
@@ -1423,51 +1457,51 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                     <p className="text-sm text-gray-600 mb-4">
                       Your search history and preferences
                     </p>
-                    <div className="space-y-2">
-                      <button 
-                        onClick={() => clearSearchHistory('all')}
-                        disabled={cacheOperations.clearHistoryAll}
-                        className="btn btn-secondary w-full text-sm"
-                      >
-                        {cacheOperations.clearHistoryAll ? (
-                          <>
-                            <div className="animate-spin w-3 h-3 border border-gray-400 border-t-transparent rounded-full"></div>
-                            Clearing...
-                          </>
-                        ) : (
-                          'Clear All History'
-                        )}
-                      </button>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          min="1"
-                          max="365"
-                          defaultValue="30"
-                          className="input text-sm flex-1"
-                          placeholder="Days"
-                          id="historyDaysInput"
-                        />
+                      <div className="space-y-2">
                         <button 
-                          onClick={() => {
-                            const daysInput = document.getElementById('historyDaysInput') as HTMLInputElement;
-                            const days = parseInt(daysInput?.value || '30');
-                            clearSearchHistory('old', days);
-                          }}
-                          disabled={cacheOperations.clearHistoryOld}
-                          className="btn btn-secondary text-xs"
+                          onClick={() => clearSearchHistory('all')}
+                          disabled={cacheOperations.clearHistoryAll}
+                          className="btn btn-secondary w-full text-xs sm:text-sm"
                         >
-                          {cacheOperations.clearHistoryOld ? (
+                          {cacheOperations.clearHistoryAll ? (
                             <>
-                              <div className="animate-spin w-2 h-2 border border-gray-400 border-t-transparent rounded-full"></div>
-                              ...
+                              <div className="animate-spin w-3 h-3 border border-gray-400 border-t-transparent rounded-full"></div>
+                              Clearing...
                             </>
                           ) : (
-                            'Clear Old'
+                            'Clear All History'
                           )}
                         </button>
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                          <input
+                            type="number"
+                            min="1"
+                            max="365"
+                            defaultValue="30"
+                            className="input text-sm flex-1"
+                            placeholder="Days"
+                            id="historyDaysInput"
+                          />
+                          <button 
+                            onClick={() => {
+                              const daysInput = document.getElementById('historyDaysInput') as HTMLInputElement;
+                              const days = parseInt(daysInput?.value || '30');
+                              clearSearchHistory('old', days);
+                            }}
+                            disabled={cacheOperations.clearHistoryOld}
+                            className="btn btn-secondary text-xs sm:flex-shrink-0"
+                          >
+                            {cacheOperations.clearHistoryOld ? (
+                              <>
+                                <div className="animate-spin w-2 h-2 border border-gray-400 border-t-transparent rounded-full"></div>
+                                Clearing...
+                              </>
+                            ) : (
+                              'Clear Old'
+                            )}
+                          </button>
+                        </div>
                       </div>
-                    </div>
                   </div>
 
                   {/* Clear All */}
@@ -1502,7 +1536,7 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                     <span>📊</span>
                     Cache Statistics
                   </h4>
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 text-center">
                     <div>
                       <div className="text-lg font-semibold text-blue-600">
                         {cacheStats ? cacheStats.searchResults : '--'}
@@ -1554,17 +1588,6 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
             </div>
           )}
 
-          {/* Setup Guide Button */}
-          <div className="mt-6 text-center">
-            <button 
-              onClick={() => setShowSetupGuide(true)}
-              className="btn btn-secondary flex items-center gap-2 mx-auto"
-            >
-              📝 Open Detailed Setup Guide
-            </button>
-            <p className="text-xs text-gray-500 mt-2">Step-by-step instructions for getting API keys</p>
-          </div>
-
           {/* Action Buttons */}
           <div className="mt-6 flex gap-3 justify-between">
             <div className="flex items-center">
@@ -1597,6 +1620,17 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                 )}
               </button>
             </div>
+          </div>
+
+          {/* Setup Guide Button */}
+          <div className="mt-6 text-center">
+            <button 
+              onClick={() => setShowSetupGuide(true)}
+              className="btn btn-secondary flex items-center gap-2 mx-auto"
+            >
+              📝 Open Detailed Setup Guide
+            </button>
+            <p className="text-xs text-gray-500 mt-2">Step-by-step instructions for getting API keys</p>
           </div>
         </div>
       </div>

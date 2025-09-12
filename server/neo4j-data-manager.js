@@ -980,11 +980,11 @@ export class Neo4jDataManager {
     try {
       const result = await session.run(`
         RETURN 
-          size((n:SearchCache)) + size((n:SearchCacheEnhanced)) as searchResults,
-          size((n:WeatherCache)) as weather,
-          size((n:FestivalCache)) as festivals,
-          size((n:SearchHistory)) as history,
-          size((n:LocationProfile)) as locations
+          size((:SearchCache)) + size((:SearchCacheEnhanced)) as searchResults,
+          size((:WeatherCache)) as weather,
+          size((:FestivalCache)) as festivals,
+          size((:SearchHistory)) as history,
+          size((:LocationProfile)) as locations
       `);
       
       const record = result.records[0];
