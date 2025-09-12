@@ -9,6 +9,7 @@ interface ApiSettings {
   ai_provider: string;
   openrouter_model: string;
   max_activities: number;
+  cache_include_model: boolean;
   gemini_api_key_masked: string;
   openrouter_api_key_masked: string;
   google_search_api_key_masked: string;
@@ -54,6 +55,7 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
     ai_provider: 'gemini',
     openrouter_model: 'deepseek/deepseek-chat-v3.1:free',
     max_activities: 20,
+    cache_include_model: false,
     google_search_api_key: '',
     google_search_engine_id: '',
     openwebninja_api_key: '',
@@ -96,7 +98,8 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
           ...prev,
           ai_provider: data.settings.ai_provider || 'gemini',
           openrouter_model: data.settings.openrouter_model || 'deepseek/deepseek-chat-v3.1:free',
-          max_activities: data.settings.max_activities || 20
+          max_activities: data.settings.max_activities || 20,
+          cache_include_model: data.settings.cache_include_model !== undefined ? data.settings.cache_include_model : prev.cache_include_model
         }));
       }
     } catch (error) {
@@ -143,6 +146,7 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
           openrouter_model: data.settings.openrouter_model || prev.openrouter_model,
           enable_gemini_holidays: data.settings.enable_gemini_holidays !== undefined ? data.settings.enable_gemini_holidays : prev.enable_gemini_holidays,
           max_activities: data.settings.max_activities !== undefined ? data.settings.max_activities : prev.max_activities,
+          cache_include_model: data.settings.cache_include_model !== undefined ? data.settings.cache_include_model : prev.cache_include_model,
           // Clear only the actual API key fields that were saved
           gemini_api_key: prev.gemini_api_key === 'EDIT_MODE' ? '' : prev.gemini_api_key.length > 0 ? '' : prev.gemini_api_key,
           openrouter_api_key: prev.openrouter_api_key === 'EDIT_MODE' ? '' : prev.openrouter_api_key.length > 0 ? '' : prev.openrouter_api_key,
@@ -1329,11 +1333,27 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                   </div>
                 </div>
 
+                {/* AI Model Cache Toggle */}
+                <div className="space-y-2 sm:space-y-3 mt-4">
+                  <label className="flex items-center text-sm font-medium text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={apiKeys.cache_include_model}
+                      onChange={e => handleApiKeyChange('cache_include_model', e.target.checked)}
+                      className="mr-2"
+                    />
+                    Separate cache per AI model
+                  </label>
+                  <p className="text-xs text-gray-500">
+                    When enabled, changing the AI model will bypass existing cached results.
+                  </p>
+                </div>
+
                 <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
                   <div className="text-sm text-blue-800 flex items-start gap-2">
                     <span className="text-blue-600 flex-shrink-0">💡</span>
                     <div>
-                      <span className="font-medium">Note:</span> Changes to cache settings will apply to new searches. 
+                      <span className="font-medium">Note:</span> Changes to cache settings will apply to new searches.
                       Existing cached results remain unaffected.
                     </div>
                   </div>
