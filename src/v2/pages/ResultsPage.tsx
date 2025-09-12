@@ -130,6 +130,7 @@ export default function ResultsPage({
   const [showPrompt, setShowPrompt] = useState<boolean>(false);
   const [prompt, setPrompt] = useState<string>('');
   const [showExclusionManager, setShowExclusionManager] = useState<boolean>(false);
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'copied'>('idle');
 
   const { activities, ctx, webSources, cacheInfo } = searchResults;
 
@@ -463,39 +464,40 @@ export default function ResultsPage({
                 <button
                   onClick={async () => {
                     try {
+                      setCopyStatus('copying');
                       await navigator.clipboard.writeText(prompt);
-                      // Simple feedback for mobile - could be enhanced with a toast
-                      const button = document.activeElement as HTMLButtonElement;
-                      const originalText = button.textContent;
-                      button.textContent = '✓ Copied';
+                      setCopyStatus('copied');
                       setTimeout(() => {
-                        if (button) button.textContent = originalText;
+                        setCopyStatus('idle');
                       }, 2000);
                     } catch (err) {
                       console.error('Failed to copy:', err);
+                      setCopyStatus('idle');
                     }
                   }}
-                  className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1 px-2 py-1 bg-indigo-50 hover:bg-indigo-100 rounded-full transition-colors"
+                  disabled={copyStatus === 'copying'}
+                  className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1 px-2 py-1 bg-indigo-50 hover:bg-indigo-100 rounded-full transition-colors disabled:opacity-50"
                 >
-                  📋 Copy
+                  {copyStatus === 'copied' ? '✓ Copied' : copyStatus === 'copying' ? '⏳ Copying...' : '📋 Copy'}
                 </button>
                 <span className="text-xs text-gray-500">Tap prompt to copy</span>
               </div>
             </div>
             <div 
-              className="bg-gray-50 rounded-xl p-4 overflow-auto cursor-pointer hover:bg-gray-100 transition-colors"
+              className={`rounded-xl p-4 overflow-auto cursor-pointer transition-colors ${
+                copyStatus === 'copied' ? 'bg-green-50' : 'bg-gray-50 hover:bg-gray-100'
+              }`}
               onClick={async () => {
                 try {
+                  setCopyStatus('copying');
                   await navigator.clipboard.writeText(prompt);
-                  // Simple feedback for mobile
-                  const div = document.activeElement as HTMLDivElement;
-                  const originalBg = div.className;
-                  div.className = div.className.replace('bg-gray-50', 'bg-green-50');
+                  setCopyStatus('copied');
                   setTimeout(() => {
-                    if (div) div.className = originalBg;
+                    setCopyStatus('idle');
                   }, 1000);
                 } catch (err) {
                   console.error('Failed to copy:', err);
+                  setCopyStatus('idle');
                 }
               }}
             >
