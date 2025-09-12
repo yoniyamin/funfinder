@@ -42,6 +42,7 @@ interface AppState {
         searchKey: string;
       };
     };
+    aiModel?: string;
   };
   loading: {
     isLoading: boolean;
@@ -116,7 +117,8 @@ export default function App() {
     searchResults: {
       activities: null,
       ctx: null,
-      webSources: null
+      webSources: null,
+      aiModel: undefined
     },
     loading: {
       isLoading: false,
@@ -389,7 +391,7 @@ export default function App() {
 
       // Clear existing results and reset states
       console.log('🚀 Starting search process...');
-      setSearchResults({ activities: null, webSources: null, ctx: null });
+      setSearchResults({ activities: null, webSources: null, ctx: null, aiModel: undefined });
       setLoading({ isLoading: true, progress: 0, status: 'Starting search...' });
       
       // Add small delay to ensure state is updated
@@ -568,7 +570,8 @@ export default function App() {
           activities: data.data.activities,
           webSources: data.data.web_sources || null,
           ctx: context,
-          cacheInfo: (data.data as any).cacheInfo
+          cacheInfo: (data.data as any).cacheInfo,
+          aiModel: data.data.ai_model || undefined
         });
         
         setLoading({ isLoading: true, progress: 100, status: 'Complete!' });
@@ -716,7 +719,8 @@ export default function App() {
         activities: data.data.activities,
         webSources: data.data.web_sources || null,
         ctx: context,
-        cacheInfo: (data.data as any).cacheInfo
+        cacheInfo: (data.data as any).cacheInfo,
+        aiModel: data.data.ai_model || undefined
       });
       
       setLoading({ isLoading: true, progress: 100, status: 'Fresh search complete!' });

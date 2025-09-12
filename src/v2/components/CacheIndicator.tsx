@@ -14,11 +14,13 @@ interface CacheInfo {
 interface CacheIndicatorProps {
   cacheInfo?: CacheInfo;
   onRefreshSearch?: () => void;
+  currentSearch?: { location: string; date: string };
 }
 
-export default function CacheIndicator({ cacheInfo, onRefreshSearch }: CacheIndicatorProps) {
+export default function CacheIndicator({ cacheInfo, onRefreshSearch, currentSearch }: CacheIndicatorProps) {
   const [showTooltip, setShowTooltip] = useState(false);
   const [tooltipPosition, setTooltipPosition] = useState<{vertical: 'top' | 'bottom', horizontal: 'left' | 'center' | 'right'}>({vertical: 'top', horizontal: 'center'});
+  const [showFactors, setShowFactors] = useState(false);
 
   if (!cacheInfo?.isCached) {
     return null;
@@ -82,8 +84,15 @@ export default function CacheIndicator({ cacheInfo, onRefreshSearch }: CacheIndi
     setShowTooltip(!showTooltip);
   };
 
+  const locationMatch = currentSearch && cacheInfo
+    ? currentSearch.location.toLowerCase() === cacheInfo.originalSearch.location.toLowerCase()
+    : true;
+  const dateMatch = currentSearch && cacheInfo
+    ? currentSearch.date === cacheInfo.originalSearch.date
+    : true;
+
   return (
-    <div className="relative inline-block">
+    <div className="relative inline-flex items-center gap-1">
       <div
         className={`inline-flex items-center cursor-pointer transition-colors hover:scale-110 ${getIconColor(cacheInfo.cacheType, cacheInfo.similarity)}`}
         onClick={handleTooltipToggle}
@@ -94,20 +103,26 @@ export default function CacheIndicator({ cacheInfo, onRefreshSearch }: CacheIndi
         }}
         onMouseLeave={() => setShowTooltip(false)}
       >
-        <svg 
-          className="w-5 h-5" 
-          fill="currentColor" 
+        <svg
+          className="w-5 h-5"
+          fill="currentColor"
           viewBox="0 0 20 20"
         >
           <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.381z" clipRule="evenodd" />
         </svg>
       </div>
+      <span
+        className={`text-xs font-medium cursor-pointer ${getSimilarityColor(cacheInfo.similarity)}`}
+        onClick={() => setShowFactors(!showFactors)}
+      >
+        {(cacheInfo.similarity * 100).toFixed(1)}%
+      </span>
 
       {showTooltip && (
-        <div 
+        <div
           className={`absolute z-50 w-80 bg-white border border-gray-200 rounded-lg shadow-xl p-4 text-sm ${
-            tooltipPosition.vertical === 'top' 
-              ? 'bottom-full mb-2' 
+            tooltipPosition.vertical === 'top'
+              ? 'bottom-full mb-2'
               : 'top-full mt-2'
           } ${
             tooltipPosition.horizontal === 'left' 
@@ -196,6 +211,18 @@ export default function CacheIndicator({ cacheInfo, onRefreshSearch }: CacheIndi
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {showFactors && (
+        <div className="absolute z-50 top-full mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg p-2 text-xs left-1/2 transform -translate-x-1/2">
+          <div className="font-semibold text-gray-800 mb-1">Score Factors</div>
+          <div className={locationMatch ? 'text-green-700' : 'text-orange-700'}>
+            📍 Location {locationMatch ? 'match' : 'changed'}
+          </div>
+          <div className={dateMatch ? 'text-green-700' : 'text-orange-700'}>
+            📅 Date {dateMatch ? 'match' : 'changed'}
           </div>
         </div>
       )}

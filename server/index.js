@@ -242,7 +242,8 @@ let apiKeys = {
   openwebninja_api_key: '',
   ticketmaster_api_key: '',
   enable_gemini_holidays: false, // Enable Gemini-powered holiday/festival fetching
-  max_activities: 20 // Maximum number of activities to generate
+  max_activities: 20, // Maximum number of activities to generate
+  cache_include_model: false // Include AI model in cache key
 };
 
 // MongoDB Data Manager - Replaces file-based storage with cloud storage
@@ -349,7 +350,16 @@ class MongoDataManager {
             console.log(`✅ Filtered Mongo cached results: ${originalCount} → ${cached.results.activities.length} activities`);
           }
         }
-        
+
+        if (cached.ai_provider && cached.results) {
+          if (!cached.results.ai_model) {
+            cached.results.ai_model = cached.ai_provider;
+          }
+          if (!cached.results.ai_provider) {
+            cached.results.ai_provider = cached.ai_provider;
+          }
+        }
+
         return cached.results;
       }
     } catch (error) {
@@ -1065,6 +1075,7 @@ function loadFromEnvironment() {
   apiKeys.ticketmaster_api_key = process.env.TICKETMASTER_API_KEY || '';
   apiKeys.enable_gemini_holidays = process.env.ENABLE_GEMINI_HOLIDAYS === 'true' || false;
   apiKeys.max_activities = parseInt(process.env.MAX_ACTIVITIES) || 20;
+  apiKeys.cache_include_model = process.env.CACHE_INCLUDE_MODEL === 'true' || false;
   
   const hasKeys = Object.values(apiKeys).some(key => typeof key === 'string' && key.length > 0);
   if (hasKeys) {
@@ -2159,6 +2170,7 @@ app.get('/api/settings', (req, res) => {
       openrouter_model: apiKeys.openrouter_model || 'deepseek/deepseek-r1-0528-qwen3-8b:free',
       enable_gemini_holidays: !!apiKeys.enable_gemini_holidays,
       max_activities: apiKeys.max_activities || 20,
+      cache_include_model: !!apiKeys.cache_include_model,
       // Show masked versions for UI feedback
       gemini_api_key_masked: apiKeys.gemini_api_key ? 
         apiKeys.gemini_api_key.substring(0, 8) + '...' + apiKeys.gemini_api_key.slice(-4) : '',
@@ -2219,6 +2231,7 @@ app.post('/api/settings', async (req, res) => {
       openrouter_model: apiKeys.openrouter_model || 'deepseek/deepseek-chat-v3.1:free',
       enable_gemini_holidays: !!apiKeys.enable_gemini_holidays,
       max_activities: apiKeys.max_activities || 20,
+      cache_include_model: !!apiKeys.cache_include_model,
       updated: updated
     };
     
@@ -2724,6 +2737,37 @@ async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivitie
   return json;
 }
 
+function getModelIdentifier() {
+  const provider = apiKeys.ai_provider || 'gemini';
+  if (apiKeys.cache_include_model && provider === 'openrouter') {
+    return `openrouter-${apiKeys.openrouter_model || 'deepseek/deepseek-chat-v3.1:free'}`;
+  }
+  return provider;
+}
+
+function getActiveModelName() {
+  const provider = apiKeys.ai_provider || 'gemini';
+  if (provider === 'openrouter') {
+    return `openrouter-${apiKeys.openrouter_model || 'deepseek/deepseek-chat-v3.1:free'}`;
+  }
+  return 'gemini-2.5-flash';
+}
+
+function filterOutFestivalActivities(result) {
+  if (result && Array.isArray(result.activities)) {
+    result.activities = result.activities.filter(act => {
+      const category = (act.category || '').toLowerCase();
+      const title = (act.title || '').toLowerCase();
+      return !(
+        category.includes('festival') ||
+        category.includes('holiday') ||
+        title.includes('festival') ||
+        title.includes('holiday')
+      );
+    });
+  }
+}
+
 app.post('/api/activities', async (req, res) => {
   // Handle request cancellation
   let isCancelled = false;
@@ -2808,16 +2852,13 @@ app.post('/api/activities', async (req, res) => {
     }
     if (isNeo4jConnected && dataManager instanceof Neo4jDataManager && !bypassCache) {
       try {
-        const provider = apiKeys.ai_provider || 'gemini';
-        const modelName = provider === 'openrouter' 
-          ? `openrouter-${apiKeys.openrouter_model || 'deepseek/deepseek-chat-v3.1:free'}`
-          : provider;
+        const modelName = getModelIdentifier();
         const cacheKey = `${allowed}-${maxActivities || 'default'}`;
         const cachedResults = await dataManager.getCachedSearchResults(
-          ctx.location, 
-          ctx.date, 
-          ctx.duration_hours, 
-          ctx.ages, 
+          ctx.location,
+          ctx.date,
+          ctx.duration_hours,
+          ctx.ages,
           cacheKey,
           ctx.extra_instructions || '',
           modelName,
@@ -2848,6 +2889,13 @@ app.post('/api/activities', async (req, res) => {
             console.log(`✅ Filtered cached results: ${originalCount} → ${cachedResults.activities.length} activities`);
           }
           
+          filterOutFestivalActivities(cachedResults);
+          if (!cachedResults.ai_provider) {
+            cachedResults.ai_provider = apiKeys.ai_provider || 'gemini';
+          }
+          if (!cachedResults.ai_model) {
+            cachedResults.ai_model = cachedResults.ai_provider;
+          }
           json = cachedResults;
         }
       } catch (cacheError) {
@@ -2865,21 +2913,21 @@ app.post('/api/activities', async (req, res) => {
       
       console.log(`🔍 [SERVER DEBUG ${requestId}] No cached results found, performing new search...`);
       json = await callModelWithRetry(ctx, allowed, 3, maxActivities, abortController.signal);
-      
+      json.ai_provider = apiKeys.ai_provider || 'gemini';
+      json.ai_model = getActiveModelName();
+      filterOutFestivalActivities(json);
+
       // Cache the results (only if using Neo4j)
       if (isNeo4jConnected && dataManager instanceof Neo4jDataManager && json) {
         try {
-          const provider = apiKeys.ai_provider || 'gemini';
-          const modelName = provider === 'openrouter' 
-            ? `openrouter-${apiKeys.openrouter_model || 'deepseek/deepseek-chat-v3.1:free'}`
-            : provider;
+          const modelName = getModelIdentifier();
           const cacheKey = `${allowed}-${maxActivities || 'default'}`;
           await dataManager.cacheSearchResults(
-            ctx.location, 
-            ctx.date, 
-            ctx.duration_hours, 
-            ctx.ages, 
-            cacheKey, 
+            ctx.location,
+            ctx.date,
+            ctx.duration_hours,
+            ctx.ages,
+            cacheKey,
             json,
             ctx.extra_instructions || '',
             modelName,
@@ -2897,7 +2945,14 @@ app.post('/api/activities', async (req, res) => {
     } catch (historyError) {
       console.log('Failed to save search history (non-blocking):', historyError.message);
     }
-    
+
+    if (!json.ai_provider) {
+      json.ai_provider = apiKeys.ai_provider || 'gemini';
+    }
+    if (!json.ai_model) {
+      json.ai_model = getActiveModelName();
+    }
+
     res.json({ ok: true, data: json, cacheInfo: json.cacheInfo || null });
   } catch (err){
     console.log(`🚫 [SERVER DEBUG ${requestId}] Caught error:`, err.message);

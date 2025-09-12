@@ -50,4 +50,5 @@ export type LLMResult = {
     source: string;
   }>;
   ai_provider?: string;
+  ai_model?: string;
 };

@@ -163,7 +163,16 @@ export class Neo4jDataManager {
         );
         
         try {
-          return JSON.parse(cacheNode.results);
+          const parsed = JSON.parse(cacheNode.results);
+          if (cacheNode.ai_provider) {
+            if (!parsed.ai_model) {
+              parsed.ai_model = cacheNode.ai_provider;
+            }
+            if (!parsed.ai_provider) {
+              parsed.ai_provider = cacheNode.ai_provider;
+            }
+          }
+          return parsed;
         } catch (parseError) {
           console.error('❌ Failed to parse exact cached results JSON:', parseError.message);
           return null;
@@ -208,11 +217,21 @@ export class Neo4jDataManager {
         const candidateFeatures = this.sanitizeFeatureVector(JSON.parse(candidate.featureVector));
         const candidateDistance = Number(candidate.distance) || 0;
         const similarityScore = this.smartCache.calculateSimilarity(currentFeatures, candidateFeatures, candidateDistance);
-        
+
         if (similarityScore > bestScore && similarityScore >= this.smartCache.MIN_SIMILARITY_SCORE) {
+          const parsedResults = JSON.parse(candidate.results);
+          if (candidate.ai_provider) {
+            if (!parsedResults.ai_model) {
+              parsedResults.ai_model = candidate.ai_provider;
+            }
+            if (!parsedResults.ai_provider) {
+              parsedResults.ai_provider = candidate.ai_provider;
+            }
+          }
+
           bestScore = similarityScore;
           bestMatch = {
-            results: JSON.parse(candidate.results),
+            results: parsedResults,
             similarityScore: similarityScore,
             originalSearchKey: candidate.searchKey,
             originalLocation: candidate.location,
@@ -369,6 +388,7 @@ export class Neo4jDataManager {
                s.date as date,
                s.featureVector as featureVector,
                s.results as results,
+               s.ai_provider as ai_provider,
                0 as distance
         ORDER BY s.lastAccessed DESC
         LIMIT 10
@@ -385,6 +405,7 @@ export class Neo4jDataManager {
         date: record.get('date'),
         featureVector: record.get('featureVector'),
         results: record.get('results'),
+        ai_provider: record.get('ai_provider'),
         distance: record.get('distance') // For now 0, would be actual distance in full implementation
       }));
       
