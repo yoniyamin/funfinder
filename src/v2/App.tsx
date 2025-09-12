@@ -652,6 +652,90 @@ export default function App() {
     console.log('🚫 Search cancelled successfully');
   };
 
+  const handleRefreshSearch = async () => {
+    console.log('🔄 Starting fresh search without cache...');
+    
+    // Prevent multiple concurrent searches
+    if (state.loading.isLoading || activeSearchRef.current) {
+      console.log('🚫 Search already in progress, ignoring refresh request');
+      return;
+    }
+
+    // Mark search as active
+    activeSearchRef.current = true;
+    
+    const ALLOWED_CATS = 'outdoor|indoor|museum|park|playground|water|hike|creative|festival|show|seasonal|other';
+    
+    try {
+      setLoading({ isLoading: true, progress: 30, status: 'Running fresh search...' });
+      
+      // Use the current search context but bypass cache
+      const context = state.searchResults.ctx;
+      if (!context) {
+        console.error('No search context available for refresh');
+        return;
+      }
+
+      setLoading({ isLoading: true, progress: 70, status: 'Generating fresh recommendations...' });
+
+      const fetchPromise = fetch('/api/activities', { 
+        method: 'POST', 
+        headers: { 
+          'Content-Type': 'application/json',
+          'Connection': 'keep-alive'
+        }, 
+        body: JSON.stringify({ 
+          ctx: context, 
+          allowedCategories: ALLOWED_CATS,
+          bypassCache: true // Flag to bypass cache
+        }),
+        keepalive: true
+      });
+      
+      // Add timeout wrapper
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Request timeout after 120 seconds')), 120000);
+      });
+      
+      const resp = await Promise.race([fetchPromise, timeoutPromise]) as Response;
+      
+      if (!resp.ok) { 
+        const errorText = await resp.text();
+        throw new Error(errorText || 'Failed to get fresh activities from AI model'); 
+      }
+      
+      const data: { ok: boolean; data: LLMResult } = await resp.json();
+      if (!data.ok || !data.data?.activities) {
+        throw new Error('Invalid response from AI model');
+      }
+      
+      setLoading({ isLoading: true, progress: 95, status: 'Processing fresh results...' });
+      
+      // Update with fresh results
+      setSearchResults({
+        activities: data.data.activities,
+        webSources: data.data.web_sources || null,
+        ctx: context,
+        cacheInfo: (data.data as any).cacheInfo
+      });
+      
+      setLoading({ isLoading: true, progress: 100, status: 'Fresh search complete!' });
+      
+      setTimeout(() => {
+        setLoading({ isLoading: false, progress: 0, status: '' });
+      }, 1000);
+      
+      console.log('✅ Fresh search completed successfully');
+      
+    } catch (error) {
+      console.error('❌ Fresh search failed:', error);
+      setLoading({ isLoading: false, progress: 0, status: '' });
+      alert('Fresh search failed. Please try again.');
+    } finally {
+      activeSearchRef.current = false;
+    }
+  };
+
   console.log('🔥 V2 App rendering, current page:', state.currentPage);
   
   return (
@@ -683,6 +767,7 @@ export default function App() {
             addToExclusionList={addToExclusionList}
             removeFromExclusionList={removeFromExclusionList}
             backToSearch={backToSearch}
+            onRefreshSearch={handleRefreshSearch}
           />
         )}
       </main>

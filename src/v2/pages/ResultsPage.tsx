@@ -34,6 +34,7 @@ interface ResultsPageProps {
   addToExclusionList: (location: string, attraction: string) => Promise<boolean>;
   removeFromExclusionList: (location: string, attraction: string) => Promise<boolean>;
   backToSearch: () => void;
+  onRefreshSearch?: () => void;
 }
 
 function getCategoryIcon(category: string): string {
@@ -120,7 +121,8 @@ export default function ResultsPage({
   exclusionList,
   addToExclusionList,
   removeFromExclusionList,
-  backToSearch
+  backToSearch,
+  onRefreshSearch
 }: ResultsPageProps) {
   const [fCat, setFCat] = useState<string>('');
   const [fFree, setFFree] = useState<string>('');
@@ -185,7 +187,7 @@ export default function ResultsPage({
           <div className="flex-1">
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-semibold text-gray-900">Activity Results</h1>
-              <CacheIndicator cacheInfo={cacheInfo} />
+              <CacheIndicator cacheInfo={cacheInfo} onRefreshSearch={onRefreshSearch} />
             </div>
             {ctx && (
               <p className="text-sm text-gray-600">

@@ -2760,6 +2760,7 @@ app.post('/api/activities', async (req, res) => {
     const ctx = req.body?.ctx;
     const allowed = req.body?.allowedCategories || JSON_SCHEMA.activities[0].category;
     const maxActivities = req.body?.maxActivities || null;
+    const bypassCache = req.body?.bypassCache || false;
     
     // Check if request was cancelled before we start
     if (isCancelled) {
@@ -2798,9 +2799,12 @@ app.post('/api/activities', async (req, res) => {
     
     if(!ctx){ return res.status(400).json({ ok:false, error:'Missing ctx' }); }
 
-    // Check for cached results first (only if using Neo4j)
+    // Check for cached results first (only if using Neo4j and cache is not bypassed)
     let json = null;
-    if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+    if (bypassCache) {
+      console.log('🔄 Cache bypassed - performing fresh search as requested');
+    }
+    if (isNeo4jConnected && dataManager instanceof Neo4jDataManager && !bypassCache) {
       try {
         const provider = apiKeys.ai_provider || 'gemini';
         const modelName = provider === 'openrouter' 
