@@ -32,6 +32,16 @@ interface AppState {
     activities: Activity[] | null;
     ctx: Context | null;
     webSources: Array<{title: string; url: string; source: string}> | null;
+    cacheInfo?: {
+      isCached: boolean;
+      cacheType: 'exact' | 'similar';
+      similarity: number;
+      originalSearch: {
+        location: string;
+        date: string;
+        searchKey: string;
+      };
+    };
   };
   loading: {
     isLoading: boolean;
@@ -391,69 +401,69 @@ export default function App() {
 
       setLoading({ isLoading: true, progress: 25, status: 'Fetching weather forecast…' });
       let w: { tmax: number | null; tmin: number | null; pprob: number | null; wind: number | null } = { tmax: null, tmin: null, pprob: null, wind: null };
+      
+      // Try to get cached weather data first
       try {
-        w = await fetchWeatherDaily(lat, lon, date);
+        const cachedWeather = await fetch('/api/weather-cache', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ location: `${name}, ${country}`, date })
+        });
+        
+        if (cachedWeather.ok) {
+          const weatherData = await cachedWeather.json();
+          if (weatherData.ok && weatherData.weather) {
+            console.log('🌤️ Using cached weather data for:', `${name}, ${country}`, date);
+            w = weatherData.weather;
+          } else {
+            // No cached weather, fetch fresh data
+            w = await fetchWeatherDaily(lat, lon, date);
+            
+            // Cache the fresh weather data
+            await fetch('/api/weather-cache', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                location: `${name}, ${country}`, 
+                date, 
+                weather: w 
+              })
+            });
+          }
+        } else {
+          // Fallback to direct API call
+          w = await fetchWeatherDaily(lat, lon, date);
+        }
       } catch (error) {
         console.warn('Weather data not available for this date, using default values:', error);
       }
 
       setLoading({ isLoading: true, progress: 40, status: 'Checking public holidays…' });
       let isHoliday = false;
+      let holidayDetails: Array<{name: string; localName: string; date: string}> = [];
       try {
         const hol = await fetchHolidays(country_code, date.slice(0,4));
-        const matches = hol.filter((h:any)=>h.date===date);
+        // Ensure date is in YYYY-MM-DD format for comparison
+        const normalizedDate = new Date(date).toISOString().split('T')[0];
+        const matches = hol.filter((h:any)=>h.date===normalizedDate);
         isHoliday = matches.length>0;
+        if (matches.length > 0) {
+          holidayDetails = matches.map((h: any) => ({
+            name: h.name,
+            localName: h.localName,
+            date: h.date
+          }));
+          console.log(`🎊 Found public holiday on ${normalizedDate}:`, matches.map((h: any) => h.localName || h.name).join(', '));
+        } else {
+          console.log(`📅 No public holidays found for ${normalizedDate}`);
+        }
       } catch (error) {
         console.warn('Failed to fetch holidays, continuing without holiday data:', error);
       }
 
-      setLoading({ isLoading: true, progress: 55, status: 'Searching for nearby festivals…' });
-      let festivals: Array<{name:string; url:string|null; start_date:string|null; end_date:string|null; lat:number|null; lon:number|null; distance_km:number|null}> = [];
-      try {
-        festivals = await fetchFestivalsWikidata(lat, lon, date, 60);
-        
-        if (festivals.length === 0) {
-          console.log('No festivals found from Wikidata, trying Gemini comprehensive search...');
-          try {
-            const geminiEvents = await fetchHolidaysWithGemini(`${name}, ${country}`, date);
-            if (geminiEvents.length > 0) {
-              console.log(`✨ Gemini found ${geminiEvents.length} holidays/festivals in 3-day period around ${date}`);
-              
-              const { holidays: actualHolidays, festivals: actualFestivals } = separateHolidaysFromFestivals(geminiEvents, date);
-              
-              if (actualHolidays.length > 0 && !isHoliday) {
-                isHoliday = true;
-                console.log(`✨ Found public holiday(s) from Gemini: ${actualHolidays.map((h: any) => h.name).join(', ')}`);
-              }
-              
-              festivals = actualFestivals;
-              console.log(`🎭 Filtered festivals (holidays removed): ${festivals.length} events remaining`);
-            }
-          } catch (geminiError) {
-            console.warn('Gemini holiday/festival fallback failed:', geminiError);
-          }
-        }
-      } catch (error) {
-        console.warn('Failed to fetch festivals, trying Gemini comprehensive search...', error);
-        try {
-          const geminiEvents = await fetchHolidaysWithGemini(`${name}, ${country}`, date);
-          if (geminiEvents.length > 0) {
-            console.log(`✨ Gemini comprehensive search found ${geminiEvents.length} holidays/festivals`);
-            
-            const { holidays: actualHolidays, festivals: actualFestivals } = separateHolidaysFromFestivals(geminiEvents, date);
-            
-            if (actualHolidays.length > 0 && !isHoliday) {
-              isHoliday = true;
-              console.log(`✨ Found public holiday(s) from Gemini fallback: ${actualHolidays.map((h: any) => h.name).join(', ')}`);
-            }
-            
-            festivals = actualFestivals;
-            console.log(`🎭 Filtered festivals in fallback (holidays removed): ${festivals.length} events remaining`);
-          }
-        } catch (geminiError) {
-          console.warn('All festival/holiday fetching failed:', geminiError);
-        }
-      }
+      setLoading({ isLoading: true, progress: 55, status: 'Preparing search context…' });
+      // Holiday and festival information is now handled server-side in the activity search
+      console.log('🎭 Holiday and festival context will be gathered server-side during activity search');
 
       const context: Context = {
         location: `${name}, ${country}`,
@@ -467,7 +477,8 @@ export default function App() {
           wind_speed_max_kmh: w.wind
         },
         is_public_holiday: isHoliday,
-        nearby_festivals: festivals.map(f=>({ name:f.name, start_date:f.start_date||null, end_date:f.end_date||null, url:f.url||null, distance_km:f.distance_km||null })),
+        nearby_festivals: [], // Will be populated server-side with holiday/festival context
+        holidays: holidayDetails, // Include actual holiday details for UI display
         ...(extraInstructions.trim() && { extra_instructions: extraInstructions.trim() })
       };
 
@@ -526,7 +537,7 @@ export default function App() {
         
         // Add timeout wrapper to detect hanging requests
         const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Request timeout after 60 seconds')), 60000);
+          setTimeout(() => reject(new Error('Request timeout after 120 seconds')), 120000);
         });
         
         const resp = await Promise.race([fetchPromise, timeoutPromise]) as Response;
@@ -556,7 +567,8 @@ export default function App() {
         setSearchResults({
           activities: data.data.activities,
           webSources: data.data.web_sources || null,
-          ctx: context
+          ctx: context,
+          cacheInfo: (data.data as any).cacheInfo
         });
         
         setLoading({ isLoading: true, progress: 100, status: 'Complete!' });

@@ -1,11 +1,22 @@
 import React, { useMemo, useState } from 'react';
 import type { Activity, Context } from '../../lib/schema';
+import CacheIndicator from '../components/CacheIndicator';
 
 interface ResultsPageProps {
   searchResults: {
     activities: Activity[] | null;
     ctx: Context | null;
     webSources: Array<{title: string; url: string; source: string}> | null;
+    cacheInfo?: {
+      isCached: boolean;
+      cacheType: 'exact' | 'similar';
+      similarity: number;
+      originalSearch: {
+        location: string;
+        date: string;
+        searchKey: string;
+      };
+    };
   };
   searchParams: {
     location: string;
@@ -118,7 +129,7 @@ export default function ResultsPage({
   const [prompt, setPrompt] = useState<string>('');
   const [showExclusionManager, setShowExclusionManager] = useState<boolean>(false);
 
-  const { activities, ctx, webSources } = searchResults;
+  const { activities, ctx, webSources, cacheInfo } = searchResults;
 
   const cats = useMemo(() => 
     Array.from(new Set((activities || []).map(a => a.category))).sort(), 
@@ -172,7 +183,10 @@ export default function ResultsPage({
             Back to Search
           </button>
           <div className="flex-1">
-            <h1 className="text-lg font-semibold text-gray-900">Activity Results</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg font-semibold text-gray-900">Activity Results</h1>
+              <CacheIndicator cacheInfo={cacheInfo} />
+            </div>
             {ctx && (
               <p className="text-sm text-gray-600">
                 <a
@@ -364,7 +378,11 @@ export default function ResultsPage({
                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-gray-200">
                   <span className="text-lg">{ctx.is_public_holiday ? '🎉' : '📅'}</span>
                   <span className="text-gray-700">
-                    {ctx.is_public_holiday ? 'Public holiday' : 'No public holiday'}
+                    {ctx.is_public_holiday 
+                      ? (ctx.holidays && ctx.holidays.length > 0 
+                          ? `${ctx.holidays.length} holiday${ctx.holidays.length > 1 ? 's' : ''}`
+                          : 'Public holiday')
+                      : 'No public holiday'}
                   </span>
                 </div>
 
@@ -379,6 +397,26 @@ export default function ResultsPage({
                   </span>
                 </div>
               </div>
+
+              {/* Holidays Detail (only if there are holidays) */}
+              {ctx.holidays && ctx.holidays.length > 0 && (
+                <div className="space-y-2">
+                  {ctx.holidays.map((holiday, i) => (
+                    <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-yellow-50 border border-yellow-200">
+                      <span className="text-lg">🎉</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-yellow-900 truncate">{holiday.localName}</div>
+                        {holiday.localName !== holiday.name && (
+                          <div className="text-xs text-yellow-700 truncate">{holiday.name}</div>
+                        )}
+                        <div className="text-xs text-yellow-600">
+                          {new Date(holiday.date).toLocaleDateString()}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* Festivals Detail (only if there are festivals) */}
               {ctx.nearby_festivals.length > 0 && (

@@ -8,7 +8,6 @@ interface ApiSettings {
   ticketmaster_configured: boolean;
   ai_provider: string;
   openrouter_model: string;
-  enable_gemini_holidays: boolean;
   max_activities: number;
   gemini_api_key_masked: string;
   openrouter_api_key_masked: string;
@@ -54,7 +53,6 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
     openrouter_api_key: '',
     ai_provider: 'gemini',
     openrouter_model: 'deepseek/deepseek-chat-v3.1:free',
-    enable_gemini_holidays: false,
     max_activities: 20,
     google_search_api_key: '',
     google_search_engine_id: '',
@@ -68,14 +66,19 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
   const [neo4jTestResult, setNeo4jTestResult] = useState<Neo4jTestResult | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showSetupGuide, setShowSetupGuide] = useState(false);
-  const [activeTab, setActiveTab] = useState<'ai' | 'search' | 'database'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'search' | 'database' | 'caching'>('ai');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [cacheStats, setCacheStats] = useState<{searchResults: number; weather: number; festivals: number; history: number; locations: number} | null>(null);
+  const [cacheOperations, setCacheOperations] = useState<{[key: string]: boolean}>({});
 
   useEffect(() => {
     if (isOpen) {
       loadSettings();
+      if (activeTab === 'caching') {
+        loadCacheStats();
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, activeTab]);
 
   const loadSettings = async () => {
     try {
@@ -88,7 +91,6 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
           ...prev,
           ai_provider: data.settings.ai_provider || 'gemini',
           openrouter_model: data.settings.openrouter_model || 'deepseek/deepseek-chat-v3.1:free',
-          enable_gemini_holidays: data.settings.enable_gemini_holidays || false,
           max_activities: data.settings.max_activities || 20
         }));
       }
@@ -314,6 +316,65 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
     return modelMap[model] || model;
   };
 
+  const loadCacheStats = async () => {
+    try {
+      const response = await fetch('/api/cache/stats');
+      const data = await response.json();
+      if (data.ok && data.stats) {
+        setCacheStats(data.stats);
+      }
+    } catch (error) {
+      console.error('Failed to load cache statistics:', error);
+    }
+  };
+
+  const clearCache = async (cacheType: string) => {
+    setCacheOperations(prev => ({ ...prev, [cacheType]: true }));
+    try {
+      const response = await fetch(`/api/cache/${cacheType}`, { method: 'DELETE' });
+      const data = await response.json();
+      
+      if (data.ok) {
+        setMessage({ type: 'success', text: data.message });
+        loadCacheStats(); // Refresh stats
+      } else {
+        setMessage({ type: 'error', text: data.message || 'Failed to clear cache' });
+      }
+    } catch (error) {
+      console.error('Failed to clear cache:', error);
+      setMessage({ type: 'error', text: 'Failed to clear cache' });
+    } finally {
+      setCacheOperations(prev => ({ ...prev, [cacheType]: false }));
+    }
+  };
+
+  const clearSearchHistory = async (type: 'all' | 'old', days?: number) => {
+    const operation = type === 'all' ? 'clearHistoryAll' : 'clearHistoryOld';
+    setCacheOperations(prev => ({ ...prev, [operation]: true }));
+    
+    try {
+      const url = type === 'all' ? '/api/search-history/all' : '/api/search-history/old';
+      const response = await fetch(url, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: type === 'old' ? JSON.stringify({ days: days || 30 }) : undefined
+      });
+      const data = await response.json();
+      
+      if (data.ok) {
+        setMessage({ type: 'success', text: data.message });
+        loadCacheStats(); // Refresh stats
+      } else {
+        setMessage({ type: 'error', text: data.message || 'Failed to clear search history' });
+      }
+    } catch (error) {
+      console.error('Failed to clear search history:', error);
+      setMessage({ type: 'error', text: 'Failed to clear search history' });
+    } finally {
+      setCacheOperations(prev => ({ ...prev, [operation]: false }));
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -369,6 +430,16 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
               }`}
             >
               🗄️ Database
+            </button>
+            <button
+              onClick={() => setActiveTab('caching')}
+              className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'caching'
+                  ? 'bg-white text-indigo-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              💾 Caching
             </button>
           </div>
         </div>
@@ -654,44 +725,25 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
               )}
             </div>
 
-                {/* Gemini Holiday Fetching Toggle */}
-                <div className="border border-gray-200 rounded-lg p-4 bg-yellow-50">
-                  <div className="flex items-center justify-between mb-3">
+                {/* Holiday & Festival Info */}
+                <div className="border border-gray-200 rounded-lg p-4 bg-green-50">
+                  <div className="flex items-center mb-3">
                     <h3 className="font-semibold flex items-center gap-2">
                       <span>🎉</span>
-                      Gemini Holiday & Festival Enhancement
-                      <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full text-xs">Optional</span>
+                      Holiday & Festival Integration
+                      <span className="bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs">Always Active</span>
                     </h3>
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={apiKeys.enable_gemini_holidays}
-                        onChange={(e) => {
-                          handleApiKeyChange('enable_gemini_holidays', e.target.checked);
-                          setHasUnsavedChanges(true);
-                        }}
-                        className="rounded text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <span className="text-sm font-medium">
-                        {apiKeys.enable_gemini_holidays ? 'Enabled' : 'Disabled'}
-                      </span>
-                    </label>
                   </div>
                   <p className="text-sm text-gray-600 mb-3">
-                    Use Gemini AI to fetch comprehensive holidays and festivals when normal APIs return no results. 
-                    Searches a 3-day period (day before, target day, day after) for both holidays and festivals, 
-                    providing better coverage for local celebrations and cultural events.
+                    Holiday and festival information is now automatically included in all activity searches. 
+                    The system considers local holidays, festivals, and cultural events when suggesting activities, 
+                    including checking if attractions might be closed on public holidays.
                   </p>
                   <div className="text-xs text-gray-500 bg-white p-2 rounded border">
-                    <strong>Enhanced Coverage:</strong> This feature searches for holidays, festivals, cultural events, 
-                    and local traditions across a 3-day window. Requires a Gemini API key and consumes additional tokens. 
-                    Only activates when Wikidata doesn't find any local festivals or events.
+                    <strong>Enhanced Context:</strong> Activities are suggested with awareness of holidays and festivals, 
+                    ensuring recommendations account for special hours, closures, or festival-related events happening around your search date.
+                    This feature uses your configured Gemini API key when available.
                   </div>
-                  {apiKeys.enable_gemini_holidays && !settings?.gemini_configured && (
-                    <div className="mt-3 p-2 bg-orange-100 border border-orange-200 rounded text-sm text-orange-800">
-                      ⚠️ Gemini API key required for this feature to work
-                    </div>
-                  )}
                 </div>
 
 
@@ -1138,6 +1190,365 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                     <p>✅ Automatic fallback to local file storage if connection fails</p>
                     <p>✅ All existing data will be migrated automatically on first connection</p>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'caching' && (
+            <div className="space-y-6">
+              {/* Cache Settings */}
+              <div className="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="text-2xl">💾</span>
+                  <div>
+                    <h3 className="font-semibold text-gray-800">Cache Configuration</h3>
+                    <p className="text-sm text-gray-600">
+                      Configure similarity matching thresholds and cache behavior
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Similarity Threshold */}
+                  <div className="space-y-3">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Similarity Threshold
+                    </label>
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="range"
+                        min="0.75"
+                        max="0.99"
+                        step="0.01"
+                        defaultValue="0.90"
+                        className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <span className="text-sm font-medium text-gray-600 w-12">90%</span>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Minimum similarity required to reuse cached results (currently 90%)
+                    </p>
+                  </div>
+
+                  {/* Location Weight */}
+                  <div className="space-y-3">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Location Weight
+                    </label>
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="range"
+                        min="0.1"
+                        max="0.5"
+                        step="0.05"
+                        defaultValue="0.20"
+                        className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <span className="text-sm font-medium text-gray-600 w-12">20%</span>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      How much location similarity affects cache matching
+                    </p>
+                  </div>
+
+                  {/* Weather Weight */}
+                  <div className="space-y-3">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Weather Weight
+                    </label>
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="range"
+                        min="0.2"
+                        max="0.6"
+                        step="0.05"
+                        defaultValue="0.40"
+                        className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <span className="text-sm font-medium text-gray-600 w-12">40%</span>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      How much weather similarity affects cache matching
+                    </p>
+                  </div>
+
+                  {/* Temporal Weight */}
+                  <div className="space-y-3">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Temporal Weight
+                    </label>
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="range"
+                        min="0.1"
+                        max="0.5"
+                        step="0.05"
+                        defaultValue="0.30"
+                        className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <span className="text-sm font-medium text-gray-600 w-12">30%</span>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      How much time/date similarity affects cache matching
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="text-sm text-blue-800 flex items-start gap-2">
+                    <span className="text-blue-600 flex-shrink-0">💡</span>
+                    <div>
+                      <span className="font-medium">Note:</span> Changes to cache settings will apply to new searches. 
+                      Existing cached results remain unaffected.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Cache Management */}
+              <div className="space-y-4">
+                <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+                  <span>🧹</span>
+                  Cache Management
+                </h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {/* Search Results Cache */}
+                  <div className="border border-gray-200 rounded-lg p-4 bg-white">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-lg">🔍</span>
+                      <h4 className="font-medium text-gray-800">Search Results</h4>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Cached activity search results and AI responses
+                    </p>
+                    <button 
+                      onClick={() => clearCache('search')}
+                      disabled={cacheOperations.search}
+                      className="btn btn-secondary w-full text-sm"
+                    >
+                      {cacheOperations.search ? (
+                        <>
+                          <div className="animate-spin w-3 h-3 border border-gray-400 border-t-transparent rounded-full"></div>
+                          Clearing...
+                        </>
+                      ) : (
+                        'Clear Search Cache'
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Weather Cache */}
+                  <div className="border border-gray-200 rounded-lg p-4 bg-white">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-lg">🌤️</span>
+                      <h4 className="font-medium text-gray-800">Weather Data</h4>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Cached weather forecasts and historical data
+                    </p>
+                    <button 
+                      onClick={() => clearCache('weather')}
+                      disabled={cacheOperations.weather}
+                      className="btn btn-secondary w-full text-sm"
+                    >
+                      {cacheOperations.weather ? (
+                        <>
+                          <div className="animate-spin w-3 h-3 border border-gray-400 border-t-transparent rounded-full"></div>
+                          Clearing...
+                        </>
+                      ) : (
+                        'Clear Weather Cache'
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Festivals Cache */}
+                  <div className="border border-gray-200 rounded-lg p-4 bg-white">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-lg">🎭</span>
+                      <h4 className="font-medium text-gray-800">Festivals & Holidays</h4>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Cached holiday and festival information
+                    </p>
+                    <button 
+                      onClick={() => clearCache('festivals')}
+                      disabled={cacheOperations.festivals}
+                      className="btn btn-secondary w-full text-sm"
+                    >
+                      {cacheOperations.festivals ? (
+                        <>
+                          <div className="animate-spin w-3 h-3 border border-gray-400 border-t-transparent rounded-full"></div>
+                          Clearing...
+                        </>
+                      ) : (
+                        'Clear Festival Cache'
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Location Cache */}
+                  <div className="border border-gray-200 rounded-lg p-4 bg-white">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-lg">📍</span>
+                      <h4 className="font-medium text-gray-800">Location Data</h4>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Cached geocoding and location information
+                    </p>
+                    <button 
+                      onClick={() => clearCache('locations')}
+                      disabled={cacheOperations.locations}
+                      className="btn btn-secondary w-full text-sm"
+                    >
+                      {cacheOperations.locations ? (
+                        <>
+                          <div className="animate-spin w-3 h-3 border border-gray-400 border-t-transparent rounded-full"></div>
+                          Clearing...
+                        </>
+                      ) : (
+                        'Clear Location Cache'
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Search History */}
+                  <div className="border border-gray-200 rounded-lg p-4 bg-white">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-lg">📚</span>
+                      <h4 className="font-medium text-gray-800">Search History</h4>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Your search history and preferences
+                    </p>
+                    <div className="space-y-2">
+                      <button 
+                        onClick={() => clearSearchHistory('all')}
+                        disabled={cacheOperations.clearHistoryAll}
+                        className="btn btn-secondary w-full text-sm"
+                      >
+                        {cacheOperations.clearHistoryAll ? (
+                          <>
+                            <div className="animate-spin w-3 h-3 border border-gray-400 border-t-transparent rounded-full"></div>
+                            Clearing...
+                          </>
+                        ) : (
+                          'Clear All History'
+                        )}
+                      </button>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="1"
+                          max="365"
+                          defaultValue="30"
+                          className="input text-sm flex-1"
+                          placeholder="Days"
+                          id="historyDaysInput"
+                        />
+                        <button 
+                          onClick={() => {
+                            const daysInput = document.getElementById('historyDaysInput') as HTMLInputElement;
+                            const days = parseInt(daysInput?.value || '30');
+                            clearSearchHistory('old', days);
+                          }}
+                          disabled={cacheOperations.clearHistoryOld}
+                          className="btn btn-secondary text-xs"
+                        >
+                          {cacheOperations.clearHistoryOld ? (
+                            <>
+                              <div className="animate-spin w-2 h-2 border border-gray-400 border-t-transparent rounded-full"></div>
+                              ...
+                            </>
+                          ) : (
+                            'Clear Old'
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Clear All */}
+                  <div className="border border-red-200 rounded-lg p-4 bg-red-50">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-lg">🗑️</span>
+                      <h4 className="font-medium text-red-800">Clear Everything</h4>
+                    </div>
+                    <p className="text-sm text-red-600 mb-4">
+                      Remove all cached data and reset to defaults
+                    </p>
+                    <button 
+                      onClick={() => clearCache('all')}
+                      disabled={cacheOperations.all}
+                      className="btn bg-red-600 text-white hover:bg-red-700 w-full text-sm disabled:opacity-50"
+                    >
+                      {cacheOperations.all ? (
+                        <>
+                          <div className="animate-spin w-3 h-3 border border-white border-t-transparent rounded-full"></div>
+                          Clearing...
+                        </>
+                      ) : (
+                        'Clear All Cache'
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Cache Statistics */}
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                  <h4 className="font-medium text-gray-800 mb-3 flex items-center gap-2">
+                    <span>📊</span>
+                    Cache Statistics
+                  </h4>
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
+                    <div>
+                      <div className="text-lg font-semibold text-blue-600">
+                        {cacheStats ? cacheStats.searchResults : '--'}
+                      </div>
+                      <div className="text-xs text-gray-600">Search Results</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-semibold text-green-600">
+                        {cacheStats ? cacheStats.weather : '--'}
+                      </div>
+                      <div className="text-xs text-gray-600">Weather Entries</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-semibold text-purple-600">
+                        {cacheStats ? cacheStats.festivals : '--'}
+                      </div>
+                      <div className="text-xs text-gray-600">Festival Entries</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-semibold text-indigo-600">
+                        {cacheStats ? cacheStats.locations : '--'}
+                      </div>
+                      <div className="text-xs text-gray-600">Location Profiles</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-semibold text-orange-600">
+                        {cacheStats ? cacheStats.history : '--'}
+                      </div>
+                      <div className="text-xs text-gray-600">History Items</div>
+                    </div>
+                  </div>
+                  {!cacheStats && (
+                    <p className="text-xs text-gray-500 mt-3 text-center">
+                      Loading cache statistics...
+                    </p>
+                  )}
+                  {cacheStats && (
+                    <div className="mt-3 text-center">
+                      <button 
+                        onClick={loadCacheStats}
+                        className="text-xs text-indigo-600 hover:text-indigo-800 underline"
+                      >
+                        Refresh Statistics
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

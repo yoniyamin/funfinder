@@ -1181,10 +1181,16 @@ const JSON_SCHEMA = {
     weather_fit: 'good|ok|bad',
     notes: 'string|optional',
     evidence: ['string[]|optional']
+  } ],
+  discovered_holidays: [ {
+    name: 'string',
+    date: 'YYYY-MM-DD',
+    type: 'public_holiday|festival|celebration',
+    description: 'string|optional'
   } ]
 };
 
-function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActivities = null){
+function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActivities = null, holidayFestivalInfo = null){
   const activityCount = maxActivities || apiKeys.max_activities || 20;
   const basePrompt = [
     `You are a local family activities planner. Using the provided context JSON, suggest ${activityCount} kid-friendly activities.`,
@@ -1194,6 +1200,9 @@ function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActiviti
     '- Activities must fit ALL provided ages.',
     '- Consider weather; set weather_fit to good/ok/bad.',
     '- Prefer options relevant to public holidays or nearby festivals when applicable.',
+    '- Consider if attractions might be closed or have special hours on public holidays.',
+    '- IMPORTANT: Also research and include any public holidays, festivals, or special celebrations happening on or around this date in this location.',
+    '- Add discovered holidays/festivals to the "discovered_holidays" array in your response.',
     '- Return ONLY a single valid JSON object matching the schema.',
     '- NO markdown code blocks, NO explanatory text, NO commentary.',
     '- Start your response with { and end with }.',
@@ -1201,6 +1210,17 @@ function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActiviti
     '- Do not include trailing commas.',
     ''
   ];
+
+  // Add holiday/festival context if available
+  if (holidayFestivalInfo && holidayFestivalInfo.length > 0) {
+    basePrompt.push(
+      'HOLIDAYS & FESTIVALS CONTEXT:',
+      'The following holidays and festivals are happening around this date:',
+      ...holidayFestivalInfo.map(event => `- ${event.name}${event.start_date ? ` (${event.start_date}${event.end_date && event.end_date !== event.start_date ? ` to ${event.end_date}` : ''})` : ''}`),
+      'Consider these when suggesting activities - some venues may be closed on holidays, or there may be special events related to festivals.',
+      ''
+    );
+  }
 
   // Add extra instructions from context if provided
   if (ctx.extra_instructions && ctx.extra_instructions.trim()) {
@@ -1243,7 +1263,7 @@ function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActiviti
   return basePrompt.join('\n');
 }
 
-function buildUserMessageForDisplay(ctx, allowedCats, maxActivities = null, extraInstructions = ''){
+function buildUserMessageForDisplay(ctx, allowedCats, maxActivities = null, extraInstructions = '', holidayFestivalInfo = null){
   const activityCount = maxActivities || apiKeys.max_activities || 20;
   const basePrompt = [
     `You are a local family activities planner. Using the provided context JSON, suggest ${activityCount} kid-friendly activities.`,
@@ -1253,9 +1273,23 @@ function buildUserMessageForDisplay(ctx, allowedCats, maxActivities = null, extr
     '- Activities must fit ALL provided ages.',
     '- Consider weather; set weather_fit to good/ok/bad.',
     '- Prefer options relevant to public holidays or nearby festivals when applicable.',
+    '- Consider if attractions might be closed or have special hours on public holidays.',
+    '- IMPORTANT: Also research and include any public holidays, festivals, or special celebrations happening on or around this date in this location.',
+    '- Add discovered holidays/festivals to the "discovered_holidays" array in your response.',
     '- Return ONLY a single JSON object matching the schema; NO markdown or commentary.',
     ''
   ];
+
+  // Add holiday/festival context if available
+  if (holidayFestivalInfo && holidayFestivalInfo.length > 0) {
+    basePrompt.push(
+      'HOLIDAYS & FESTIVALS CONTEXT:',
+      'The following holidays and festivals are happening around this date:',
+      ...holidayFestivalInfo.map(event => `- ${event.name}${event.start_date ? ` (${event.start_date}${event.end_date && event.end_date !== event.start_date ? ` to ${event.end_date}` : ''})` : ''}`),
+      'Consider these when suggesting activities - some venues may be closed on holidays, or there may be special events related to festivals.',
+      ''
+    );
+  }
 
   // Add extra instructions if provided
   if (extraInstructions && extraInstructions.trim()) {
@@ -1724,13 +1758,9 @@ function extractSearchInsights(searchResults, location) {
 
 // Gemini-powered holiday and festival fetching (comprehensive search for 3-day period)
 async function fetchHolidaysWithGemini(location, date) {
-  if (!apiKeys.enable_gemini_holidays) {
-    return [];
-  }
-  
   const geminiKey = apiKeys.gemini_api_key || process.env.GEMINI_API_KEY || '';
   if (!geminiKey) {
-    console.log('Gemini holiday fetching enabled but no API key available');
+    console.log('Gemini holiday fetching requires API key but none available');
     return [];
   }
   
@@ -1904,7 +1934,7 @@ app.post('/api/search-enhanced', async (req, res) => {
   }
 });
 
-// Gemini-powered holiday and festival fetching endpoint
+// Gemini-powered holiday and festival fetching endpoint with caching
 app.post('/api/holidays-gemini', async (req, res) => {
   try{
     const { location, date } = req.body;
@@ -1914,17 +1944,202 @@ app.post('/api/holidays-gemini', async (req, res) => {
 
     console.log('Gemini holiday fetch request for:', location, date);
     
-    // Check if Gemini holiday fetching is enabled
-    if (!apiKeys.enable_gemini_holidays) {
-      return res.json({ ok: true, holidays: [], message: 'Gemini holiday fetching is disabled' });
+    // Try to get cached festival data first
+    if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+      try {
+        const cachedFestivals = await dataManager.getCachedFestivalData(location, date);
+        if (cachedFestivals) {
+          console.log('🎭 Using cached festival data for:', location, date);
+          return res.json({ ok: true, holidays: cachedFestivals, total: cachedFestivals.length });
+        }
+      } catch (cacheError) {
+        console.log('Festival cache retrieval failed (non-blocking):', cacheError.message);
+      }
     }
     
+    // No cached data, fetch fresh festivals
     const holidays = await fetchHolidaysWithGemini(location, date);
+    
+    // Cache the fresh festival data with date range
+    if (isNeo4jConnected && dataManager instanceof Neo4jDataManager && holidays.length > 0) {
+      try {
+        // Calculate search range (day before to day after)
+        const targetDate = new Date(date);
+        const dayBefore = new Date(targetDate);
+        dayBefore.setDate(targetDate.getDate() - 1);
+        const dayAfter = new Date(targetDate);
+        dayAfter.setDate(targetDate.getDate() + 1);
+        
+        const searchStartDate = dayBefore.toISOString().split('T')[0];
+        const searchEndDate = dayAfter.toISOString().split('T')[0];
+        
+        await dataManager.cacheFestivalData(location, searchStartDate, searchEndDate, holidays);
+      } catch (cacheError) {
+        console.log('Failed to cache festival data (non-blocking):', cacheError.message);
+      }
+    }
     
     res.json({ ok: true, holidays, total: holidays.length });
   } catch (err){
     console.error('Gemini holiday fetch error:', err);
     res.status(500).json({ ok:false, error: err.message || 'Gemini holiday fetch failed' });
+  }
+});
+
+// Weather caching endpoints
+app.post('/api/weather-cache', async (req, res) => {
+  try {
+    const { location, date } = req.body;
+    if (!location || !date) {
+      return res.status(400).json({ ok: false, error: 'Missing location or date' });
+    }
+    
+    if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+      const cachedWeather = await dataManager.getCachedWeatherData(location, date);
+      if (cachedWeather) {
+        return res.json({ ok: true, weather: cachedWeather });
+      }
+    }
+    
+    res.json({ ok: false, message: 'No cached weather data found' });
+  } catch (err) {
+    console.error('Weather cache retrieval error:', err);
+    res.status(500).json({ ok: false, error: err.message || 'Weather cache retrieval failed' });
+  }
+});
+
+app.put('/api/weather-cache', async (req, res) => {
+  try {
+    const { location, date, weather } = req.body;
+    if (!location || !date || !weather) {
+      return res.status(400).json({ ok: false, error: 'Missing location, date, or weather data' });
+    }
+    
+    if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+      await dataManager.cacheWeatherData(location, date, weather);
+      res.json({ ok: true, message: 'Weather data cached successfully' });
+    } else {
+      res.json({ ok: false, message: 'Weather caching not available (Neo4j not connected)' });
+    }
+  } catch (err) {
+    console.error('Weather cache storage error:', err);
+    res.status(500).json({ ok: false, error: err.message || 'Weather cache storage failed' });
+  }
+});
+
+// Cache management endpoints
+app.delete('/api/cache/search', async (req, res) => {
+  try {
+    if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+      await dataManager.clearSearchCache();
+      res.json({ ok: true, message: 'Search cache cleared successfully' });
+    } else {
+      res.json({ ok: false, message: 'Cache clearing not available (Neo4j not connected)' });
+    }
+  } catch (err) {
+    console.error('Error clearing search cache:', err);
+    res.status(500).json({ ok: false, error: err.message || 'Failed to clear search cache' });
+  }
+});
+
+app.delete('/api/cache/weather', async (req, res) => {
+  try {
+    if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+      await dataManager.clearWeatherCache();
+      res.json({ ok: true, message: 'Weather cache cleared successfully' });
+    } else {
+      res.json({ ok: false, message: 'Cache clearing not available (Neo4j not connected)' });
+    }
+  } catch (err) {
+    console.error('Error clearing weather cache:', err);
+    res.status(500).json({ ok: false, error: err.message || 'Failed to clear weather cache' });
+  }
+});
+
+app.delete('/api/cache/festivals', async (req, res) => {
+  try {
+    if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+      await dataManager.clearFestivalCache();
+      res.json({ ok: true, message: 'Festival cache cleared successfully' });
+    } else {
+      res.json({ ok: false, message: 'Cache clearing not available (Neo4j not connected)' });
+    }
+  } catch (err) {
+    console.error('Error clearing festival cache:', err);
+    res.status(500).json({ ok: false, error: err.message || 'Failed to clear festival cache' });
+  }
+});
+
+app.delete('/api/cache/locations', async (req, res) => {
+  try {
+    if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+      await dataManager.clearLocationCache();
+      res.json({ ok: true, message: 'Location cache cleared successfully' });
+    } else {
+      res.json({ ok: false, message: 'Cache clearing not available (Neo4j not connected)' });
+    }
+  } catch (err) {
+    console.error('Error clearing location cache:', err);
+    res.status(500).json({ ok: false, error: err.message || 'Failed to clear location cache' });
+  }
+});
+
+app.delete('/api/cache/all', async (req, res) => {
+  try {
+    if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+      await dataManager.clearAllCache();
+      res.json({ ok: true, message: 'All cache cleared successfully' });
+    } else {
+      res.json({ ok: false, message: 'Cache clearing not available (Neo4j not connected)' });
+    }
+  } catch (err) {
+    console.error('Error clearing all cache:', err);
+    res.status(500).json({ ok: false, error: err.message || 'Failed to clear all cache' });
+  }
+});
+
+app.delete('/api/search-history/old', async (req, res) => {
+  try {
+    const { days } = req.body;
+    const daysToKeep = parseInt(days) || 30;
+    
+    if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+      const deleted = await dataManager.clearOldSearchHistory(daysToKeep);
+      res.json({ ok: true, message: `Cleared search history older than ${daysToKeep} days`, deleted });
+    } else {
+      res.json({ ok: false, message: 'History clearing not available (Neo4j not connected)' });
+    }
+  } catch (err) {
+    console.error('Error clearing old search history:', err);
+    res.status(500).json({ ok: false, error: err.message || 'Failed to clear old search history' });
+  }
+});
+
+app.delete('/api/search-history/all', async (req, res) => {
+  try {
+    if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+      const deleted = await dataManager.clearAllSearchHistory();
+      res.json({ ok: true, message: 'All search history cleared', deleted });
+    } else {
+      res.json({ ok: false, message: 'History clearing not available (Neo4j not connected)' });
+    }
+  } catch (err) {
+    console.error('Error clearing all search history:', err);
+    res.status(500).json({ ok: false, error: err.message || 'Failed to clear all search history' });
+  }
+});
+
+app.get('/api/cache/stats', async (req, res) => {
+  try {
+    if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+      const stats = await dataManager.getCacheStatistics();
+      res.json({ ok: true, stats });
+    } else {
+      res.json({ ok: false, stats: { searchResults: 0, weather: 0, festivals: 0, history: 0 } });
+    }
+  } catch (err) {
+    console.error('Error getting cache statistics:', err);
+    res.status(500).json({ ok: false, error: err.message || 'Failed to get cache statistics' });
   }
 });
 
@@ -2340,6 +2555,7 @@ async function callGeminiModel(prompt, maxRetries = 3, abortSignal = null) {
 
 async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivities = null, abortSignal = null) {
   let webSearchResults = null;
+  let holidayFestivalInfo = null;
   
   // Load exclusions for this location to add to context
   const exclusions = await dataManager.loadExclusionList();
@@ -2354,6 +2570,36 @@ async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivitie
   // Check for cancellation before web search
   if (abortSignal?.aborted) {
     throw new Error('Request was cancelled');
+  }
+
+  // Try to get cached festival data first (for prompt context)
+  try {
+    console.log('Checking for cached holiday/festival information...');
+    
+    if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+      try {
+        const cachedFestivals = await dataManager.getCachedFestivalData(ctx.location, ctx.date);
+        if (cachedFestivals) {
+          console.log('🎭 Using cached festival data for activity context:', ctx.location, ctx.date);
+          holidayFestivalInfo = cachedFestivals;
+          
+          // Update enriched context with cached festival data
+          enrichedCtx.nearby_festivals = holidayFestivalInfo.map(event => ({
+            name: event.name,
+            start_date: event.start_date || null,
+            end_date: event.end_date || null,
+            url: event.url || null,
+            distance_km: event.distance_km || null
+          }));
+          
+          console.log(`🎉 Found ${holidayFestivalInfo.length} cached holidays/festivals for context`);
+        }
+      } catch (cacheError) {
+        console.log('Festival cache retrieval failed (non-blocking):', cacheError.message);
+      }
+    }
+  } catch (error) {
+    console.log('Holiday/festival cache check failed, continuing without cached context:', error.message);
   }
 
   // Perform enhanced web search for additional context
@@ -2371,7 +2617,7 @@ async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivitie
     throw new Error('Request was cancelled');
   }
 
-  const prompt = buildUserMessage(enrichedCtx, allowedCats, webSearchResults, maxActivities);
+  const prompt = buildUserMessage(enrichedCtx, allowedCats, webSearchResults, maxActivities, holidayFestivalInfo);
   
   // Determine which AI provider to use
   const provider = apiKeys.ai_provider || 'gemini';
@@ -2421,6 +2667,54 @@ async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivitie
   // Add web search sources to the result
   if (webSearchResults && webSearchResults.sources) {
     json.web_sources = webSearchResults.sources;
+  }
+  
+  // Process discovered holidays/festivals from AI response
+  if (json.discovered_holidays && json.discovered_holidays.length > 0) {
+    console.log(`🎉 AI discovered ${json.discovered_holidays.length} holidays/festivals:`, 
+      json.discovered_holidays.map(h => `${h.name} (${h.date})`).join(', '));
+    
+    // Update the context with discovered holidays
+    const discoveredFestivals = json.discovered_holidays.map(holiday => ({
+      name: holiday.name,
+      start_date: holiday.date,
+      end_date: holiday.date,
+      url: null,
+      distance_km: null
+    }));
+    
+    // Update response context to include discovered festivals
+    if (!json.query) json.query = {...enrichedCtx};
+    json.query.nearby_festivals = [...(json.query.nearby_festivals || []), ...discoveredFestivals];
+    
+    // Check if any discovered events indicate public holidays
+    const hasPublicHoliday = json.discovered_holidays.some(h => 
+      h.type === 'public_holiday' || 
+      h.name.toLowerCase().includes('holiday') ||
+      h.name.toLowerCase().includes('christmas') ||
+      h.name.toLowerCase().includes('easter') ||
+      h.name.toLowerCase().includes('new year') ||
+      h.name.toLowerCase().includes('independence') ||
+      h.name.toLowerCase().includes('national')
+    );
+    
+    if (hasPublicHoliday && !json.query.is_public_holiday) {
+      json.query.is_public_holiday = true;
+      console.log('🎊 Updated public holiday status based on AI-discovered holidays');
+    }
+    
+    // Cache the AI-discovered festival data for future use
+    // Note: This runs after the main logic, not affecting the current search but helping future ones
+    if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+      setImmediate(async () => {
+        try {
+          await dataManager.cacheFestivalData(enrichedCtx.location, enrichedCtx.date, enrichedCtx.date, json.discovered_holidays);
+          console.log(`🎭 Background: Cached AI-discovered festival data for future use: ${enrichedCtx.location} on ${enrichedCtx.date}`);
+        } catch (cacheError) {
+          console.log('Background: Failed to cache AI-discovered festival data (non-blocking):', cacheError.message);
+        }
+      });
+    }
   }
   
   console.log(`✅ Final result: ${json.activities.length} activities generated by AI`);
@@ -2598,7 +2892,7 @@ app.post('/api/activities', async (req, res) => {
       console.log('Failed to save search history (non-blocking):', historyError.message);
     }
     
-    res.json({ ok:true, data: json });
+    res.json({ ok: true, data: json, cacheInfo: json.cacheInfo || null });
   } catch (err){
     console.log(`🚫 [SERVER DEBUG ${requestId}] Caught error:`, err.message);
     console.log(`🚫 [SERVER DEBUG ${requestId}] isCancelled:`, isCancelled);

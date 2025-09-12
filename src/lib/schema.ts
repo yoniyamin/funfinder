@@ -17,6 +17,11 @@ export type Context = {
     url: string | null;
     distance_km: number | null;
   }>;
+  holidays?: Array<{
+    name: string;
+    localName: string;
+    date: string;
+  }>;
   extra_instructions?: string;
 };
 

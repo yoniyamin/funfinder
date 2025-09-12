@@ -16,8 +16,8 @@ export class SmartCacheManager {
       demographic: { weight: 0.1, ageFlexibility: 2 } // Age group flexibility in years
     };
     
-    // Minimum similarity score to consider a match
-    this.MIN_SIMILARITY_SCORE = 0.75;
+    // Minimum similarity score to consider a match (90% threshold for quality)
+    this.MIN_SIMILARITY_SCORE = 0.90;
     
     // Geographic data cache for location features
     this.locationCache = new Map();

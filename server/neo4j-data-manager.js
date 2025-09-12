@@ -1,5 +1,6 @@
 import neo4j from 'neo4j-driver';
 import { SmartCacheManager } from './smart-cache-manager.js';
+import { WeatherFestivalCache } from './weather-festival-cache.js';
 
 // Neo4j Data Manager - Replaces MongoDB with Neo4j AuraDB
 export class Neo4jDataManager {
@@ -14,6 +15,9 @@ export class Neo4jDataManager {
     
     // Initialize smart cache manager
     this.smartCache = new SmartCacheManager(this);
+    
+    // Initialize weather and festival cache manager
+    this.weatherFestivalCache = new WeatherFestivalCache(this);
     
     if (!this.uri || !this.user || !this.password) {
       throw new Error('NEO4J_URI, NEO4J_USER, and NEO4J_PASSWORD environment variables are required for Neo4j integration');
@@ -80,6 +84,9 @@ export class Neo4jDataManager {
         console.log('⚠️ Vector index not supported, using manual similarity calculation');
       }
       
+      // Create weather and festival cache constraints
+      await this.weatherFestivalCache.createCacheConstraints();
+      
     } catch (error) {
       console.warn('Constraint/Index creation warning (may already exist):', error.message);
     } finally {
@@ -125,7 +132,10 @@ export class Neo4jDataManager {
     
     if (similarMatch) {
       console.log(`✨ Found similar cached results with ${(similarMatch.similarityScore * 100).toFixed(1)}% similarity`);
-      return similarMatch.results;
+      // Attach cache info to the results
+      const resultsWithCacheInfo = { ...similarMatch.results };
+      resultsWithCacheInfo.cacheInfo = similarMatch.cacheInfo;
+      return resultsWithCacheInfo;
     }
     
     console.log('❌ No similar cached results found');
@@ -195,8 +205,9 @@ export class Neo4jDataManager {
     // Calculate similarity for each candidate
     for (const candidate of candidates) {
       try {
-        const candidateFeatures = JSON.parse(candidate.featureVector);
-        const similarityScore = this.smartCache.calculateSimilarity(currentFeatures, candidateFeatures, candidate.distance);
+        const candidateFeatures = this.sanitizeFeatureVector(JSON.parse(candidate.featureVector));
+        const candidateDistance = Number(candidate.distance) || 0;
+        const similarityScore = this.smartCache.calculateSimilarity(currentFeatures, candidateFeatures, candidateDistance);
         
         if (similarityScore > bestScore && similarityScore >= this.smartCache.MIN_SIMILARITY_SCORE) {
           bestScore = similarityScore;
@@ -427,6 +438,25 @@ export class Neo4jDataManager {
     } finally {
       session.close();
     }
+  }
+
+  // Sanitize feature vector to convert BigInt values to regular numbers
+  sanitizeFeatureVector(features) {
+    const sanitize = (obj) => {
+      if (typeof obj === 'bigint') {
+        return Number(obj);
+      }
+      if (typeof obj === 'object' && obj !== null) {
+        const sanitized = {};
+        for (const [key, value] of Object.entries(obj)) {
+          sanitized[key] = sanitize(value);
+        }
+        return sanitized;
+      }
+      return obj;
+    };
+    
+    return sanitize(features);
   }
 
   generateSearchKey(location, date, duration_hours, ages, query, extra_instructions = '', ai_provider = 'gemini') {
@@ -775,6 +805,202 @@ export class Neo4jDataManager {
     } catch (error) {
       console.error('Error saving API config to Neo4j:', error.message);
       return false;
+    } finally {
+      session.close();
+    }
+  }
+
+  // Weather caching methods
+  async getCachedWeatherData(location, date) {
+    return await this.weatherFestivalCache.getCachedWeatherData(location, date);
+  }
+
+  async cacheWeatherData(location, date, weatherData) {
+    return await this.weatherFestivalCache.cacheWeatherData(location, date, weatherData);
+  }
+
+  // Festival caching methods  
+  async getCachedFestivalData(location, targetDate) {
+    return await this.weatherFestivalCache.getCachedFestivalData(location, targetDate);
+  }
+
+  async cacheFestivalData(location, searchStartDate, searchEndDate, festivalsData) {
+    return await this.weatherFestivalCache.cacheFestivalData(location, searchStartDate, searchEndDate, festivalsData);
+  }
+
+  // Cache management methods
+  async clearSearchCache() {
+    await this.ensureConnection();
+    const session = this.driver.session({ database: this.database });
+    
+    try {
+      // Clear both old and new format search caches
+      const result1 = await session.run('MATCH (n:SearchCache) DELETE n');
+      const result2 = await session.run('MATCH (n:SearchCacheEnhanced) DELETE n');
+      
+      const deleted1 = result1.summary.counters.nodesDeleted();
+      const deleted2 = result2.summary.counters.nodesDeleted();
+      const totalDeleted = deleted1 + deleted2;
+      
+      console.log(`🗑️ Cleared ${totalDeleted} search cache entries (${deleted1} old format, ${deleted2} enhanced)`);
+      return totalDeleted;
+    } catch (error) {
+      console.error('Error clearing search cache:', error.message);
+      throw error;
+    } finally {
+      session.close();
+    }
+  }
+
+  async clearWeatherCache() {
+    await this.ensureConnection();
+    const session = this.driver.session({ database: this.database });
+    
+    try {
+      const result = await session.run('MATCH (n:WeatherCache) DELETE n');
+      const deleted = result.summary.counters.nodesDeleted();
+      
+      console.log(`🗑️ Cleared ${deleted} weather cache entries`);
+      return deleted;
+    } catch (error) {
+      console.error('Error clearing weather cache:', error.message);
+      throw error;
+    } finally {
+      session.close();
+    }
+  }
+
+  async clearFestivalCache() {
+    await this.ensureConnection();
+    const session = this.driver.session({ database: this.database });
+    
+    try {
+      const result = await session.run('MATCH (n:FestivalCache) DELETE n');
+      const deleted = result.summary.counters.nodesDeleted();
+      
+      console.log(`🗑️ Cleared ${deleted} festival cache entries`);
+      return deleted;
+    } catch (error) {
+      console.error('Error clearing festival cache:', error.message);
+      throw error;
+    } finally {
+      session.close();
+    }
+  }
+
+  async clearLocationCache() {
+    await this.ensureConnection();
+    const session = this.driver.session({ database: this.database });
+    
+    try {
+      const result = await session.run('MATCH (n:LocationProfile) DELETE n');
+      const deleted = result.summary.counters.nodesDeleted();
+      
+      console.log(`🗑️ Cleared ${deleted} location cache entries`);
+      return deleted;
+    } catch (error) {
+      console.error('Error clearing location cache:', error.message);
+      throw error;
+    } finally {
+      session.close();
+    }
+  }
+
+  async clearAllCache() {
+    await this.ensureConnection();
+    const session = this.driver.session({ database: this.database });
+    
+    try {
+      // Clear all cache node types
+      const result = await session.run(`
+        MATCH (n) 
+        WHERE n:SearchCache OR n:SearchCacheEnhanced OR n:WeatherCache OR n:FestivalCache OR n:LocationProfile 
+        DELETE n
+      `);
+      const deleted = result.summary.counters.nodesDeleted();
+      
+      console.log(`🗑️ Cleared ${deleted} total cache entries`);
+      return deleted;
+    } catch (error) {
+      console.error('Error clearing all cache:', error.message);
+      throw error;
+    } finally {
+      session.close();
+    }
+  }
+
+  async clearOldSearchHistory(daysToKeep = 30) {
+    await this.ensureConnection();
+    const session = this.driver.session({ database: this.database });
+    
+    try {
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
+      const cutoffIsoString = cutoffDate.toISOString();
+      
+      const result = await session.run(`
+        MATCH (h:SearchHistory) 
+        WHERE h.timestamp < datetime($cutoffDate)
+        DELETE h
+      `, { cutoffDate: cutoffIsoString });
+      
+      const deleted = result.summary.counters.nodesDeleted();
+      console.log(`🗑️ Cleared ${deleted} search history entries older than ${daysToKeep} days`);
+      return deleted;
+    } catch (error) {
+      console.error('Error clearing old search history:', error.message);
+      throw error;
+    } finally {
+      session.close();
+    }
+  }
+
+  async clearAllSearchHistory() {
+    await this.ensureConnection();
+    const session = this.driver.session({ database: this.database });
+    
+    try {
+      const result = await session.run('MATCH (n:SearchHistory) DELETE n');
+      const deleted = result.summary.counters.nodesDeleted();
+      
+      console.log(`🗑️ Cleared ${deleted} search history entries`);
+      return deleted;
+    } catch (error) {
+      console.error('Error clearing all search history:', error.message);
+      throw error;
+    } finally {
+      session.close();
+    }
+  }
+
+  async getCacheStatistics() {
+    await this.ensureConnection();
+    const session = this.driver.session({ database: this.database });
+    
+    try {
+      const result = await session.run(`
+        RETURN 
+          size((n:SearchCache)) + size((n:SearchCacheEnhanced)) as searchResults,
+          size((n:WeatherCache)) as weather,
+          size((n:FestivalCache)) as festivals,
+          size((n:SearchHistory)) as history,
+          size((n:LocationProfile)) as locations
+      `);
+      
+      const record = result.records[0];
+      const stats = {
+        searchResults: record.get('searchResults').toNumber(),
+        weather: record.get('weather').toNumber(),
+        festivals: record.get('festivals').toNumber(),
+        history: record.get('history').toNumber(),
+        locations: record.get('locations').toNumber()
+      };
+      
+      console.log('📊 Cache statistics:', stats);
+      return stats;
+    } catch (error) {
+      console.error('Error getting cache statistics:', error.message);
+      return { searchResults: 0, weather: 0, festivals: 0, history: 0, locations: 0 };
     } finally {
       session.close();
     }

@@ -326,72 +326,32 @@ export default function App(){
       setStatus('Checking public holidays…');
       setProgress(40);
       let isHoliday = false;
+      let holidayDetails: Array<{name: string; localName: string; date: string}> = [];
       try {
         const hol = await fetchHolidays(country_code, date.slice(0,4));
-        const matches = hol.filter((h:any)=>h.date===date);
+        // Ensure date is in YYYY-MM-DD format for comparison
+        const normalizedDate = new Date(date).toISOString().split('T')[0];
+        const matches = hol.filter((h:any)=>h.date===normalizedDate);
         isHoliday = matches.length>0;
+        if (matches.length > 0) {
+          holidayDetails = matches.map((h: any) => ({
+            name: h.name,
+            localName: h.localName,
+            date: h.date
+          }));
+          console.log(`🎊 Found public holiday on ${normalizedDate}:`, matches.map((h: any) => h.localName || h.name).join(', '));
+        } else {
+          console.log(`📅 No public holidays found for ${normalizedDate}`);
+        }
       } catch (error) {
         console.warn('Failed to fetch holidays, continuing without holiday data:', error);
         // Continue without holiday data - don't let this block the entire search
       }
 
-      setStatus('Searching for nearby festivals…');
+      setStatus('Preparing search context…');
       setProgress(55);
-      let festivals: Array<{name:string; url:string|null; start_date:string|null; end_date:string|null; lat:number|null; lon:number|null; distance_km:number|null}> = [];
-      try {
-        festivals = await fetchFestivalsWikidata(lat, lon, date);
-        
-        // If no festivals found and Gemini holiday fetching might be enabled, try Gemini as fallback
-        if (festivals.length === 0) {
-          console.log('No festivals found from Wikidata, trying Gemini comprehensive search...');
-          try {
-            const geminiEvents = await fetchHolidaysWithGemini(`${name}, ${country}`, date);
-            if (geminiEvents.length > 0) {
-              console.log(`✨ Gemini found ${geminiEvents.length} holidays/festivals in 3-day period around ${date}`);
-              
-              // Separate holidays from festivals using helper function
-              const { holidays: actualHolidays, festivals: actualFestivals } = separateHolidaysFromFestivals(geminiEvents, date);
-              
-              // If we found holidays that match today's date, mark as holiday
-              if (actualHolidays.length > 0 && !isHoliday) {
-                isHoliday = true;
-                console.log(`✨ Found public holiday(s) from Gemini: ${actualHolidays.map((h: any) => h.name).join(', ')}`);
-              }
-              
-              // Use only the festivals (holidays filtered out)
-              festivals = actualFestivals;
-              console.log(`🎭 Filtered festivals (holidays removed): ${festivals.length} events remaining`);
-            }
-          } catch (geminiError) {
-            console.warn('Gemini holiday/festival fallback failed:', geminiError);
-            // Continue without Gemini data - this is just a fallback
-          }
-        }
-      } catch (error) {
-        console.warn('Failed to fetch festivals, trying Gemini comprehensive search...', error);
-        // Try Gemini as complete fallback if Wikidata fails entirely
-        try {
-          const geminiEvents = await fetchHolidaysWithGemini(`${name}, ${country}`, date);
-          if (geminiEvents.length > 0) {
-            console.log(`✨ Gemini comprehensive search found ${geminiEvents.length} holidays/festivals`);
-            
-            // Separate holidays from festivals using helper function
-            const { holidays: actualHolidays, festivals: actualFestivals } = separateHolidaysFromFestivals(geminiEvents, date);
-            
-            if (actualHolidays.length > 0 && !isHoliday) {
-              isHoliday = true;
-              console.log(`✨ Found public holiday(s) from Gemini fallback: ${actualHolidays.map((h: any) => h.name).join(', ')}`);
-            }
-            
-            // Use only the festivals (holidays filtered out)
-            festivals = actualFestivals;
-            console.log(`🎭 Filtered festivals in fallback (holidays removed): ${festivals.length} events remaining`);
-          }
-        } catch (geminiError) {
-          console.warn('All festival/holiday fetching failed:', geminiError);
-          // Continue without festival data - don't let this block the entire search
-        }
-      }
+      // Holiday and festival information is now handled server-side in the activity search
+      console.log('🎭 Holiday and festival context will be gathered server-side during activity search');
 
       const context: Context = {
         location: `${name}, ${country}`,
@@ -405,7 +365,8 @@ export default function App(){
           wind_speed_max_kmh: w.wind
         },
         is_public_holiday: isHoliday,
-        nearby_festivals: festivals.map(f=>({ name:f.name, start_date:f.start_date||null, end_date:f.end_date||null, url:f.url||null, distance_km:f.distance_km||null })),
+        nearby_festivals: [], // Will be populated server-side with holiday/festival context
+        holidays: holidayDetails, // Include actual holiday details for UI display
         ...(extraInstructions.trim() && { extra_instructions: extraInstructions.trim() })
       };
       setCtx(context);
