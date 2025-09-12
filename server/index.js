@@ -1843,7 +1843,12 @@ app.post('/api/search-enhanced', async (req, res) => {
           [], // no ages for enhanced search
           'enhanced-search',
           '', // no extra instructions for enhanced search
-          'enhanced' // special provider for enhanced search
+          'enhanced', // special provider for enhanced search
+          { // Basic context for enhanced search
+            weather: {},
+            is_public_holiday: false,
+            nearby_festivals: []
+          }
         );
         
         if (cachedResults) {
@@ -2515,7 +2520,8 @@ app.post('/api/activities', async (req, res) => {
           ctx.ages, 
           cacheKey,
           ctx.extra_instructions || '',
-          modelName
+          modelName,
+          ctx // Pass full context for smart caching
         );
         
         if (cachedResults) {
@@ -2576,7 +2582,8 @@ app.post('/api/activities', async (req, res) => {
             cacheKey, 
             json,
             ctx.extra_instructions || '',
-            modelName
+            modelName,
+            ctx // Pass full context for smart caching
           );
         } catch (cacheError) {
           console.log('Failed to cache search results (non-blocking):', cacheError.message);

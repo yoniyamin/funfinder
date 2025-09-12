@@ -1,4 +1,5 @@
 import neo4j from 'neo4j-driver';
+import { SmartCacheManager } from './smart-cache-manager.js';
 
 // Neo4j Data Manager - Replaces MongoDB with Neo4j AuraDB
 export class Neo4jDataManager {
@@ -10,6 +11,9 @@ export class Neo4jDataManager {
     this.user = process.env.NEO4J_USER;
     this.password = process.env.NEO4J_PASSWORD;
     this.database = process.env.NEO4J_DATABASE || 'neo4j';
+    
+    // Initialize smart cache manager
+    this.smartCache = new SmartCacheManager(this);
     
     if (!this.uri || !this.user || !this.password) {
       throw new Error('NEO4J_URI, NEO4J_USER, and NEO4J_PASSWORD environment variables are required for Neo4j integration');
@@ -47,9 +51,35 @@ export class Neo4jDataManager {
       await session.run('CREATE CONSTRAINT location_name IF NOT EXISTS FOR (l:Location) REQUIRE l.name IS UNIQUE');
       await session.run('CREATE CONSTRAINT system_config_type IF NOT EXISTS FOR (s:SystemConfig) REQUIRE s.type IS UNIQUE');
       
+      // Enhanced smart cache constraints
+      await session.run('CREATE CONSTRAINT search_cache_enhanced_key IF NOT EXISTS FOR (s:SearchCacheEnhanced) REQUIRE s.searchKey IS UNIQUE');
+      await session.run('CREATE CONSTRAINT location_profile_name IF NOT EXISTS FOR (l:LocationProfile) REQUIRE l.name IS UNIQUE');
+      
       // Create indexes for performance
       await session.run('CREATE INDEX search_history_timestamp IF NOT EXISTS FOR (s:SearchHistory) ON (s.timestamp)');
       await session.run('CREATE INDEX search_cache_last_accessed IF NOT EXISTS FOR (s:SearchCache) ON (s.lastAccessed)');
+      
+      // Enhanced smart cache indexes
+      await session.run('CREATE INDEX search_cache_enhanced_location IF NOT EXISTS FOR (s:SearchCacheEnhanced) ON (s.location)');
+      await session.run('CREATE INDEX search_cache_enhanced_date IF NOT EXISTS FOR (s:SearchCacheEnhanced) ON (s.date)');
+      await session.run('CREATE INDEX search_cache_enhanced_similarity IF NOT EXISTS FOR (s:SearchCacheEnhanced) ON (s.similarityScore)');
+      await session.run('CREATE INDEX search_cache_enhanced_last_accessed IF NOT EXISTS FOR (s:SearchCacheEnhanced) ON (s.lastAccessed)');
+      
+      // Create vector index for feature similarity (if Neo4j supports it)
+      try {
+        await session.run(`
+          CREATE VECTOR INDEX search_cache_feature_vector IF NOT EXISTS 
+          FOR (s:SearchCacheEnhanced) ON s.featureVector 
+          OPTIONS {indexConfig: {
+            \`vector.dimensions\`: 32,
+            \`vector.similarity_function\`: 'cosine'
+          }}
+        `);
+        console.log('✅ Created vector index for feature similarity');
+      } catch (vectorError) {
+        console.log('⚠️ Vector index not supported, using manual similarity calculation');
+      }
+      
     } catch (error) {
       console.warn('Constraint/Index creation warning (may already exist):', error.message);
     } finally {
@@ -63,11 +93,47 @@ export class Neo4jDataManager {
     }
   }
 
-  // Search result caching methods
-  async getCachedSearchResults(location, date, duration_hours, ages, query, extra_instructions = '', ai_provider = 'gemini') {
+  // Enhanced search result caching with smart similarity matching
+  async getCachedSearchResults(location, date, duration_hours, ages, query, extra_instructions = '', ai_provider = 'gemini', context = {}) {
     await this.ensureConnection();
     
     const searchKey = this.generateSearchKey(location, date, duration_hours, ages, query, extra_instructions, ai_provider);
+    
+    // Step 1: Try exact match first (fastest)
+    const exactMatch = await this.getExactCachedResults(searchKey);
+    if (exactMatch) {
+      console.log('⚡ Returning exact cached search results for:', searchKey);
+      // Return results with cache info for exact matches
+      if (exactMatch.activities) {
+        exactMatch.cacheInfo = {
+          isCached: true,
+          cacheType: 'exact',
+          similarity: 1.0,
+          originalSearch: {
+            location: location,
+            date: date,
+            searchKey: searchKey
+          }
+        };
+      }
+      return exactMatch;
+    }
+    
+    // Step 2: Try smart similarity matching
+    console.log('🔍 No exact match found, searching for similar cached results...');
+    const similarMatch = await this.getSimilarCachedResults(location, date, duration_hours, ages, query, extra_instructions, ai_provider, context);
+    
+    if (similarMatch) {
+      console.log(`✨ Found similar cached results with ${(similarMatch.similarityScore * 100).toFixed(1)}% similarity`);
+      return similarMatch.results;
+    }
+    
+    console.log('❌ No similar cached results found');
+    return null;
+  }
+
+  // Get exact cache match (original logic)
+  async getExactCachedResults(searchKey) {
     const session = this.driver.session({ database: this.database });
     
     try {
@@ -80,8 +146,6 @@ export class Neo4jDataManager {
         const record = result.records[0];
         const cacheNode = record.get('s').properties;
         
-        console.log('⚡ Returning cached search results for:', searchKey);
-        
         // Update the access timestamp
         await session.run(
           'MATCH (s:SearchCache {searchKey: $searchKey}) SET s.lastAccessed = datetime()',
@@ -89,17 +153,14 @@ export class Neo4jDataManager {
         );
         
         try {
-          const parsedResults = JSON.parse(cacheNode.results);
-          console.log('✅ Successfully parsed cached results');
-          return parsedResults;
+          return JSON.parse(cacheNode.results);
         } catch (parseError) {
-          console.error('❌ Failed to parse cached results JSON:', parseError.message);
-          console.error('Raw cached data:', cacheNode.results);
+          console.error('❌ Failed to parse exact cached results JSON:', parseError.message);
           return null;
         }
       }
     } catch (error) {
-      console.error('Error retrieving cached results:', error.message);
+      console.error('Error retrieving exact cached results:', error.message);
     } finally {
       session.close();
     }
@@ -107,7 +168,72 @@ export class Neo4jDataManager {
     return null;
   }
 
-  async cacheSearchResults(location, date, duration_hours, ages, query, results, extra_instructions = '', ai_provider = 'gemini') {
+  // Get similar cache match using smart similarity
+  async getSimilarCachedResults(location, date, duration_hours, ages, query, extra_instructions, ai_provider, context) {
+    // Ensure we have a complete context for similarity comparison
+    const completeContext = {
+      weather: context.weather || {},
+      is_public_holiday: context.is_public_holiday || false,
+      nearby_festivals: context.nearby_festivals || [],
+      extra_instructions: extra_instructions || context.extra_instructions || '',
+      ...context
+    };
+    
+    // Generate feature vector for current request with complete context
+    const currentFeatures = await this.smartCache.normalizeToFeatureVector(location, date, duration_hours, ages, completeContext);
+    
+    // Find potential candidates using geographic and temporal filtering
+    const candidates = await this.findSimilarityCandidates(location, date, duration_hours, ages);
+    
+    if (candidates.length === 0) {
+      return null;
+    }
+    
+    let bestMatch = null;
+    let bestScore = 0;
+    
+    // Calculate similarity for each candidate
+    for (const candidate of candidates) {
+      try {
+        const candidateFeatures = JSON.parse(candidate.featureVector);
+        const similarityScore = this.smartCache.calculateSimilarity(currentFeatures, candidateFeatures, candidate.distance);
+        
+        if (similarityScore > bestScore && similarityScore >= this.smartCache.MIN_SIMILARITY_SCORE) {
+          bestScore = similarityScore;
+          bestMatch = {
+            results: JSON.parse(candidate.results),
+            similarityScore: similarityScore,
+            originalSearchKey: candidate.searchKey,
+            originalLocation: candidate.location,
+            originalDate: candidate.date,
+            distance: candidate.distance,
+            cacheInfo: {
+              isCached: true,
+              cacheType: 'similar',
+              similarity: similarityScore,
+              originalSearch: {
+                location: candidate.location,
+                date: candidate.date,
+                searchKey: candidate.searchKey
+              }
+            }
+          };
+        }
+      } catch (error) {
+        console.warn('Error calculating similarity for candidate:', candidate.searchKey, error.message);
+      }
+    }
+    
+    if (bestMatch) {
+      // Update access timestamp for the matched cache entry
+      await this.updateCacheAccess(bestMatch.originalSearchKey);
+    }
+    
+    return bestMatch;
+  }
+
+  // Enhanced caching with feature vectors for smart similarity
+  async cacheSearchResults(location, date, duration_hours, ages, query, results, extra_instructions = '', ai_provider = 'gemini', context = {}) {
     await this.ensureConnection();
     
     const searchKey = this.generateSearchKey(location, date, duration_hours, ages, query, extra_instructions, ai_provider);
@@ -117,7 +243,13 @@ export class Neo4jDataManager {
       const resultsJson = JSON.stringify(results);
       console.log('💾 Caching search results for:', searchKey, 'Size:', resultsJson.length, 'chars');
       
-      // Create or update cache entry
+      // Generate feature vector for smart caching
+      const featureVector = await this.smartCache.normalizeToFeatureVector(location, date, duration_hours, ages, context);
+      const featureVectorJson = JSON.stringify(featureVector);
+      
+      // Cache in both old and new formats for backward compatibility
+      
+      // 1. Store in original SearchCache format
       await session.run(`
         MERGE (s:SearchCache {searchKey: $searchKey})
         SET s.location = $location,
@@ -142,7 +274,48 @@ export class Neo4jDataManager {
         results: resultsJson
       });
       
-      // Keep only last 20 search results - remove oldest by lastAccessed
+      // 2. Store in enhanced SearchCacheEnhanced format with feature vectors
+      await session.run(`
+        MERGE (s:SearchCacheEnhanced {searchKey: $searchKey})
+        SET s.location = $location,
+            s.date = $date,
+            s.duration_hours = $duration_hours,
+            s.ages = $ages,
+            s.query = $query,
+            s.extra_instructions = $extra_instructions,
+            s.ai_provider = $ai_provider,
+            s.results = $results,
+            s.featureVector = $featureVector,
+            s.timestamp = datetime(),
+            s.lastAccessed = datetime(),
+            s.similarityScore = 1.0
+      `, {
+        searchKey,
+        location,
+        date,
+        duration_hours: duration_hours || null,
+        ages: ages || [],
+        query: query || '',
+        extra_instructions: extra_instructions || '',
+        ai_provider: ai_provider || 'gemini',
+        results: resultsJson,
+        featureVector: featureVectorJson
+      });
+      
+      // Create or update location profile for geographic calculations
+      await this.createLocationProfile(location, context);
+      
+      // Keep only last 30 enhanced search results (increased from 20 for smart caching)
+      await session.run(`
+        MATCH (s:SearchCacheEnhanced)
+        WITH s ORDER BY s.lastAccessed ASC
+        WITH collect(s) as caches
+        WHERE size(caches) > 30
+        UNWIND caches[0..size(caches)-31] as oldCache
+        DELETE oldCache
+      `);
+      
+      // Also clean up old format caches
       await session.run(`
         MATCH (s:SearchCache)
         WITH s ORDER BY s.lastAccessed ASC
@@ -152,9 +325,105 @@ export class Neo4jDataManager {
         DELETE oldCache
       `);
       
-      console.log('✅ Successfully cached search results for:', searchKey);
+      console.log('✅ Successfully cached search results with smart features for:', searchKey);
     } catch (error) {
-      console.error('Error caching search results:', error.message);
+      console.error('Error caching enhanced search results:', error.message);
+    } finally {
+      session.close();
+    }
+  }
+
+  // Find similarity candidates using geographic and temporal pre-filtering  
+  async findSimilarityCandidates(location, date, duration_hours, ages) {
+    const session = this.driver.session({ database: this.database });
+    
+    try {
+      // Calculate date range for temporal filtering (±14 days)
+      const targetDate = new Date(date);
+      const dateRangeStart = new Date(targetDate);
+      dateRangeStart.setDate(dateRangeStart.getDate() - 14);
+      const dateRangeEnd = new Date(targetDate);
+      dateRangeEnd.setDate(dateRangeEnd.getDate() + 14);
+      
+      // Basic geographic filtering - for now just same location and nearby dates
+      // In a full implementation, you'd calculate geographic distance here
+      const result = await session.run(`
+        MATCH (s:SearchCacheEnhanced)
+        WHERE s.location = $location 
+           OR s.location CONTAINS $locationKeyword
+        AND date(s.date) >= date($dateStart)
+        AND date(s.date) <= date($dateEnd)
+        RETURN s.searchKey as searchKey,
+               s.location as location,
+               s.date as date,
+               s.featureVector as featureVector,
+               s.results as results,
+               0 as distance
+        ORDER BY s.lastAccessed DESC
+        LIMIT 10
+      `, {
+        location,
+        locationKeyword: location.split(',')[0], // City name for broader matching
+        dateStart: dateRangeStart.toISOString().split('T')[0],
+        dateEnd: dateRangeEnd.toISOString().split('T')[0]
+      });
+      
+      return result.records.map(record => ({
+        searchKey: record.get('searchKey'),
+        location: record.get('location'),
+        date: record.get('date'),
+        featureVector: record.get('featureVector'),
+        results: record.get('results'),
+        distance: record.get('distance') // For now 0, would be actual distance in full implementation
+      }));
+      
+    } catch (error) {
+      console.error('Error finding similarity candidates:', error.message);
+      return [];
+    } finally {
+      session.close();
+    }
+  }
+
+  // Update cache access timestamp
+  async updateCacheAccess(searchKey) {
+    const session = this.driver.session({ database: this.database });
+    
+    try {
+      await session.run(`
+        MATCH (s:SearchCacheEnhanced {searchKey: $searchKey})
+        SET s.lastAccessed = datetime()
+      `, { searchKey });
+    } catch (error) {
+      console.warn('Error updating cache access:', error.message);
+    } finally {
+      session.close();
+    }
+  }
+
+  // Create or update location profile for geographic features
+  async createLocationProfile(location, context) {
+    const session = this.driver.session({ database: this.database });
+    
+    try {
+      // Extract basic location info - in full implementation would geocode
+      const locationParts = location.split(',');
+      const city = locationParts[0]?.trim() || location;
+      const country = locationParts[locationParts.length - 1]?.trim() || 'Unknown';
+      
+      await session.run(`
+        MERGE (l:LocationProfile {name: $location})
+        SET l.city = $city,
+            l.country = $country,
+            l.lastUpdated = datetime()
+      `, {
+        location,
+        city,
+        country
+      });
+      
+    } catch (error) {
+      console.warn('Error creating location profile:', error.message);
     } finally {
       session.close();
     }
