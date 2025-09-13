@@ -17,6 +17,7 @@ interface ResultsPageProps {
         searchKey: string;
       };
     };
+    aiModel?: string;
   };
   searchParams: {
     location: string;
@@ -132,7 +133,7 @@ export default function ResultsPage({
   const [showExclusionManager, setShowExclusionManager] = useState<boolean>(false);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'copied'>('idle');
 
-  const { activities, ctx, webSources, cacheInfo } = searchResults;
+  const { activities, ctx, webSources, cacheInfo, aiModel } = searchResults;
 
   const cats = useMemo(() => 
     Array.from(new Set((activities || []).map(a => a.category))).sort(), 
@@ -188,9 +189,12 @@ export default function ResultsPage({
           <div className="flex-1">
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-semibold text-gray-900">Activity Results</h1>
-              <CacheIndicator cacheInfo={cacheInfo} onRefreshSearch={onRefreshSearch} />
-            </div>
-            {ctx && (
+              <CacheIndicator cacheInfo={cacheInfo} currentSearch={{ location: searchParams.location, date: searchParams.date }} onRefreshSearch={onRefreshSearch} />
+              {aiModel && (
+                <span className="text-xs text-gray-500">Model: {aiModel}</span>
+              )}
+              </div>
+              {ctx && (
               <p className="text-sm text-gray-600">
                 <a
                   href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ctx.location)}`}

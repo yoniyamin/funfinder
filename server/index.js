@@ -350,7 +350,16 @@ class MongoDataManager {
             console.log(`✅ Filtered Mongo cached results: ${originalCount} → ${cached.results.activities.length} activities`);
           }
         }
-        
+
+        if (cached.ai_provider && cached.results) {
+          if (!cached.results.ai_model) {
+            cached.results.ai_model = cached.ai_provider;
+          }
+          if (!cached.results.ai_provider) {
+            cached.results.ai_provider = cached.ai_provider;
+          }
+        }
+
         return cached.results;
       }
     } catch (error) {
@@ -2736,6 +2745,15 @@ function getModelIdentifier() {
   return provider;
 }
 
+function getActiveModelName() {
+  const provider = apiKeys.ai_provider || 'gemini';
+  if (provider === 'openrouter') {
+    return `openrouter-${apiKeys.openrouter_model || 'deepseek/deepseek-chat-v3.1:free'}`;
+  }
+  return 'gemini-2.5-flash';
+}
+
+
 function filterOutFestivalActivities(result) {
   if (result && Array.isArray(result.activities)) {
     result.activities = result.activities.filter(act => {
@@ -2873,6 +2891,14 @@ app.post('/api/activities', async (req, res) => {
           }
           
           filterOutFestivalActivities(cachedResults);
+
+          if (!cachedResults.ai_provider) {
+            cachedResults.ai_provider = apiKeys.ai_provider || 'gemini';
+          }
+          if (!cachedResults.ai_model) {
+            cachedResults.ai_model = cachedResults.ai_provider;
+          }
+
           json = cachedResults;
         }
       } catch (cacheError) {
@@ -2890,6 +2916,10 @@ app.post('/api/activities', async (req, res) => {
       
       console.log(`🔍 [SERVER DEBUG ${requestId}] No cached results found, performing new search...`);
       json = await callModelWithRetry(ctx, allowed, 3, maxActivities, abortController.signal);
+
+      json.ai_provider = apiKeys.ai_provider || 'gemini';
+      json.ai_model = getActiveModelName();
+
       filterOutFestivalActivities(json);
 
       // Cache the results (only if using Neo4j)
@@ -2920,7 +2950,14 @@ app.post('/api/activities', async (req, res) => {
     } catch (historyError) {
       console.log('Failed to save search history (non-blocking):', historyError.message);
     }
-    
+
+    if (!json.ai_provider) {
+      json.ai_provider = apiKeys.ai_provider || 'gemini';
+    }
+    if (!json.ai_model) {
+      json.ai_model = getActiveModelName();
+    }
+
     res.json({ ok: true, data: json, cacheInfo: json.cacheInfo || null });
   } catch (err){
     console.log(`🚫 [SERVER DEBUG ${requestId}] Caught error:`, err.message);
