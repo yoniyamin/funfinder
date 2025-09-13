@@ -2753,6 +2753,7 @@ function getActiveModelName() {
   return 'gemini-2.5-flash';
 }
 
+
 function filterOutFestivalActivities(result) {
   if (result && Array.isArray(result.activities)) {
     result.activities = result.activities.filter(act => {
@@ -2890,12 +2891,14 @@ app.post('/api/activities', async (req, res) => {
           }
           
           filterOutFestivalActivities(cachedResults);
+
           if (!cachedResults.ai_provider) {
             cachedResults.ai_provider = apiKeys.ai_provider || 'gemini';
           }
           if (!cachedResults.ai_model) {
             cachedResults.ai_model = cachedResults.ai_provider;
           }
+
           json = cachedResults;
         }
       } catch (cacheError) {
@@ -2913,8 +2916,10 @@ app.post('/api/activities', async (req, res) => {
       
       console.log(`🔍 [SERVER DEBUG ${requestId}] No cached results found, performing new search...`);
       json = await callModelWithRetry(ctx, allowed, 3, maxActivities, abortController.signal);
+
       json.ai_provider = apiKeys.ai_provider || 'gemini';
       json.ai_model = getActiveModelName();
+
       filterOutFestivalActivities(json);
 
       // Cache the results (only if using Neo4j)
