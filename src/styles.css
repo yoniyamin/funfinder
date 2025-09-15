@@ -1638,6 +1638,15 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
   animation: slideDown 1.2s ease-in-out 1.8s forwards;
   z-index: 1;
   will-change: transform;
+
+}
+
+.splash-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+
 }
 
 .splash-image {
