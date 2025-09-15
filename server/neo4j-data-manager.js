@@ -4,7 +4,7 @@ import { WeatherFestivalCache } from './weather-festival-cache.js';
 
 // Neo4j Data Manager - Replaces MongoDB with Neo4j AuraDB
 export class Neo4jDataManager {
-  constructor() {
+  constructor(cacheSettings = {}) {
     this.driver = null;
     this.session = null;
     this.isConnected = false;
@@ -14,7 +14,7 @@ export class Neo4jDataManager {
     this.database = process.env.NEO4J_DATABASE || 'neo4j';
     
     // Initialize smart cache manager
-    this.smartCache = new SmartCacheManager(this);
+    this.smartCache = new SmartCacheManager(this, cacheSettings);
     
     // Initialize weather and festival cache manager
     this.weatherFestivalCache = new WeatherFestivalCache(this);
@@ -1003,12 +1003,30 @@ export class Neo4jDataManager {
     
     try {
       const result = await session.run(`
+        CALL {
+          MATCH (sc:SearchCache) RETURN count(sc) as searchCacheCount
+        }
+        CALL {
+          MATCH (sce:SearchCacheEnhanced) RETURN count(sce) as searchCacheEnhancedCount
+        }
+        CALL {
+          MATCH (wc:WeatherCache) RETURN count(wc) as weatherCount
+        }
+        CALL {
+          MATCH (fc:FestivalCache) RETURN count(fc) as festivalCount
+        }
+        CALL {
+          MATCH (sh:SearchHistory) RETURN count(sh) as historyCount
+        }
+        CALL {
+          MATCH (lp:LocationProfile) RETURN count(lp) as locationCount
+        }
         RETURN 
-          size((:SearchCache)) + size((:SearchCacheEnhanced)) as searchResults,
-          size((:WeatherCache)) as weather,
-          size((:FestivalCache)) as festivals,
-          size((:SearchHistory)) as history,
-          size((:LocationProfile)) as locations
+          searchCacheCount + searchCacheEnhancedCount as searchResults,
+          weatherCount as weather,
+          festivalCount as festivals,
+          historyCount as history,
+          locationCount as locations
       `);
       
       const record = result.records[0];

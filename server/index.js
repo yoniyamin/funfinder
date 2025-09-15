@@ -243,7 +243,12 @@ let apiKeys = {
   ticketmaster_api_key: '',
   enable_gemini_holidays: false, // Enable Gemini-powered holiday/festival fetching
   max_activities: 20, // Maximum number of activities to generate
-  cache_include_model: false // Include AI model in cache key
+  cache_include_model: false, // Include AI model in cache key
+  cache_similarity_threshold: 0.90, // Minimum similarity for cache matching (90%)
+  cache_location_weight: 0.20, // Location importance in similarity (20%)
+  cache_weather_weight: 0.40, // Weather importance in similarity (40%)
+  cache_temporal_weight: 0.30, // Temporal importance in similarity (30%)
+  cache_demographic_weight: 0.10 // Age group importance in similarity (10%)
 };
 
 // MongoDB Data Manager - Replaces file-based storage with cloud storage
@@ -863,7 +868,7 @@ async function initializeDataManager() {
     }
 
     console.log('🔗 Neo4j credentials found, attempting connection...');
-    dataManager = new Neo4jDataManager();
+    dataManager = new Neo4jDataManager(apiKeys);
     await dataManager.connect();
     isNeo4jConnected = true;
     console.log('✅ Using Neo4j AuraDB for data storage');
@@ -1076,6 +1081,11 @@ function loadFromEnvironment() {
   apiKeys.enable_gemini_holidays = process.env.ENABLE_GEMINI_HOLIDAYS === 'true' || false;
   apiKeys.max_activities = parseInt(process.env.MAX_ACTIVITIES) || 20;
   apiKeys.cache_include_model = process.env.CACHE_INCLUDE_MODEL === 'true' || false;
+  apiKeys.cache_similarity_threshold = parseFloat(process.env.CACHE_SIMILARITY_THRESHOLD) || 0.90;
+  apiKeys.cache_location_weight = parseFloat(process.env.CACHE_LOCATION_WEIGHT) || 0.20;
+  apiKeys.cache_weather_weight = parseFloat(process.env.CACHE_WEATHER_WEIGHT) || 0.40;
+  apiKeys.cache_temporal_weight = parseFloat(process.env.CACHE_TEMPORAL_WEIGHT) || 0.30;
+  apiKeys.cache_demographic_weight = parseFloat(process.env.CACHE_DEMOGRAPHIC_WEIGHT) || 0.10;
   
   const hasKeys = Object.values(apiKeys).some(key => typeof key === 'string' && key.length > 0);
   if (hasKeys) {
@@ -2171,6 +2181,11 @@ app.get('/api/settings', (req, res) => {
       enable_gemini_holidays: !!apiKeys.enable_gemini_holidays,
       max_activities: apiKeys.max_activities || 20,
       cache_include_model: !!apiKeys.cache_include_model,
+      cache_similarity_threshold: apiKeys.cache_similarity_threshold || 0.90,
+      cache_location_weight: apiKeys.cache_location_weight || 0.20,
+      cache_weather_weight: apiKeys.cache_weather_weight || 0.40,
+      cache_temporal_weight: apiKeys.cache_temporal_weight || 0.30,
+      cache_demographic_weight: apiKeys.cache_demographic_weight || 0.10,
       // Show masked versions for UI feedback
       gemini_api_key_masked: apiKeys.gemini_api_key ? 
         apiKeys.gemini_api_key.substring(0, 8) + '...' + apiKeys.gemini_api_key.slice(-4) : '',
@@ -2232,6 +2247,11 @@ app.post('/api/settings', async (req, res) => {
       enable_gemini_holidays: !!apiKeys.enable_gemini_holidays,
       max_activities: apiKeys.max_activities || 20,
       cache_include_model: !!apiKeys.cache_include_model,
+      cache_similarity_threshold: apiKeys.cache_similarity_threshold || 0.90,
+      cache_location_weight: apiKeys.cache_location_weight || 0.20,
+      cache_weather_weight: apiKeys.cache_weather_weight || 0.40,
+      cache_temporal_weight: apiKeys.cache_temporal_weight || 0.30,
+      cache_demographic_weight: apiKeys.cache_demographic_weight || 0.10,
       updated: updated
     };
     
@@ -2860,17 +2880,48 @@ app.post('/api/activities', async (req, res) => {
       const currentModel = getActiveModelName();
       console.log('🔍 Checking cache model compatibility - current model:', currentModel);
       
-      // Get a sample cached result to check model compatibility
+      // Get cached results (both exact and similar) to check model compatibility
       if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
         try {
-          const testCachedResults = await dataManager.getCachedSearchResults(
-            ctx.location, ctx.date, ctx.duration_hours, ctx.ages, 
-            JSON.stringify(ctx), ctx.extra_instructions || '', provider, ctx
+          const modelName = getModelIdentifier();
+          const cacheKey = `${allowed}-${maxActivities || 'default'}`;
+          
+          // Check for exact match first
+          const exactCachedResults = await dataManager.getExactCachedResults(
+            dataManager.generateSearchKey(ctx.location, ctx.date, ctx.duration_hours, ctx.ages, cacheKey, ctx.extra_instructions || '', modelName)
           );
           
-          if (testCachedResults && testCachedResults.ai_model && testCachedResults.ai_model !== currentModel) {
-            console.log(`🔄 Cache bypassed - model changed from ${testCachedResults.ai_model} to ${currentModel}`);
-            cacheBypassReason = `model_changed_from_${testCachedResults.ai_model}_to_${currentModel}`;
+          let shouldBypassForModel = false;
+          
+          if (exactCachedResults && exactCachedResults.ai_model && exactCachedResults.ai_model !== currentModel) {
+            console.log(`🔄 Cache bypassed - exact match with different model (${exactCachedResults.ai_model} vs ${currentModel})`);
+            shouldBypassForModel = true;
+          } else if (!exactCachedResults) {
+            // Check for similar results with different models
+            const similarCachedResults = await dataManager.getSimilarCachedResults(
+              ctx.location, ctx.date, ctx.duration_hours, ctx.ages, 
+              cacheKey, ctx.extra_instructions || '', modelName, ctx
+            );
+            
+            if (similarCachedResults && similarCachedResults.cacheInfo) {
+              const { similarity, cachedModel } = similarCachedResults.cacheInfo;
+              
+              if (cachedModel && cachedModel !== currentModel) {
+                // Only bypass if similarity is below threshold AND model is different
+                const minSimilarityForModelReuse = (apiKeys.cache_similarity_threshold || 0.90) + 0.05; // Slightly higher threshold for cross-model reuse
+                
+                if (similarity < minSimilarityForModelReuse) {
+                  console.log(`🔄 Cache bypassed - similar match with different model and low similarity (${cachedModel} vs ${currentModel}, similarity: ${(similarity * 100).toFixed(1)}%)`);
+                  shouldBypassForModel = true;
+                } else {
+                  console.log(`✅ Keeping cache despite model change - high similarity (${cachedModel} vs ${currentModel}, similarity: ${(similarity * 100).toFixed(1)}%)`);
+                }
+              }
+            }
+          }
+          
+          if (shouldBypassForModel) {
+            cacheBypassReason = `model_changed_from_${exactCachedResults?.ai_model || 'unknown'}_to_${currentModel}`;
             bypassCache = true;
           }
         } catch (modelCheckError) {

@@ -1259,13 +1259,16 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                         min="0.75"
                         max="0.99"
                         step="0.01"
-                        defaultValue="0.90"
+                        value={apiKeys.cache_similarity_threshold || 0.90}
+                        onChange={e => handleApiKeyChange('cache_similarity_threshold', parseFloat(e.target.value))}
                         className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                       />
-                      <span className="text-sm font-medium text-gray-600 w-10 sm:w-12">90%</span>
+                      <span className="text-sm font-medium text-gray-600 w-10 sm:w-12">
+                        {Math.round((apiKeys.cache_similarity_threshold || 0.90) * 100)}%
+                      </span>
                     </div>
                     <p className="text-xs text-gray-500">
-                      Minimum similarity required to reuse cached results (currently 90%)
+                      Minimum similarity required to reuse cached results
                     </p>
                   </div>
 
@@ -1280,10 +1283,13 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                         min="0.1"
                         max="0.5"
                         step="0.05"
-                        defaultValue="0.20"
+                        value={apiKeys.cache_location_weight || 0.20}
+                        onChange={e => handleApiKeyChange('cache_location_weight', parseFloat(e.target.value))}
                         className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                       />
-                      <span className="text-sm font-medium text-gray-600 w-10 sm:w-12">20%</span>
+                      <span className="text-sm font-medium text-gray-600 w-10 sm:w-12">
+                        {Math.round((apiKeys.cache_location_weight || 0.20) * 100)}%
+                      </span>
                     </div>
                     <p className="text-xs text-gray-500">
                       How much location similarity affects cache matching
@@ -1301,10 +1307,13 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                         min="0.2"
                         max="0.6"
                         step="0.05"
-                        defaultValue="0.40"
+                        value={apiKeys.cache_weather_weight || 0.40}
+                        onChange={e => handleApiKeyChange('cache_weather_weight', parseFloat(e.target.value))}
                         className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                       />
-                      <span className="text-sm font-medium text-gray-600 w-10 sm:w-12">40%</span>
+                      <span className="text-sm font-medium text-gray-600 w-10 sm:w-12">
+                        {Math.round((apiKeys.cache_weather_weight || 0.40) * 100)}%
+                      </span>
                     </div>
                     <p className="text-xs text-gray-500">
                       How much weather similarity affects cache matching
@@ -1322,13 +1331,40 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                         min="0.1"
                         max="0.5"
                         step="0.05"
-                        defaultValue="0.30"
+                        value={apiKeys.cache_temporal_weight || 0.30}
+                        onChange={e => handleApiKeyChange('cache_temporal_weight', parseFloat(e.target.value))}
                         className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                       />
-                      <span className="text-sm font-medium text-gray-600 w-10 sm:w-12">30%</span>
+                      <span className="text-sm font-medium text-gray-600 w-10 sm:w-12">
+                        {Math.round((apiKeys.cache_temporal_weight || 0.30) * 100)}%
+                      </span>
                     </div>
                     <p className="text-xs text-gray-500">
                       How much time/date similarity affects cache matching
+                    </p>
+                  </div>
+
+                  {/* Demographic Weight (Age Groups) */}
+                  <div className="space-y-2 sm:space-y-3">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Age Group Weight
+                    </label>
+                    <div className="flex items-center space-x-2 sm:space-x-3">
+                      <input
+                        type="range"
+                        min="0.05"
+                        max="0.3"
+                        step="0.05"
+                        value={apiKeys.cache_demographic_weight || 0.10}
+                        onChange={e => handleApiKeyChange('cache_demographic_weight', parseFloat(e.target.value))}
+                        className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <span className="text-sm font-medium text-gray-600 w-10 sm:w-12">
+                        {Math.round((apiKeys.cache_demographic_weight || 0.10) * 100)}%
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      How strictly age groups must match for cache reuse
                     </p>
                   </div>
                 </div>

@@ -123,6 +123,23 @@ export default function SearchPage({
     setExtraInstructions(searchParams.extraInstructions || '');
   }, [searchParams.extraInstructions]);
 
+  // Extract unique locations from search history
+  const getUniqueLocationsFromHistory = () => {
+    if (!searchHistory || searchHistory.length === 0) return [];
+    
+    const uniqueLocations = new Set<string>();
+    
+    // Extract locations from search history, most recent first
+    searchHistory.forEach(entry => {
+      if (entry.location && entry.location.trim()) {
+        uniqueLocations.add(entry.location.trim());
+      }
+    });
+    
+    // Convert to array and limit to 10 most recent
+    return Array.from(uniqueLocations).slice(0, 10);
+  };
+
   // Load cities from CSV
   useEffect(() => {
     const loadCities = async () => {
@@ -182,7 +199,16 @@ export default function SearchPage({
 
   // Handle selecting a city suggestion
   const handleCitySelect = (city: City) => {
-    updateSearchParams({ location: `${city.name}, ${city.country}` });
+    const locationString = `${city.name}, ${city.country}`;
+    updateSearchParams({ location: locationString });
+    setShowLocationModal(false);
+    setLocationSuggestions([]);
+    setLocationSearchText('');
+  };
+
+  // Handle selecting from location history
+  const handleLocationHistorySelect = (location: string) => {
+    updateSearchParams({ location });
     setShowLocationModal(false);
     setLocationSuggestions([]);
     setLocationSearchText('');
@@ -352,7 +378,7 @@ export default function SearchPage({
             <div className="glass-row">
               <div className="glass-row-icon">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="#e53e3e"/>
+                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="#475569"/>
                 </svg>
               </div>
               <button
@@ -436,8 +462,22 @@ export default function SearchPage({
 
           </div>
           
-          {/* Top Actions - Instructions, Recent, Reset */}
+          {/* Top Actions - Reset, History, Instructions */}
           <div className="glass-card-actions">
+            {/* Reset Button */}
+            <button
+              type="button"
+              onClick={handleResetForm}
+              className="glass-action-btn-with-label"
+              title="Reset form"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M1 4v6h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <span className="action-label">Reset</span>
+            </button>
+
             {/* Recent Searches */}
             {searchHistory.length > 0 && (
               <div className="glass-action-container" ref={historyDropdownRef}>
@@ -489,20 +529,6 @@ export default function SearchPage({
                 )}
               </div>
             )}
-
-            {/* Reset Button */}
-            <button
-              type="button"
-              onClick={handleResetForm}
-              className="glass-action-btn-with-label"
-              title="Reset form"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <path d="M1 4v6h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-              <span className="action-label">Reset</span>
-            </button>
 
             {/* Instructions */}
             <button
@@ -566,7 +592,7 @@ export default function SearchPage({
                         >
                           <div className="location-result-icon">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="#e53e3e"/>
+                              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="#475569"/>
                             </svg>
                           </div>
                           <div className="location-result-info">
@@ -580,8 +606,42 @@ export default function SearchPage({
                         No cities found for "{locationSearchText}"
                       </div>
                     ) : (
-                      <div className="location-placeholder">
-                        Start typing to search for cities...
+                      <div className="location-section">
+                        {(() => {
+                          const uniqueLocations = getUniqueLocationsFromHistory();
+                          return uniqueLocations.length > 0 && (
+                            <>
+                              <div className="location-section-header">
+                                <h4 className="location-section-title">
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="mr-2">
+                                    <path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0013 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z" fill="currentColor"/>
+                                  </svg>
+                                  Recent Locations
+                                </h4>
+                              </div>
+                              {uniqueLocations.map((location, index) => (
+                                <button
+                                  key={`history-${location}-${index}`}
+                                  type="button"
+                                  onClick={() => handleLocationHistorySelect(location)}
+                                  className="location-result-item location-history-item"
+                                >
+                                  <div className="location-result-icon">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                      <path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0013 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z" fill="#6B7280"/>
+                                    </svg>
+                                  </div>
+                                  <div className="location-result-info">
+                                    <span className="location-result-name">{location}</span>
+                                  </div>
+                                </button>
+                              ))}
+                            </>
+                          );
+                        })()}
+                        <div className="location-placeholder">
+                          {getUniqueLocationsFromHistory().length > 0 ? 'Type to search for more locations...' : 'Start typing to search for cities...'}
+                        </div>
                       </div>
                     )}
                   </div>

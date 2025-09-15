@@ -5,19 +5,19 @@ import neo4j from 'neo4j-driver';
  * Identifies "close enough" search requests to reuse cached results
  */
 export class SmartCacheManager {
-  constructor(neo4jDataManager) {
+  constructor(neo4jDataManager, cacheSettings = {}) {
     this.dataManager = neo4jDataManager;
     
-    // Similarity configuration - location is strict, weather/temporal more flexible
+    // Similarity configuration - use settings or defaults
     this.SIMILARITY_THRESHOLDS = {
-      location: { weight: 0.2, maxDistance: 20 }, // km - strict local relevance
-      weather: { weight: 0.4, tolerance: 0.8 },   // More transferable between locations
-      temporal: { weight: 0.3, dayRange: 14 },    // Seasonal patterns matter
-      demographic: { weight: 0.1, ageFlexibility: 2 } // Age group flexibility in years
+      location: { weight: cacheSettings.cache_location_weight || 0.2, maxDistance: 20 }, // km - strict local relevance
+      weather: { weight: cacheSettings.cache_weather_weight || 0.4, tolerance: 0.8 },   // More transferable between locations
+      temporal: { weight: cacheSettings.cache_temporal_weight || 0.3, dayRange: 14 },    // Seasonal patterns matter
+      demographic: { weight: cacheSettings.cache_demographic_weight || 0.1, ageFlexibility: 2 } // Age group flexibility in years
     };
     
-    // Minimum similarity score to consider a match (90% threshold for quality)
-    this.MIN_SIMILARITY_SCORE = 0.90;
+    // Minimum similarity score to consider a match (configurable threshold)
+    this.MIN_SIMILARITY_SCORE = cacheSettings.cache_similarity_threshold || 0.90;
     
     // Geographic data cache for location features
     this.locationCache = new Map();
