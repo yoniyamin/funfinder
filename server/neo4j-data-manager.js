@@ -862,8 +862,8 @@ export class Neo4jDataManager {
       const result1 = await session.run('MATCH (n:SearchCache) DELETE n');
       const result2 = await session.run('MATCH (n:SearchCacheEnhanced) DELETE n');
       
-      const deleted1 = result1.summary.counters.nodesDeleted();
-      const deleted2 = result2.summary.counters.nodesDeleted();
+      const deleted1 = result1.summary.counters.nodesDeleted;
+      const deleted2 = result2.summary.counters.nodesDeleted;
       const totalDeleted = deleted1 + deleted2;
       
       console.log(`🗑️ Cleared ${totalDeleted} search cache entries (${deleted1} old format, ${deleted2} enhanced)`);
@@ -882,7 +882,7 @@ export class Neo4jDataManager {
     
     try {
       const result = await session.run('MATCH (n:WeatherCache) DELETE n');
-      const deleted = result.summary.counters.nodesDeleted();
+      const deleted = result.summary.counters.nodesDeleted;
       
       console.log(`🗑️ Cleared ${deleted} weather cache entries`);
       return deleted;
@@ -900,7 +900,7 @@ export class Neo4jDataManager {
     
     try {
       const result = await session.run('MATCH (n:FestivalCache) DELETE n');
-      const deleted = result.summary.counters.nodesDeleted();
+      const deleted = result.summary.counters.nodesDeleted;
       
       console.log(`🗑️ Cleared ${deleted} festival cache entries`);
       return deleted;
@@ -918,7 +918,7 @@ export class Neo4jDataManager {
     
     try {
       const result = await session.run('MATCH (n:LocationProfile) DELETE n');
-      const deleted = result.summary.counters.nodesDeleted();
+      const deleted = result.summary.counters.nodesDeleted;
       
       console.log(`🗑️ Cleared ${deleted} location cache entries`);
       return deleted;
@@ -941,7 +941,7 @@ export class Neo4jDataManager {
         WHERE n:SearchCache OR n:SearchCacheEnhanced OR n:WeatherCache OR n:FestivalCache OR n:LocationProfile 
         DELETE n
       `);
-      const deleted = result.summary.counters.nodesDeleted();
+      const deleted = result.summary.counters.nodesDeleted;
       
       console.log(`🗑️ Cleared ${deleted} total cache entries`);
       return deleted;
@@ -968,7 +968,7 @@ export class Neo4jDataManager {
         DELETE h
       `, { cutoffDate: cutoffIsoString });
       
-      const deleted = result.summary.counters.nodesDeleted();
+      const deleted = result.summary.counters.nodesDeleted;
       console.log(`🗑️ Cleared ${deleted} search history entries older than ${daysToKeep} days`);
       return deleted;
     } catch (error) {
@@ -985,7 +985,7 @@ export class Neo4jDataManager {
     
     try {
       const result = await session.run('MATCH (n:SearchHistory) DELETE n');
-      const deleted = result.summary.counters.nodesDeleted();
+      const deleted = result.summary.counters.nodesDeleted;
       
       console.log(`🗑️ Cleared ${deleted} search history entries`);
       return deleted;

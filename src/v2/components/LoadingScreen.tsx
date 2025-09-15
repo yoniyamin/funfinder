@@ -11,20 +11,21 @@ export default function LoadingScreen() {
           className="glass-bg-image glass-bg-image-desktop"
         />
         <img
-          src={getImageUrl('BG5')}
+          src={getImageUrl('BG7')}
           alt="Background"
           className="glass-bg-image glass-bg-image-mobile"
         />
         <div className="glass-bg-overlay" />
       </div>
-      <div className="glass-content">
-        <div className="loading-animation-container">
-          <div className="loading-spinner">
-            <div className="spinner-ring" />
-            <div className="spinner-ring" />
-            <div className="spinner-ring" />
-            <div className="loading-progress-center">Loading...</div>
-          </div>
+      
+
+      {/* Loading Animation */}
+      <div className="loading-animation-container">
+        <div className="loading-spinner">
+          <div className="spinner-ring" />
+          <div className="spinner-ring" />
+          <div className="spinner-ring" />
+          <div className="loading-progress-center">Loading...</div>
         </div>
       </div>
     </div>

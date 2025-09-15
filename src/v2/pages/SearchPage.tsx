@@ -484,7 +484,7 @@ export default function SearchPage({
                 <button
                   type="button"
                   onClick={() => setShowHistory(!showHistory)}
-                  className="glass-action-btn-with-label"
+                  className="glass-action-btn-with-label history-btn"
                   title="Recent searches"
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none">

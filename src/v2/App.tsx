@@ -804,10 +804,12 @@ export default function App() {
       {state.showSplash && (
         <div className="splash-screen">
           <div className="splash-top">
-            <img src={getImageUrl('BG7')} alt="Fun Finder" className="splash-image" />
+            <img src={getImageUrl('BGPC')} alt="Fun Finder" className="splash-image splash-image-desktop" />
+            <img src={getImageUrl('BG7')} alt="Fun Finder" className="splash-image splash-image-mobile" />
           </div>
           <div className="splash-bottom">
-            <img src={getImageUrl('BG7')} alt="Fun Finder" className="splash-image" />
+            <img src={getImageUrl('BGPC')} alt="Fun Finder" className="splash-image splash-image-desktop" />
+            <img src={getImageUrl('BG7')} alt="Fun Finder" className="splash-image splash-image-mobile" />
           </div>
         </div>
       )}

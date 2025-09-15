@@ -99,7 +99,13 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
           ai_provider: data.settings.ai_provider || 'gemini',
           openrouter_model: data.settings.openrouter_model || 'deepseek/deepseek-chat-v3.1:free',
           max_activities: data.settings.max_activities || 20,
-          cache_include_model: data.settings.cache_include_model !== undefined ? data.settings.cache_include_model : prev.cache_include_model
+          cache_include_model: data.settings.cache_include_model !== undefined ? data.settings.cache_include_model : prev.cache_include_model,
+          // Load cache weight settings
+          cache_similarity_threshold: data.settings.cache_similarity_threshold || 0.90,
+          cache_location_weight: data.settings.cache_location_weight || 0.20,
+          cache_weather_weight: data.settings.cache_weather_weight || 0.40,
+          cache_temporal_weight: data.settings.cache_temporal_weight || 0.30,
+          cache_demographic_weight: data.settings.cache_demographic_weight || 0.10
         }));
       }
     } catch (error) {
@@ -1528,34 +1534,45 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                             'Clear All History'
                           )}
                         </button>
-                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                          <input
-                            type="number"
-                            min="1"
-                            max="365"
-                            defaultValue="30"
-                            className="input text-sm flex-1"
-                            placeholder="Days"
-                            id="historyDaysInput"
-                          />
-                          <button 
-                            onClick={() => {
-                              const daysInput = document.getElementById('historyDaysInput') as HTMLInputElement;
-                              const days = parseInt(daysInput?.value || '30');
-                              clearSearchHistory('old', days);
-                            }}
-                            disabled={cacheOperations.clearHistoryOld}
-                            className="btn btn-secondary text-xs sm:flex-shrink-0"
-                          >
-                            {cacheOperations.clearHistoryOld ? (
-                              <>
-                                <div className="animate-spin w-2 h-2 border border-gray-400 border-t-transparent rounded-full"></div>
-                                Clearing...
-                              </>
-                            ) : (
-                              'Clear Old'
-                            )}
-                          </button>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium text-gray-700">
+                            Clear items older than:
+                          </label>
+                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                            <div className="flex items-center gap-2 flex-1">
+                              <input
+                                type="number"
+                                min="1"
+                                max="365"
+                                defaultValue="30"
+                                className="input text-sm w-20"
+                                placeholder="30"
+                                id="historyDaysInput"
+                              />
+                              <span className="text-sm text-gray-600">days</span>
+                            </div>
+                            <button 
+                              onClick={() => {
+                                const daysInput = document.getElementById('historyDaysInput') as HTMLInputElement;
+                                const days = parseInt(daysInput?.value || '30');
+                                clearSearchHistory('old', days);
+                              }}
+                              disabled={cacheOperations.clearHistoryOld}
+                              className="btn btn-secondary text-xs sm:flex-shrink-0"
+                            >
+                              {cacheOperations.clearHistoryOld ? (
+                                <>
+                                  <div className="animate-spin w-2 h-2 border border-gray-400 border-t-transparent rounded-full"></div>
+                                  Clearing...
+                                </>
+                              ) : (
+                                'Clear Old Items'
+                              )}
+                            </button>
+                          </div>
+                          <p className="text-xs text-gray-500">
+                            Remove search history entries older than the specified number of days (default: 30 days)
+                          </p>
                         </div>
                       </div>
                   </div>
