@@ -251,6 +251,12 @@ let apiKeys = {
   cache_demographic_weight: 0.10 // Age group importance in similarity (10%)
 };
 
+function applyCacheSettings() {
+  if (dataManager && typeof dataManager.updateCacheSettings === 'function') {
+    dataManager.updateCacheSettings(apiKeys);
+  }
+}
+
 // MongoDB Data Manager - Replaces file-based storage with cloud storage
 class MongoDataManager {
   constructor() {
@@ -1006,6 +1012,7 @@ async function loadApiKeys() {
           
           if (loadedAnyKey) {
             console.log('☁️ API keys loaded from Neo4j');
+            applyCacheSettings();
             return;
           }
         }
@@ -1048,7 +1055,8 @@ async function loadApiKeys() {
               console.log('⚠️  Failed to migrate API config to Neo4j:', migrateError.message);
             }
           }
-          
+
+          applyCacheSettings();
           return;
         } else {
           console.log('No valid encrypted keys found, falling back to environment variables');
@@ -1062,9 +1070,11 @@ async function loadApiKeys() {
     
     // Final fallback to environment variables
     loadFromEnvironment();
+    applyCacheSettings();
   } catch (error) {
     console.error('Error loading API keys:', error.message);
     loadFromEnvironment();
+    applyCacheSettings();
   }
 }
 
@@ -2233,6 +2243,7 @@ app.post('/api/settings', async (req, res) => {
       await saveApiKeys();
       // Reinitialize AI providers if keys were updated
       initializeAIProviders();
+      applyCacheSettings();
     }
     
     // Return updated configuration status
