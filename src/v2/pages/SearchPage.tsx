@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { toISODate, geocode, fetchHolidays, fetchWeatherDaily, fetchFestivalsWikidata, fetchHolidaysWithGemini } from '../../lib/api';
 import type { Context, LLMResult } from '../../lib/schema';
+import { getImageUrl } from '../../config/assets';
 
 interface SearchHistoryEntry {
   id: string;
@@ -299,12 +300,12 @@ export default function SearchPage({
       {/* Background Image */}
       <div className="glass-bg-container">
         <img
-          src="/bgpc.jpeg"
+          src={getImageUrl('BGPC')}
           alt="Nature background with kids playing"
           className="glass-bg-image glass-bg-image-desktop"
         />
         <img
-          src="/bg5.jpeg"
+          src={getImageUrl('BG5')}
           alt="Nature background with kids playing"
           className="glass-bg-image glass-bg-image-mobile"
         />

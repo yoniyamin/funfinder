@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import type { Activity, Context } from '../../lib/schema';
 import CacheIndicator from '../components/CacheIndicator';
+import { getImageUrl } from '../../config/assets';
 
 interface ResultsPageProps {
   searchResults: {
@@ -172,7 +173,7 @@ export default function ResultsPage({
   return (
     <div 
       className="min-h-screen bg-cover bg-center bg-fixed"
-      style={{ backgroundImage: 'url(/bg6.jpeg)' }}
+      style={{ backgroundImage: `url(${getImageUrl('BG6')})` }}
     >
       {/* Header */}
       <div className="bg-white/95 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-40 px-4 py-4">

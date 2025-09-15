@@ -1,16 +1,17 @@
 import React from 'react';
+import { getImageUrl } from '../../config/assets';
 
 export default function LoadingScreen() {
   return (
     <div className="glass-search-page">
       <div className="glass-bg-container">
         <img
-          src="/bgpc.jpeg"
+          src={getImageUrl('BGPC')}
           alt="Background"
           className="glass-bg-image glass-bg-image-desktop"
         />
         <img
-          src="/bg5.jpeg"
+          src={getImageUrl('BG5')}
           alt="Background"
           className="glass-bg-image glass-bg-image-mobile"
         />
