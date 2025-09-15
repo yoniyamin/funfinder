@@ -803,11 +803,12 @@ export default function App() {
       {/* Splash Screen Overlay */}
       {state.showSplash && (
         <div className="splash-screen">
-          <div className="splash-top">
+          <div className="splash-overlay glass-bg-overlay" />
+          <div className="splash-top splash-layer">
             <img src={getImageUrl('BGPC')} alt="Fun Finder" className="splash-image splash-image-desktop" />
             <img src={getImageUrl('BG7')} alt="Fun Finder" className="splash-image splash-image-mobile" />
           </div>
-          <div className="splash-bottom">
+          <div className="splash-bottom splash-layer">
             <img src={getImageUrl('BGPC')} alt="Fun Finder" className="splash-image splash-image-desktop" />
             <img src={getImageUrl('BG7')} alt="Fun Finder" className="splash-image splash-image-mobile" />
           </div>
