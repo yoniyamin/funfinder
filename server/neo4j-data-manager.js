@@ -13,14 +13,23 @@ export class Neo4jDataManager {
     this.password = process.env.NEO4J_PASSWORD;
     this.database = process.env.NEO4J_DATABASE || 'neo4j';
     
+    this.cacheSettings = { ...cacheSettings };
+
     // Initialize smart cache manager
-    this.smartCache = new SmartCacheManager(this, cacheSettings);
+    this.smartCache = new SmartCacheManager(this, this.cacheSettings);
     
     // Initialize weather and festival cache manager
     this.weatherFestivalCache = new WeatherFestivalCache(this);
     
     if (!this.uri || !this.user || !this.password) {
       throw new Error('NEO4J_URI, NEO4J_USER, and NEO4J_PASSWORD environment variables are required for Neo4j integration');
+    }
+  }
+
+  updateCacheSettings(newSettings = {}) {
+    this.cacheSettings = { ...this.cacheSettings, ...newSettings };
+    if (this.smartCache) {
+      this.smartCache.updateSettings(this.cacheSettings);
     }
   }
 
@@ -202,7 +211,7 @@ export class Neo4jDataManager {
     const currentFeatures = await this.smartCache.normalizeToFeatureVector(location, date, duration_hours, ages, completeContext);
     
     // Find potential candidates using geographic and temporal filtering
-    const candidates = await this.findSimilarityCandidates(location, date, duration_hours, ages);
+    const candidates = await this.findSimilarityCandidates(location, date, duration_hours, ages, ai_provider);
     
     if (candidates.length === 0) {
       return null;
@@ -217,7 +226,21 @@ export class Neo4jDataManager {
         const candidateFeatures = this.sanitizeFeatureVector(JSON.parse(candidate.featureVector));
         const candidateDistance = Number(candidate.distance) || 0;
         const similarityResult = this.smartCache.calculateSimilarity(currentFeatures, candidateFeatures, candidateDistance);
-        const similarityScore = similarityResult.score || similarityResult; // Handle both old and new format
+        const similarityDetails = similarityResult && typeof similarityResult === 'object' ? similarityResult : null;
+        const similarityScore = similarityDetails?.score ?? similarityResult; // Handle both old and new format
+
+        if (this.cacheSettings?.cache_include_model && ai_provider && candidate.ai_provider && candidate.ai_provider !== ai_provider) {
+          continue;
+        }
+
+        const instructionsBreakdown = similarityDetails?.breakdown?.instructions;
+        if (
+          this.smartCache.SIMILARITY_THRESHOLDS.instructions.weight > 0 &&
+          instructionsBreakdown &&
+          instructionsBreakdown.score < this.smartCache.MIN_INSTRUCTIONS_SCORE
+        ) {
+          continue;
+        }
 
         if (similarityScore > bestScore && similarityScore >= this.smartCache.MIN_SIMILARITY_SCORE) {
           const parsedResults = JSON.parse(candidate.results);
@@ -242,7 +265,7 @@ export class Neo4jDataManager {
               isCached: true,
               cacheType: 'similar',
               similarity: similarityScore,
-              similarityBreakdown: similarityResult.breakdown || null,
+              similarityBreakdown: similarityDetails?.breakdown || null,
               originalSearch: {
                 location: candidate.location,
                 date: candidate.date,
@@ -367,9 +390,9 @@ export class Neo4jDataManager {
   }
 
   // Find similarity candidates using geographic and temporal pre-filtering  
-  async findSimilarityCandidates(location, date, duration_hours, ages) {
+  async findSimilarityCandidates(location, date, duration_hours, ages, ai_provider = null) {
     const session = this.driver.session({ database: this.database });
-    
+
     try {
       // Calculate date range for temporal filtering (±14 days)
       const targetDate = new Date(date);
@@ -377,15 +400,18 @@ export class Neo4jDataManager {
       dateRangeStart.setDate(dateRangeStart.getDate() - 14);
       const dateRangeEnd = new Date(targetDate);
       dateRangeEnd.setDate(dateRangeEnd.getDate() + 14);
-      
+
+      const requireSameModel = this.cacheSettings?.cache_include_model;
+      const providerFilter = requireSameModel ? ai_provider : null;
+
       // Basic geographic filtering - for now just same location and nearby dates
       // In a full implementation, you'd calculate geographic distance here
       const result = await session.run(`
         MATCH (s:SearchCacheEnhanced)
-        WHERE s.location = $location 
-           OR s.location CONTAINS $locationKeyword
-        AND date(s.date) >= date($dateStart)
-        AND date(s.date) <= date($dateEnd)
+        WHERE (s.location = $location OR s.location CONTAINS $locationKeyword)
+          AND date(s.date) >= date($dateStart)
+          AND date(s.date) <= date($dateEnd)
+          AND ($providerFilter IS NULL OR s.ai_provider = $providerFilter)
         RETURN s.searchKey as searchKey,
                s.location as location,
                s.date as date,
@@ -399,9 +425,10 @@ export class Neo4jDataManager {
         location,
         locationKeyword: location.split(',')[0], // City name for broader matching
         dateStart: dateRangeStart.toISOString().split('T')[0],
-        dateEnd: dateRangeEnd.toISOString().split('T')[0]
+        dateEnd: dateRangeEnd.toISOString().split('T')[0],
+        providerFilter
       });
-      
+
       return result.records.map(record => ({
         searchKey: record.get('searchKey'),
         location: record.get('location'),

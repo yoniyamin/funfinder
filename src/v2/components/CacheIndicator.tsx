@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
 
-interface CacheInfo {
+export interface CacheSimilarityFactor {
+  score: number;
+  weight: number;
+  distance?: number;
+}
+
+export interface CacheInfo {
   isCached: boolean;
   cacheType: 'exact' | 'similar';
   similarity: number;
-  similarityBreakdown?: {
-    location: { score: number; weight: number; distance?: number };
-    weather: { score: number; weight: number };
-    temporal: { score: number; weight: number };
-    demographic: { score: number; weight: number };
-  };
+  similarityBreakdown?: Record<string, CacheSimilarityFactor>;
   originalSearch: {
     location: string;
     date: string;
@@ -18,7 +19,7 @@ interface CacheInfo {
   cachedModel?: string;
 }
 
-interface CacheIndicatorProps {
+export interface CacheIndicatorProps {
   cacheInfo?: CacheInfo;
   onRefreshSearch?: () => void;
   currentSearch?: { location: string; date: string };
@@ -26,7 +27,12 @@ interface CacheIndicatorProps {
 
 export default function CacheIndicator({ cacheInfo, onRefreshSearch, currentSearch }: CacheIndicatorProps) {
   const [showTooltip, setShowTooltip] = useState(false);
-  const [tooltipPosition, setTooltipPosition] = useState<{vertical: 'top' | 'bottom', horizontal: 'left' | 'center' | 'right'}>({vertical: 'top', horizontal: 'center'});
+  const [tooltipPosition, setTooltipPosition] = useState<{
+    vertical: 'top' | 'bottom';
+    horizontal: 'left' | 'center' | 'right';
+    width: number;
+    offset: number;
+  }>({ vertical: 'top', horizontal: 'center', width: 320, offset: 0 });
   const [showFactors, setShowFactors] = useState(false);
 
   if (!cacheInfo?.isCached) {
@@ -63,6 +69,7 @@ export default function CacheIndicator({ cacheInfo, onRefreshSearch, currentSear
       case 'weather': return '🌤️';
       case 'temporal': return '📅';
       case 'demographic': return '👥';
+      case 'instructions': return '📝';
       default: return '🔹';
     }
   };
@@ -73,6 +80,7 @@ export default function CacheIndicator({ cacheInfo, onRefreshSearch, currentSear
       case 'weather': return 'Weather';
       case 'temporal': return 'Date/Time';
       case 'demographic': return 'Age/Duration';
+      case 'instructions': return 'Special Instructions';
       default: return factor;
     }
   };
@@ -88,28 +96,32 @@ export default function CacheIndicator({ cacheInfo, onRefreshSearch, currentSear
     const viewportHeight = window.innerHeight;
     const viewportWidth = window.innerWidth;
     const tooltipHeight = 240;
-    const tooltipWidth = 320;
     const margin = 16; // 1rem margin from viewport edges
-    
+    const tooltipWidth = Math.min(360, viewportWidth - margin * 2);
+
     // Determine vertical position
     const spaceAbove = rect.top;
     const spaceBelow = viewportHeight - rect.bottom;
     const vertical = (spaceAbove >= tooltipHeight + 10) ? 'top' : 'bottom';
-    
+
     // Determine horizontal position
     const elementCenter = rect.left + rect.width / 2;
     const tooltipHalfWidth = tooltipWidth / 2;
-    
+
     let horizontal: 'left' | 'center' | 'right' = 'center';
-    
+    let offset = 0;
+
     // Check if centered tooltip would exceed viewport
     if (elementCenter - tooltipHalfWidth < margin) {
       horizontal = 'left';
+      offset = Math.max(margin - rect.left, 0);
     } else if (elementCenter + tooltipHalfWidth > viewportWidth - margin) {
       horizontal = 'right';
+      const rightSpace = viewportWidth - rect.right;
+      offset = Math.max(margin - rightSpace, 0);
     }
-    
-    return { vertical, horizontal };
+
+    return { vertical, horizontal, width: tooltipWidth, offset };
   };
 
   const handleTooltipToggle = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -124,6 +136,9 @@ export default function CacheIndicator({ cacheInfo, onRefreshSearch, currentSear
   const dateMatch = currentSearch && cacheInfo
     ? currentSearch.date === cacheInfo.originalSearch.date
     : true;
+  const breakdownEntries = cacheInfo.similarityBreakdown
+    ? Object.entries(cacheInfo.similarityBreakdown).filter(([, data]) => data.weight > 0 || data.score > 0)
+    : [];
 
   return (
     <div className="relative inline-flex items-center gap-1">
@@ -154,28 +169,24 @@ export default function CacheIndicator({ cacheInfo, onRefreshSearch, currentSear
 
       {showTooltip && (
         <div
-          className={`absolute z-50 w-96 bg-white border border-gray-200 rounded-lg shadow-xl p-4 text-sm ${
+          className={`absolute z-50 bg-white border border-gray-200 rounded-lg shadow-xl p-4 text-sm ${
             tooltipPosition.vertical === 'top'
               ? 'bottom-full mb-2'
               : 'top-full mt-2'
-          } ${
-            tooltipPosition.horizontal === 'left' 
-              ? 'left-0' 
-              : tooltipPosition.horizontal === 'right'
-              ? 'right-0'
-              : 'left-1/2 transform -translate-x-1/2'
           }`}
           style={{
+            width: `${tooltipPosition.width}px`,
             maxWidth: 'calc(100vw - 2rem)',
-            ...(tooltipPosition.horizontal === 'center' && {
-              left: '50%',
-              transform: 'translateX(-50%)',
-            }),
+            ...(tooltipPosition.horizontal === 'center'
+              ? { left: '50%', transform: 'translateX(-50%)' }
+              : tooltipPosition.horizontal === 'left'
+              ? { left: `${tooltipPosition.offset}px` }
+              : { right: `${tooltipPosition.offset}px` }),
           }}
         >
           <div className={`absolute ${
-            tooltipPosition.horizontal === 'left' 
-              ? 'left-4' 
+            tooltipPosition.horizontal === 'left'
+              ? 'left-4'
               : tooltipPosition.horizontal === 'right'
               ? 'right-4'
               : 'left-1/2 transform -translate-x-1/2'
@@ -234,7 +245,7 @@ export default function CacheIndicator({ cacheInfo, onRefreshSearch, currentSear
               <div className="bg-gray-50 rounded p-2 mt-2">
                 <div className="text-xs text-gray-800 font-medium mb-2">Similarity Breakdown:</div>
                 <div className="space-y-1">
-                  {Object.entries(cacheInfo.similarityBreakdown).map(([factor, data]) => (
+                  {breakdownEntries.map(([factor, data]) => (
                     <div key={factor} className="flex items-center justify-between text-xs">
                       <div className="flex items-center gap-1">
                         <span>{getFactorIcon(factor)}</span>
@@ -247,7 +258,9 @@ export default function CacheIndicator({ cacheInfo, onRefreshSearch, currentSear
                         <span className={`font-medium ${getScoreColor(data.score)}`}>
                           {(data.score * 100).toFixed(0)}%
                         </span>
-                        <span className="text-gray-400 text-xs">(w:{data.weight * 100}%)</span>
+                        <span className="text-gray-400 text-xs">
+                          (w:{Math.round(data.weight * 100)}%)
+                        </span>
                       </div>
                     </div>
                   ))}
@@ -258,10 +271,10 @@ export default function CacheIndicator({ cacheInfo, onRefreshSearch, currentSear
                   <div className="text-xs text-gray-600">
                     <span className="font-medium">Factors reducing score:</span>
                     {(() => {
-                      const lowFactors = Object.entries(cacheInfo.similarityBreakdown)
+                      const lowFactors = breakdownEntries
                         .filter(([_, data]) => data.score < 0.9)
-                        .map(([factor, data]) => ` ${getFactorLabel(factor)} (${(data.score * 100).toFixed(0)}%)`);
-                      return lowFactors.length > 0 ? lowFactors.join(',') : ' None - high similarity!';
+                        .map(([factor, data]) => `${getFactorLabel(factor)} (${(data.score * 100).toFixed(0)}%)`);
+                      return lowFactors.length > 0 ? ` ${lowFactors.join(', ')}` : ' None - high similarity!';
                     })()}
                   </div>
                 </div>
@@ -269,9 +282,9 @@ export default function CacheIndicator({ cacheInfo, onRefreshSearch, currentSear
             )}
 
             <div className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100">
-              {cacheInfo.cacheType === 'exact' 
-                ? 'These results were cached from an identical search.' 
-                : 'These results were adapted from a similar search based on location, weather, and timing patterns.'}
+              {cacheInfo.cacheType === 'exact'
+                ? 'These results were cached from an identical search.'
+                : 'These results were adapted from a similar search considering location, weather, timing, and special instructions.'}
             </div>
 
             {onRefreshSearch && cacheInfo.cacheType !== 'exact' && (
