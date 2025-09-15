@@ -15,12 +15,12 @@ export default function LoadingScreen() {
           alt="Background"
           className="glass-bg-image glass-bg-image-mobile"
         />
-        <div className="glass-bg-overlay" />
       </div>
       
+  
 
       {/* Loading Animation */}
-      <div className="loading-animation-container">
+      <div className="loading-screen-animation">
         <div className="loading-spinner">
           <div className="spinner-ring" />
           <div className="spinner-ring" />
