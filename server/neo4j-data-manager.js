@@ -216,7 +216,8 @@ export class Neo4jDataManager {
       try {
         const candidateFeatures = this.sanitizeFeatureVector(JSON.parse(candidate.featureVector));
         const candidateDistance = Number(candidate.distance) || 0;
-        const similarityScore = this.smartCache.calculateSimilarity(currentFeatures, candidateFeatures, candidateDistance);
+        const similarityResult = this.smartCache.calculateSimilarity(currentFeatures, candidateFeatures, candidateDistance);
+        const similarityScore = similarityResult.score || similarityResult; // Handle both old and new format
 
         if (similarityScore > bestScore && similarityScore >= this.smartCache.MIN_SIMILARITY_SCORE) {
           const parsedResults = JSON.parse(candidate.results);
@@ -241,11 +242,13 @@ export class Neo4jDataManager {
               isCached: true,
               cacheType: 'similar',
               similarity: similarityScore,
+              similarityBreakdown: similarityResult.breakdown || null,
               originalSearch: {
                 location: candidate.location,
                 date: candidate.date,
                 searchKey: candidate.searchKey
-              }
+              },
+              cachedModel: parsedResults.ai_model || candidate.ai_provider || 'unknown'
             }
           };
         }

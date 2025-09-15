@@ -4,11 +4,18 @@ interface CacheInfo {
   isCached: boolean;
   cacheType: 'exact' | 'similar';
   similarity: number;
+  similarityBreakdown?: {
+    location: { score: number; weight: number; distance?: number };
+    weather: { score: number; weight: number };
+    temporal: { score: number; weight: number };
+    demographic: { score: number; weight: number };
+  };
   originalSearch: {
     location: string;
     date: string;
     searchKey: string;
   };
+  cachedModel?: string;
 }
 
 interface CacheIndicatorProps {
@@ -48,6 +55,33 @@ export default function CacheIndicator({ cacheInfo, onRefreshSearch, currentSear
     if (cacheType === 'exact') return 'text-green-500';
     if (similarity >= 0.90) return 'text-blue-500';
     return 'text-orange-500';
+  };
+
+  const getFactorIcon = (factor: string) => {
+    switch (factor) {
+      case 'location': return '📍';
+      case 'weather': return '🌤️';
+      case 'temporal': return '📅';
+      case 'demographic': return '👥';
+      default: return '🔹';
+    }
+  };
+
+  const getFactorLabel = (factor: string) => {
+    switch (factor) {
+      case 'location': return 'Location';
+      case 'weather': return 'Weather';
+      case 'temporal': return 'Date/Time';
+      case 'demographic': return 'Age/Duration';
+      default: return factor;
+    }
+  };
+
+  const getScoreColor = (score: number) => {
+    if (score >= 0.95) return 'text-green-600';
+    if (score >= 0.85) return 'text-blue-600';
+    if (score >= 0.70) return 'text-yellow-600';
+    return 'text-red-600';
   };
 
   const calculateTooltipPosition = (rect: DOMRect) => {
@@ -120,7 +154,7 @@ export default function CacheIndicator({ cacheInfo, onRefreshSearch, currentSear
 
       {showTooltip && (
         <div
-          className={`absolute z-50 w-80 bg-white border border-gray-200 rounded-lg shadow-xl p-4 text-sm ${
+          className={`absolute z-50 w-96 bg-white border border-gray-200 rounded-lg shadow-xl p-4 text-sm ${
             tooltipPosition.vertical === 'top'
               ? 'bottom-full mb-2'
               : 'top-full mt-2'
@@ -176,6 +210,13 @@ export default function CacheIndicator({ cacheInfo, onRefreshSearch, currentSear
                   {(cacheInfo.similarity * 100).toFixed(1)}%
                 </span>
               </div>
+
+              {cacheInfo.cachedModel && (
+                <div className="flex justify-between">
+                  <span className="font-medium">AI Model:</span>
+                  <span className="font-medium text-gray-800 text-xs">{cacheInfo.cachedModel}</span>
+                </div>
+              )}
             </div>
 
             {cacheInfo.cacheType === 'similar' && (
@@ -184,6 +225,45 @@ export default function CacheIndicator({ cacheInfo, onRefreshSearch, currentSear
                 <div className="text-xs text-blue-700">
                   <div>📍 {cacheInfo.originalSearch.location}</div>
                   <div>📅 {formatDate(cacheInfo.originalSearch.date)}</div>
+                </div>
+              </div>
+            )}
+
+            {/* Similarity Breakdown for similar matches */}
+            {cacheInfo.cacheType === 'similar' && cacheInfo.similarityBreakdown && (
+              <div className="bg-gray-50 rounded p-2 mt-2">
+                <div className="text-xs text-gray-800 font-medium mb-2">Similarity Breakdown:</div>
+                <div className="space-y-1">
+                  {Object.entries(cacheInfo.similarityBreakdown).map(([factor, data]) => (
+                    <div key={factor} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-1">
+                        <span>{getFactorIcon(factor)}</span>
+                        <span className="text-gray-600">{getFactorLabel(factor)}:</span>
+                        {factor === 'location' && data.distance !== undefined && (
+                          <span className="text-gray-500">({data.distance.toFixed(1)}km)</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className={`font-medium ${getScoreColor(data.score)}`}>
+                          {(data.score * 100).toFixed(0)}%
+                        </span>
+                        <span className="text-gray-400 text-xs">(w:{data.weight * 100}%)</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                
+                {/* Factors reducing score */}
+                <div className="mt-2 pt-2 border-t border-gray-200">
+                  <div className="text-xs text-gray-600">
+                    <span className="font-medium">Factors reducing score:</span>
+                    {(() => {
+                      const lowFactors = Object.entries(cacheInfo.similarityBreakdown)
+                        .filter(([_, data]) => data.score < 0.9)
+                        .map(([factor, data]) => ` ${getFactorLabel(factor)} (${(data.score * 100).toFixed(0)}%)`);
+                      return lowFactors.length > 0 ? lowFactors.join(',') : ' None - high similarity!';
+                    })()}
+                  </div>
                 </div>
               </div>
             )}

@@ -2848,9 +2848,37 @@ app.post('/api/activities', async (req, res) => {
 
     // Check for cached results first (only if using Neo4j and cache is not bypassed)
     let json = null;
+    let cacheBypassReason = null;
+    
     if (bypassCache) {
       console.log('🔄 Cache bypassed - performing fresh search as requested');
+      cacheBypassReason = 'user_requested';
     }
+    
+    // Check if we should bypass cache due to model change
+    if (!bypassCache && apiKeys.cache_include_model) {
+      const currentModel = getActiveModelName();
+      console.log('🔍 Checking cache model compatibility - current model:', currentModel);
+      
+      // Get a sample cached result to check model compatibility
+      if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+        try {
+          const testCachedResults = await dataManager.getCachedSearchResults(
+            ctx.location, ctx.date, ctx.duration_hours, ctx.ages, 
+            JSON.stringify(ctx), ctx.extra_instructions || '', provider, ctx
+          );
+          
+          if (testCachedResults && testCachedResults.ai_model && testCachedResults.ai_model !== currentModel) {
+            console.log(`🔄 Cache bypassed - model changed from ${testCachedResults.ai_model} to ${currentModel}`);
+            cacheBypassReason = `model_changed_from_${testCachedResults.ai_model}_to_${currentModel}`;
+            bypassCache = true;
+          }
+        } catch (modelCheckError) {
+          console.log('Model compatibility check failed (non-blocking):', modelCheckError.message);
+        }
+      }
+    }
+    
     if (isNeo4jConnected && dataManager instanceof Neo4jDataManager && !bypassCache) {
       try {
         const modelName = getModelIdentifier();
@@ -2956,6 +2984,11 @@ app.post('/api/activities', async (req, res) => {
     }
     if (!json.ai_model) {
       json.ai_model = getActiveModelName();
+    }
+
+    // Add cache bypass reason if applicable
+    if (cacheBypassReason) {
+      json.cacheBypassReason = cacheBypassReason;
     }
 
     res.json({ ok: true, data: json, cacheInfo: json.cacheInfo || null });

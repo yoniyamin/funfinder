@@ -1,0 +1,50 @@
+name: Deploy Assets to GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'public/*.jpeg'
+      - 'public/*.jpg'
+      - 'public/*.png'
+      - 'docs/**'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy-assets:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy assets to docs
+        run: |
+          mkdir -p docs/assets
+          cp public/*.jpeg docs/assets/ 2>/dev/null || true
+          cp public/*.jpg docs/assets/ 2>/dev/null || true
+          cp public/*.png docs/assets/ 2>/dev/null || true
+          ls -la docs/assets/
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './docs'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

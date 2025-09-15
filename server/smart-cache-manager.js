@@ -144,36 +144,48 @@ export class SmartCacheManager {
   calculateSimilarity(features1, features2, locationDistance = null) {
     let totalScore = 0;
     let totalWeight = 0;
+    const breakdown = {
+      location: { score: 0, weight: this.SIMILARITY_THRESHOLDS.location.weight },
+      weather: { score: 0, weight: this.SIMILARITY_THRESHOLDS.weather.weight },
+      temporal: { score: 0, weight: this.SIMILARITY_THRESHOLDS.temporal.weight },
+      demographic: { score: 0, weight: this.SIMILARITY_THRESHOLDS.demographic.weight }
+    };
     
     // === LOCATION SIMILARITY ===
     if (locationDistance !== null) {
       if (locationDistance <= this.SIMILARITY_THRESHOLDS.location.maxDistance) {
         // Inverse distance scoring - closer = higher score
         const locationScore = Math.max(0, 1 - (locationDistance / this.SIMILARITY_THRESHOLDS.location.maxDistance));
+        breakdown.location.score = locationScore;
+        breakdown.location.distance = locationDistance;
         totalScore += locationScore * this.SIMILARITY_THRESHOLDS.location.weight;
       } else {
         // Too far apart - skip this candidate
-        return 0;
+        return { score: 0, breakdown };
       }
       totalWeight += this.SIMILARITY_THRESHOLDS.location.weight;
     }
     
     // === WEATHER SIMILARITY ===
     const weatherScore = this.calculateWeatherSimilarity(features1.weather, features2.weather);
+    breakdown.weather.score = weatherScore;
     totalScore += weatherScore * this.SIMILARITY_THRESHOLDS.weather.weight;
     totalWeight += this.SIMILARITY_THRESHOLDS.weather.weight;
     
     // === TEMPORAL SIMILARITY ===
     const temporalScore = this.calculateTemporalSimilarity(features1.temporal, features2.temporal);
+    breakdown.temporal.score = temporalScore;
     totalScore += temporalScore * this.SIMILARITY_THRESHOLDS.temporal.weight;
     totalWeight += this.SIMILARITY_THRESHOLDS.temporal.weight;
     
     // === DEMOGRAPHIC SIMILARITY ===
     const demographicScore = this.calculateDemographicSimilarity(features1.demographic, features2.demographic);
+    breakdown.demographic.score = demographicScore;
     totalScore += demographicScore * this.SIMILARITY_THRESHOLDS.demographic.weight;
     totalWeight += this.SIMILARITY_THRESHOLDS.demographic.weight;
     
-    return totalWeight > 0 ? totalScore / totalWeight : 0;
+    const finalScore = totalWeight > 0 ? totalScore / totalWeight : 0;
+    return { score: finalScore, breakdown };
   }
 
   /**

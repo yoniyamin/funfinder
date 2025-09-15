@@ -1,0 +1,7 @@
+# Copy this to .env and update with your values
+
+# GitHub Pages Asset URL (replace with your username/repo)
+VITE_ASSET_BASE_URL=https://yourusername.github.io/yourreponame/assets
+
+# Example for your setup:
+# VITE_ASSET_BASE_URL=https://yamyam42.github.io/kef/assets

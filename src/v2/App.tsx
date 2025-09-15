@@ -5,6 +5,7 @@ import BottomNavBar from './components/BottomNavBar';
 import Settings from '../components/Settings';
 import { toISODate, geocode, fetchHolidays, fetchWeatherDaily, fetchFestivalsWikidata, fetchHolidaysWithGemini } from '../lib/api';
 import type { Activity, Context, LLMResult } from '../lib/schema';
+import { getImageUrl, IMAGES } from '../config/assets';
 
 interface SearchHistoryEntry {
   id: string;
@@ -803,10 +804,10 @@ export default function App() {
       {state.showSplash && (
         <div className="splash-screen">
           <div className="splash-top">
-            <img src="/bg7.jpeg" alt="Fun Finder" className="splash-image" />
+            <img src={getImageUrl('BG7')} alt="Fun Finder" className="splash-image" />
           </div>
           <div className="splash-bottom">
-            <img src="/bg7.jpeg" alt="Fun Finder" className="splash-image" />
+            <img src={getImageUrl('BG7')} alt="Fun Finder" className="splash-image" />
           </div>
         </div>
       )}
