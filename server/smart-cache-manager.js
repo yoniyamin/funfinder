@@ -139,9 +139,77 @@ export class SmartCacheManager {
   }
 
   /**
+   * Check for hard blockers that prevent cache usage regardless of similarity
+   */
+  hasHardBlockers(currentRequest, cachedRequest) {
+    // Age group compatibility check - prevent cache for drastically different age groups
+    const currentAges = currentRequest.ages || [];
+    const cachedAges = cachedRequest.ages || [];
+    
+    if (currentAges.length > 0 && cachedAges.length > 0) {
+      const currentAvgAge = currentAges.reduce((a, b) => a + b, 0) / currentAges.length;
+      const cachedAvgAge = cachedAges.reduce((a, b) => a + b, 0) / cachedAges.length;
+      const ageDifference = Math.abs(currentAvgAge - cachedAvgAge);
+      
+      // Block cache if age groups are too different (>5 years average difference)
+      if (ageDifference > 5) {
+        console.log(`🚫 Cache blocked: Age groups too different (avg age diff: ${ageDifference.toFixed(1)} years)`);
+        return true;
+      }
+      
+      // Block if age ranges don't overlap significantly
+      const currentMin = Math.min(...currentAges);
+      const currentMax = Math.max(...currentAges);
+      const cachedMin = Math.min(...cachedAges);
+      const cachedMax = Math.max(...cachedAges);
+      
+      const overlapStart = Math.max(currentMin, cachedMin);
+      const overlapEnd = Math.min(currentMax, cachedMax);
+      const overlap = Math.max(0, overlapEnd - overlapStart);
+      const currentRange = currentMax - currentMin;
+      const overlapPercentage = currentRange > 0 ? overlap / currentRange : 0;
+      
+      if (overlapPercentage < 0.3) { // Less than 30% overlap
+        console.log(`🚫 Cache blocked: Age ranges don't overlap significantly (${(overlapPercentage * 100).toFixed(1)}% overlap)`);
+        return true;
+      }
+    }
+    
+    // Critical instruction differences that prevent cache usage
+    const currentInstructions = (currentRequest.extra_instructions || '').toLowerCase();
+    const cachedInstructions = (cachedRequest.extra_instructions || '').toLowerCase();
+    
+    const criticalKeywords = [
+      'wheelchair', 'accessible', 'disability', 'mobility',
+      'allergy', 'allergic', 'gluten', 'nut', 'dairy',
+      'budget', 'free', 'expensive', 'cheap',
+      'indoor', 'outdoor', 'quiet', 'loud',
+      'religious', 'kosher', 'halal', 'vegetarian', 'vegan'
+    ];
+    
+    for (const keyword of criticalKeywords) {
+      const currentHas = currentInstructions.includes(keyword);
+      const cachedHas = cachedInstructions.includes(keyword);
+      
+      if (currentHas !== cachedHas) {
+        console.log(`🚫 Cache blocked: Critical instruction difference - "${keyword}" requirement mismatch`);
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  /**
    * Calculate similarity score between two feature vectors
    */
-  calculateSimilarity(features1, features2, locationDistance = null) {
+  calculateSimilarity(features1, features2, locationDistance = null, currentRequest = null, cachedRequest = null) {
+    // First check for hard blockers
+    if (currentRequest && cachedRequest && this.hasHardBlockers(currentRequest, cachedRequest)) {
+      console.log(`🚫 Cache similarity blocked by hard requirements`);
+      return { score: 0, breakdown: {}, blocked: true };
+    }
+    
     let totalScore = 0;
     let totalWeight = 0;
     const breakdown = {

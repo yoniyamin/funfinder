@@ -349,9 +349,9 @@ export default function App() {
     return { holidays, festivals };
   };
 
-  const handleSearch = async () => {
-    // Prevent multiple concurrent searches
-    if (state.loading.isLoading || activeSearchRef.current) {
+  const handleSearch = async (retryCount: number = 0) => {
+    // Prevent multiple concurrent searches (but allow retries)
+    if ((state.loading.isLoading || activeSearchRef.current) && retryCount === 0) {
       console.log('🚫 Search already in progress, ignoring new search request');
       return;
     }
@@ -550,9 +550,36 @@ export default function App() {
         console.log('📡 Response content-length:', resp.headers.get('content-length'));
         
         if(!resp.ok){ 
-          const errorText = await resp.text();
-          throw new Error(errorText || 'Failed to get activities from AI model'); 
+          const contentType = resp.headers.get('content-type') || '';
+          let errorMessage = 'Failed to get activities from AI model';
+          
+          if (contentType.includes('text/html')) {
+            // Handle HTML error pages (like 502 from Koyeb)
+            const errorText = await resp.text();
+            
+            if (errorText.includes('502') || errorText.includes('Service unavailable')) {
+              errorMessage = `Server temporarily unavailable (${resp.status}). The service may be starting up or experiencing high load.`;
+            } else if (errorText.includes('504') || errorText.includes('timeout')) {
+              errorMessage = `Request timeout (${resp.status}). The AI model took too long to respond.`;
+            } else if (errorText.includes('503')) {
+              errorMessage = `Service temporarily unavailable (${resp.status}). Please try again in a moment.`;
+            } else {
+              errorMessage = `Server error (${resp.status}). Please try again later.`;
+            }
+          } else {
+            // Handle JSON error responses
+            const errorText = await resp.text();
+            errorMessage = errorText || errorMessage;
+          }
+          
+          throw new Error(errorMessage); 
         }
+        
+        const contentType = resp.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          throw new Error('Server returned an unexpected response format. Please try again.');
+        }
+        
         const data: { ok:boolean; data: LLMResult } = await resp.json();
         if(!data.ok || !data.data?.activities) {
           throw new Error('Invalid response from AI model');
@@ -591,7 +618,43 @@ export default function App() {
           setLoading({ isLoading: false, progress: 0, status: 'Search cancelled' });
         } else {
           console.error('❌ Search error:', err.message);
-          setLoading({ isLoading: false, progress: 0, status: err.message || 'Something went wrong' });
+          
+          // Check if this is a retryable error
+          const isRetryableError = err.message?.includes('502') || 
+                                  err.message?.includes('503') || 
+                                  err.message?.includes('504') || 
+                                  err.message?.includes('timeout') ||
+                                  err.message?.includes('temporarily unavailable');
+          
+          if (isRetryableError && retryCount < 2) {
+            console.log(`Retrying search (attempt ${retryCount + 1}/2) due to temporary error:`, err.message);
+            setLoading({ 
+              isLoading: true, 
+              progress: 30, 
+              status: `Retry ${retryCount + 1}/2: Server temporarily unavailable...` 
+            });
+            
+            // Mark search as inactive to allow retry
+            activeSearchRef.current = false;
+            
+            // Wait a bit before retrying
+            setTimeout(() => {
+              handleSearch(retryCount + 1);
+            }, 2000);
+            return;
+          }
+          
+          // Show user-friendly error message
+          const userFriendlyMessage = err.message?.includes('Server temporarily unavailable') 
+            ? 'The AI service is temporarily unavailable. This usually resolves within a minute. Please try again shortly.'
+            : err.message || 'Something went wrong while searching for activities';
+            
+          setLoading({ isLoading: false, progress: 0, status: `Error: ${userFriendlyMessage}` });
+          
+          // Clear error after 8 seconds to allow retry
+          setTimeout(() => {
+            setLoading({ isLoading: false, progress: 0, status: '' });
+          }, 8000);
         }
       } finally {
         // Cleanup intervals and timeouts

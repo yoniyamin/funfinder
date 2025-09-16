@@ -847,9 +847,9 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                       <option value="google/gemini-flash-1.5:free">Google Gemini Flash 1.5 (Free) - Very fast</option>
                       <option value="meta-llama/llama-3.2-3b-instruct:free">Meta Llama 3.2 3B (Free) - Lightweight</option>
                       <option value="qwen/qwen-2.5-7b-instruct:free">Qwen 2.5 7B (Free) - Balanced</option>
-                      <option value="deepseek/deepseek-r1-0528">DeepSeek R1 671B (Paid) - Premium reasoning</option>
+                      <option value="openai/gpt-oss-20b:free">gpt-oss-20b (free)</option>
                       <option value="openai/gpt-4o-mini">GPT-4o Mini (Paid)</option>
-                      <option value="anthropic/claude-3-haiku">Claude 3 Haiku (Paid)</option>
+                      <option value="nvidia/nemotron-nano-9b-v2:free">Nemotron Nano 9B V2 (free)</option>
                     </select>
                     <p className="text-xs text-gray-500 mt-1">DeepSeek V3.1 is now the default - faster responses than R1 models!</p>
                   </div>

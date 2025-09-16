@@ -217,7 +217,9 @@ export default function ResultsPage({
             onClick={() => {
               const element = document.getElementById('search-context');
               if (element) {
-                const headerHeight = 120; // Account for sticky header height
+                // Dynamically calculate header height for more accurate positioning
+                const header = document.querySelector('header') || document.querySelector('.sticky');
+                const headerHeight = header ? header.getBoundingClientRect().height + 20 : 140; // 20px extra padding
                 const elementPosition = element.getBoundingClientRect().top;
                 const offsetPosition = elementPosition + window.pageYOffset - headerHeight;
                 window.scrollTo({ top: offsetPosition, behavior: 'smooth' });
@@ -233,7 +235,9 @@ export default function ResultsPage({
               onClick={() => {
                 const element = document.getElementById('activities');
                 if (element) {
-                  const headerHeight = 120;
+                  // Dynamically calculate header height for more accurate positioning
+                  const header = document.querySelector('header') || document.querySelector('.sticky');
+                  const headerHeight = header ? header.getBoundingClientRect().height + 20 : 140; // 20px extra padding
                   const elementPosition = element.getBoundingClientRect().top;
                   const offsetPosition = elementPosition + window.pageYOffset - headerHeight;
                   window.scrollTo({ top: offsetPosition, behavior: 'smooth' });
@@ -250,7 +254,9 @@ export default function ResultsPage({
               onClick={() => {
                 const element = document.getElementById('web-sources');
                 if (element) {
-                  const headerHeight = 120;
+                  // Dynamically calculate header height for more accurate positioning
+                  const header = document.querySelector('header') || document.querySelector('.sticky');
+                  const headerHeight = header ? header.getBoundingClientRect().height + 20 : 140; // 20px extra padding
                   const elementPosition = element.getBoundingClientRect().top;
                   const offsetPosition = elementPosition + window.pageYOffset - headerHeight;
                   window.scrollTo({ top: offsetPosition, behavior: 'smooth' });

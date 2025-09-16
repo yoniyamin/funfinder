@@ -86,7 +86,7 @@ class AIProviderFactory {
       throw new Error('Gemini API key not provided');
     }
     const genAI = new GoogleGenerativeAI(apiKey);
-    return genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    return genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
   }
   
   static createOpenRouterClient(apiKey) {
@@ -2454,21 +2454,35 @@ for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       console.log(`🤖 [${new Date().toISOString()}] OpenRouter attempt ${attempt}/${maxRetries} using model: ${modelName}`);
       
-      const response = await openAI.chat.completions.create({
+      // Get model-specific configuration
+      const modelConfig = getModelSpecificConfig(modelName);
+      
+      // Create system message based on model type
+      const systemMessage = getSystemMessage(modelName);
+      
+      const requestBody = {
         model: modelName,
         messages: [
           {
             role: 'system',
-            content: 'You are a helpful assistant that responds only in valid JSON format. You must return ONLY a single JSON object matching the provided schema in your response content. Do not include any explanatory text, reasoning, or commentary - just the JSON object starting with { and ending with }.'
+            content: systemMessage
           },
           {
             role: 'user',
             content: prompt
           }
         ],
-        temperature: 0.1,
-        max_tokens: 8000, // Increased for R1 models that need reasoning + content tokens
-      });
+        temperature: modelConfig.temperature,
+        max_tokens: 8000,
+        ...modelConfig.extraParams
+      };
+      
+      console.log(`🔧 Request config for ${modelName}:`, JSON.stringify({
+        temperature: requestBody.temperature,
+        extraParams: modelConfig.extraParams
+      }, null, 2));
+      
+      const response = await openAI.chat.completions.create(requestBody);
       
       const duration = performance.now() - startTime;
       const responseData = response.choices?.[0]?.message;
@@ -2486,24 +2500,38 @@ for (let attempt = 1; attempt <= maxRetries; attempt++) {
         throw new Error('No choices in OpenRouter response');
       }
       
-      // Try content field first, then reasoning field as fallback for R1 models
+      // Try content field first, then reasoning field as fallback
       let text = responseData.content || '';
       
       if (!text || text.trim() === '') {
-        console.log('⚠️ Content field is empty, checking reasoning field for R1 models...');
+        console.log('⚠️ Content field is empty, checking reasoning field...');
         
-        // For R1 models, sometimes the JSON is in the reasoning field
+        // Some models still put response in reasoning field despite configuration
         if (responseData.reasoning) {
           console.log('Reasoning field length:', responseData.reasoning.length);
+          console.log('🧠 Reasoning preview:', responseData.reasoning.substring(0, 200) + '...');
           
-          // Try to extract JSON from reasoning field
-          const jsonMatch = responseData.reasoning.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            console.log('🔧 Found potential JSON in reasoning field');
-            text = jsonMatch[0];
+          // Try to extract complete JSON from reasoning field
+          const extractedJson = extractCompleteJson(responseData.reasoning);
+          if (extractedJson && extractedJson.includes('"activities"')) {
+            text = extractedJson;
+            console.log(`🔧 Extracted JSON from reasoning field: ${text.length} characters`);
           } else {
-            console.log('❌ No JSON found in reasoning field either');
-            throw new Error('No JSON found in either content or reasoning field');
+            // Fallback: look for any JSON structure with activities
+            const activitiesMatch = responseData.reasoning.match(/"activities"\s*:\s*\[[\s\S]*?\]/);
+            if (activitiesMatch) {
+              console.log('🔧 Found activities array, trying to extract surrounding JSON...');
+              const surroundingJson = extractSurroundingJson(responseData.reasoning, activitiesMatch.index);
+              if (surroundingJson) {
+                text = surroundingJson;
+                console.log(`🔧 Extracted surrounding JSON: ${text.length} characters`);
+              }
+            }
+          }
+          
+          if (!text || text.trim() === '') {
+            console.log('❌ No valid JSON found in reasoning field');
+            throw new Error('No JSON with activities array found in reasoning field');
           }
         } else {
           console.log('OpenRouter response structure:', JSON.stringify(responseData, null, 2));
@@ -3259,6 +3287,214 @@ process.on('SIGTERM', async () => {
   }
   process.exit(0);
 });
+
+// Get model-specific configuration for optimal performance
+function getModelSpecificConfig(modelName) {
+  const lowerModel = modelName.toLowerCase();
+  
+  // DeepSeek models (R1, Chat) - optimized for reasoning control
+  if (lowerModel.includes('deepseek')) {
+    console.log(`🔧 Configuring ${modelName} with optimized settings for DeepSeek`);
+    return {
+      temperature: 0.2, // Balanced for quality and speed
+      extraParams: {
+        top_p: 0.9, // Slightly focused sampling
+      }
+    };
+  }
+  
+  // GPT-OSS-20B and GLM-Air - need reasoning mode disabled
+  if (lowerModel.includes('gpt-oss-20b') || lowerModel.includes('glm-air')) {
+    console.log(`🔧 Configuring ${modelName} with low temperature for deterministic output`);
+    return {
+      temperature: 0.4, // Low temperature for deterministic, faster decoding
+      extraParams: {}
+    };
+  }
+  
+  // Nemotron models - optimized for instruction following
+  if (lowerModel.includes('nemotron')) {
+    console.log(`🔧 Configuring ${modelName} for final answer only with low temperature`);
+    return {
+      temperature: 0.3, // Low temperature for deterministic, faster decoding
+      extraParams: {
+        top_p: 0.95, // High precision sampling
+      }
+    };
+  }
+  
+  // Qwen models - optimized for structured output
+  if (lowerModel.includes('qwen')) {
+    console.log(`🔧 Configuring ${modelName} with Qwen optimizations`);
+    return {
+      temperature: 0.25, // Slightly higher for creativity while maintaining structure
+      extraParams: {
+        top_p: 0.9,
+      }
+    };
+  }
+  
+  // Llama models - optimized for consistency
+  if (lowerModel.includes('llama')) {
+    console.log(`🔧 Configuring ${modelName} with Llama optimizations`);
+    return {
+      temperature: 0.2, // Good balance for Llama models
+      extraParams: {
+        top_p: 0.92,
+      }
+    };
+  }
+  
+  // Mistral/Mixtral models - optimized for efficiency
+  if (lowerModel.includes('mistral') || lowerModel.includes('mixtral')) {
+    console.log(`🔧 Configuring ${modelName} with Mistral optimizations`);
+    return {
+      temperature: 0.25, // Slightly higher for better creativity
+      extraParams: {
+        top_p: 0.9,
+      }
+    };
+  }
+  
+  // Claude models (if available through OpenRouter)
+  if (lowerModel.includes('claude')) {
+    console.log(`🔧 Configuring ${modelName} with Claude optimizations`);
+    return {
+      temperature: 0.15, // Claude works well with very low temperature
+      extraParams: {
+        top_p: 0.95,
+      }
+    };
+  }
+  
+  // GPT-4 models - balanced settings
+  if (lowerModel.includes('gpt-4')) {
+    console.log(`🔧 Configuring ${modelName} with GPT-4 optimizations`);
+    return {
+      temperature: 0.2, // Good balance for GPT-4
+      extraParams: {
+        top_p: 0.9,
+      }
+    };
+  }
+  
+  // Default configuration for unknown models
+  console.log(`🔧 Using default configuration for ${modelName}`);
+  return {
+    temperature: 0.2, // Better default as requested
+    extraParams: {
+      top_p: 0.9, // Good default sampling
+    }
+  };
+}
+
+// Get model-specific system message
+function getSystemMessage(modelName) {
+  const lowerModel = modelName.toLowerCase();
+  
+  // DeepSeek models: concise instructions for R1 and Chat variants
+  if (lowerModel.includes('deepseek')) {
+    return 'You are a JSON generator. Return ONLY the requested JSON object with no reasoning traces, explanations, or commentary. Output pure JSON starting with { and ending with }.';
+  }
+  
+  // Nemotron models: system prompt for final answer only
+  if (lowerModel.includes('nemotron')) {
+    return 'You are a JSON generator. Respond ONLY with the requested JSON object. No intermediate reasoning, no explanations, no commentary. Final answer only. Do not use thinking or reasoning modes - return the JSON directly.';
+  }
+  
+  // GLM-Air and gpt-oss-20b: strong emphasis on direct JSON response
+  if (lowerModel.includes('gpt-oss-20b') || lowerModel.includes('glm-air')) {
+    return 'You are a JSON response generator. You must respond ONLY with valid JSON matching the schema. Do NOT use reasoning mode, thinking mode, or any intermediate steps. Return the complete JSON object directly in your response content field. No explanations, no commentary, just pure JSON starting with { and ending with }.';
+  }
+  
+  // Qwen models: structured output emphasis
+  if (lowerModel.includes('qwen')) {
+    return 'You are a JSON generator optimized for structured output. Return ONLY the requested JSON object with perfect schema compliance. No explanations, just pure JSON starting with { and ending with }.';
+  }
+  
+  // Llama models: clear and direct instructions
+  if (lowerModel.includes('llama')) {
+    return 'You are a JSON response assistant. Output ONLY valid JSON matching the provided schema. No explanations, no reasoning, no extra text - just the JSON object starting with { and ending with }.';
+  }
+  
+  // Mistral/Mixtral models: efficiency-focused
+  if (lowerModel.includes('mistral') || lowerModel.includes('mixtral')) {
+    return 'Generate ONLY the requested JSON object. No explanations, no reasoning steps, no commentary. Return pure JSON starting with { and ending with }.';
+  }
+  
+  // Claude models: precise instructions
+  if (lowerModel.includes('claude')) {
+    return 'You are a JSON generator. Return exclusively the requested JSON object matching the schema. No additional text, explanations, or reasoning - only the JSON starting with { and ending with }.';
+  }
+  
+  // GPT-4 models: balanced approach
+  if (lowerModel.includes('gpt-4')) {
+    return 'You are a JSON response generator. Return ONLY the requested JSON object matching the provided schema. No explanations, reasoning, or additional text - just pure JSON starting with { and ending with }.';
+  }
+  
+  // Default system message
+  return 'You are a helpful assistant that responds only in valid JSON format. You must return ONLY a single JSON object matching the provided schema in your response content. Do not include any explanatory text, reasoning, or commentary - just the JSON object starting with { and ending with }.';
+}
+
+// Helper function to extract complete JSON from text starting with {
+function extractCompleteJson(text) {
+  // Find the first { and extract from there
+  const startIndex = text.indexOf('{');
+  if (startIndex === -1) return null;
+  
+  let braceCount = 0;
+  let inString = false;
+  let escaped = false;
+  
+  for (let i = startIndex; i < text.length; i++) {
+    const char = text[i];
+    
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    
+    if (char === '\\' && inString) {
+      escaped = true;
+      continue;
+    }
+    
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    
+    if (!inString) {
+      if (char === '{') {
+        braceCount++;
+      } else if (char === '}') {
+        braceCount--;
+        if (braceCount === 0) {
+          return text.substring(startIndex, i + 1);
+        }
+      }
+    }
+  }
+  
+  return null;
+}
+
+// Helper function to extract JSON around a specific index (like activities array)
+function extractSurroundingJson(text, targetIndex) {
+  // Find the nearest opening brace before the target
+  let startIndex = -1;
+  for (let i = targetIndex; i >= 0; i--) {
+    if (text[i] === '{') {
+      startIndex = i;
+      break;
+    }
+  }
+  
+  if (startIndex === -1) return null;
+  
+  // Extract from that point
+  return extractCompleteJson(text.substring(startIndex));
+}
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log('Server listening on http://0.0.0.0:' + PORT);

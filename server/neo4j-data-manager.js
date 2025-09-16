@@ -216,8 +216,37 @@ export class Neo4jDataManager {
       try {
         const candidateFeatures = this.sanitizeFeatureVector(JSON.parse(candidate.featureVector));
         const candidateDistance = Number(candidate.distance) || 0;
-        const similarityResult = this.smartCache.calculateSimilarity(currentFeatures, candidateFeatures, candidateDistance);
+        
+        // Prepare cached request object for hard blocker checks
+        const cachedRequest = {
+          location: candidate.location,
+          date: candidate.date,
+          duration_hours: candidate.duration_hours,
+          ages: candidate.ages ? JSON.parse(candidate.ages) : [],
+          query: candidate.query,
+          extra_instructions: candidate.extra_instructions || '',
+          ai_provider: candidate.ai_provider
+        };
+        
+        // Prepare current request object for hard blocker checks
+        const currentRequest = {
+          location,
+          date,
+          duration_hours,
+          ages,
+          query,
+          extra_instructions,
+          ai_provider
+        };
+        
+        const similarityResult = this.smartCache.calculateSimilarity(currentFeatures, candidateFeatures, candidateDistance, currentRequest, cachedRequest);
         const similarityScore = similarityResult.score || similarityResult; // Handle both old and new format
+
+        // Skip if blocked by hard requirements
+        if (similarityResult.blocked) {
+          console.log(`🚫 Skipping candidate ${candidate.searchKey} - blocked by hard requirements`);
+          continue;
+        }
 
         if (similarityScore > bestScore && similarityScore >= this.smartCache.MIN_SIMILARITY_SCORE) {
           const parsedResults = JSON.parse(candidate.results);

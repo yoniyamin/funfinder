@@ -26,7 +26,7 @@ interface CacheIndicatorProps {
 
 export default function CacheIndicator({ cacheInfo, onRefreshSearch, currentSearch }: CacheIndicatorProps) {
   const [showTooltip, setShowTooltip] = useState(false);
-  const [tooltipPosition, setTooltipPosition] = useState<{vertical: 'top' | 'bottom', horizontal: 'left' | 'center' | 'right'}>({vertical: 'top', horizontal: 'center'});
+  const [tooltipPosition, setTooltipPosition] = useState<{vertical: 'top' | 'bottom', horizontal: 'left' | 'center' | 'right' | 'mobile-left' | 'mobile-right', leftOffset?: number}>({vertical: 'top', horizontal: 'center'});
   const [showFactors, setShowFactors] = useState(false);
 
   if (!cacheInfo?.isCached) {
@@ -88,7 +88,7 @@ export default function CacheIndicator({ cacheInfo, onRefreshSearch, currentSear
     const viewportHeight = window.innerHeight;
     const viewportWidth = window.innerWidth;
     const tooltipHeight = 240;
-    const tooltipWidth = 320;
+    const tooltipWidth = 360; // Updated to match actual tooltip width
     const margin = 16; // 1rem margin from viewport edges
     
     // Determine vertical position
@@ -96,7 +96,31 @@ export default function CacheIndicator({ cacheInfo, onRefreshSearch, currentSear
     const spaceBelow = viewportHeight - rect.bottom;
     const vertical = (spaceAbove >= tooltipHeight + 10) ? 'top' : 'bottom';
     
-    // Determine horizontal position
+    // Mobile-specific positioning (narrow screens)
+    if (viewportWidth <= 480) {
+      // On mobile, use the same right positioning logic that works on desktop
+      const elementCenter = rect.left + rect.width / 2;
+      const tooltipHalfWidth = tooltipWidth / 2;
+      
+      // Determine if we should position right (near right edge) or left
+      if (elementCenter + tooltipHalfWidth > viewportWidth - margin) {
+        // Position on the right using the proven -235px offset
+        return { 
+          vertical, 
+          horizontal: 'mobile-right',
+          leftOffset: -235
+        };
+      } else {
+        // Position on the left with margin
+        return { 
+          vertical, 
+          horizontal: 'mobile-left',
+          leftOffset: margin
+        };
+      }
+    }
+    
+    // Desktop positioning logic
     const elementCenter = rect.left + rect.width / 2;
     const tooltipHalfWidth = tooltipWidth / 2;
     
@@ -107,6 +131,22 @@ export default function CacheIndicator({ cacheInfo, onRefreshSearch, currentSear
       horizontal = 'left';
     } else if (elementCenter + tooltipHalfWidth > viewportWidth - margin) {
       horizontal = 'right';
+    }
+    
+    // Additional check for right positioning - ensure tooltip fits when right-aligned
+    if (horizontal === 'right') {
+      const rightEdgePosition = rect.right;
+      // Check if right-aligned tooltip would extend beyond left edge of viewport
+      const leftEdgeWhenRightAligned = rightEdgePosition - tooltipWidth;
+      if (leftEdgeWhenRightAligned < margin) {
+        // If right-aligned tooltip would exceed left edge, try center first
+        if (elementCenter - tooltipHalfWidth >= margin && elementCenter + tooltipHalfWidth <= viewportWidth - margin) {
+          horizontal = 'center';
+        } else {
+          // If center doesn't work either, force left alignment
+          horizontal = 'left';
+        }
+      }
     }
     
     return { vertical, horizontal };
@@ -154,7 +194,7 @@ export default function CacheIndicator({ cacheInfo, onRefreshSearch, currentSear
 
       {showTooltip && (
         <div
-          className={`absolute z-50 w-96 bg-white border border-gray-200 rounded-lg shadow-xl p-4 text-sm ${
+          className={`absolute z-50 bg-white border border-gray-200 rounded-lg shadow-xl p-4 text-sm ${
             tooltipPosition.vertical === 'top'
               ? 'bottom-full mb-2'
               : 'top-full mt-2'
@@ -162,14 +202,23 @@ export default function CacheIndicator({ cacheInfo, onRefreshSearch, currentSear
             tooltipPosition.horizontal === 'left' 
               ? 'left-0' 
               : tooltipPosition.horizontal === 'right'
-              ? 'right-0'
+              ? ''  // Don't use right-0, we'll handle this with style
+              : tooltipPosition.horizontal === 'mobile-left' || tooltipPosition.horizontal === 'mobile-right'
+              ? ''  // Mobile positioning handled with style
               : 'left-1/2 transform -translate-x-1/2'
           }`}
           style={{
+            width: '360px',
             maxWidth: 'calc(100vw - 2rem)',
             ...(tooltipPosition.horizontal === 'center' && {
               left: '50%',
               transform: 'translateX(-50%)',
+            }),
+            ...(tooltipPosition.horizontal === 'right' && {
+              left: '-235px',  // Use the exact offset you found works
+            }),
+            ...((tooltipPosition.horizontal === 'mobile-left' || tooltipPosition.horizontal === 'mobile-right') && {
+              left: `${tooltipPosition.leftOffset}px`,
             }),
           }}
         >
@@ -178,6 +227,10 @@ export default function CacheIndicator({ cacheInfo, onRefreshSearch, currentSear
               ? 'left-4' 
               : tooltipPosition.horizontal === 'right'
               ? 'right-4'
+              : tooltipPosition.horizontal === 'mobile-right'
+              ? 'right-4'  // For mobile right, position arrow near right side
+              : tooltipPosition.horizontal === 'mobile-left'
+              ? 'left-4'   // For mobile left, position arrow near left side
               : 'left-1/2 transform -translate-x-1/2'
           } ${
             tooltipPosition.vertical === 'top'
