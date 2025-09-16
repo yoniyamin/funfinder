@@ -1159,13 +1159,13 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                   Get API key here →
                 </a>
               </p>
-              {settings?.openrouter_configured && apiKeys.openrouter_api_key !== 'EDIT_MODE' ? (
-                <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
-                  ✅ Configured: {settings.openrouter_api_key_masked}
-                  <div className="text-xs text-gray-600 mt-1">Model: {settings.openrouter_model}</div>
-                </div>
-              ) : (
-                <div className="space-y-4">
+              <div className="space-y-4">
+                {/* API Key Section */}
+                {settings?.openrouter_configured && apiKeys.openrouter_api_key !== 'EDIT_MODE' ? (
+                  <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+                    ✅ API Key Configured: {settings.openrouter_api_key_masked}
+                  </div>
+                ) : (
                   <div>
                     <label className="block text-sm font-medium mb-1">API Key</label>
                     <input
@@ -1176,26 +1176,33 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                       onChange={(e) => handleApiKeyChange('openrouter_api_key', e.target.value)}
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Model</label>
-                    <select
-                      className="input w-full"
-                      value={apiKeys.openrouter_model}
-                      onChange={(e) => handleApiKeyChange('openrouter_model', e.target.value)}
-                    >
-                      <option value="deepseek/deepseek-chat-v3.1:free">DeepSeek V3.1 (Free) - Fast & Recommended</option>
-                      <option value="deepseek/deepseek-r1-0528-qwen3-8b:free">DeepSeek R1 8B (Free) - Advanced reasoning capabilities</option>
-                      <option value="meta-llama/llama-3.2-3b-instruct:free">Meta Llama 3.2 3B (Free) - Lightweight & Fast</option>
-                      <option value="mistralai/mistral-7b-instruct:free">Mistral 7B Instruct (Free) - Balanced Performance</option>
-                      <option value="nvidia/nemotron-nano-9b-v2:free">Nemotron Nano 9B V2 (Free) - Efficient & Fast</option>
-                      <option value="google/gemma-2-2b-it:free">Gemma 2 2B IT (Free) - Google's lightweight model</option>
-                      <option value="microsoft/phi-3-mini-128k-instruct:free">Phi-3 Mini 128k (Free) - Microsoft's efficient model</option>
-                      <option value="openai/gpt-4o-mini">GPT-4o Mini (Paid)</option>
-                    </select>
-                    <p className="text-xs text-gray-500 mt-1">Use the Speed Test above to compare actual performance of different models!</p>
-                  </div>
+                )}
+                
+                {/* Model Selection - Always Available */}
+                <div>
+                  <label className="block text-sm font-medium mb-1">Model</label>
+                  <select
+                    className="input w-full"
+                    value={apiKeys.openrouter_model}
+                    onChange={(e) => handleApiKeyChange('openrouter_model', e.target.value)}
+                  >
+                    <option value="deepseek/deepseek-chat-v3.1:free">DeepSeek V3.1 (Free) - Fast & Recommended</option>
+                    <option value="deepseek/deepseek-r1-0528-qwen3-8b:free">DeepSeek R1 8B (Free) - Advanced reasoning capabilities</option>
+                    <option value="meta-llama/llama-3.2-3b-instruct:free">Meta Llama 3.2 3B (Free) - Lightweight & Fast</option>
+                    <option value="mistralai/mistral-7b-instruct:free">Mistral 7B Instruct (Free) - Balanced Performance</option>
+                    <option value="nvidia/nemotron-nano-9b-v2:free">Nemotron Nano 9B V2 (Free) - Efficient & Fast</option>
+                    <option value="google/gemma-2-2b-it:free">Gemma 2 2B IT (Free) - Google's lightweight model</option>
+                    <option value="microsoft/phi-3-mini-128k-instruct:free">Phi-3 Mini 128k (Free) - Microsoft's efficient model</option>
+                    <option value="openai/gpt-4o-mini">GPT-4o Mini (Paid)</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Use the Speed Test above to compare actual performance of different models!
+                    {settings?.openrouter_configured && (
+                      <span className="text-green-600"> ✅ You can change models anytime without re-entering your API key.</span>
+                    )}
+                  </p>
                 </div>
-              )}
+              </div>
                 </div>
               </div>
               {/* Activity Count Setting */}
