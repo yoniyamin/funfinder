@@ -86,7 +86,14 @@ class AIProviderFactory {
       throw new Error('Gemini API key not provided');
     }
     const genAI = new GoogleGenerativeAI(apiKey);
-    return genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    return genAI.getGenerativeModel({ 
+      model: 'gemini-1.5-flash',
+      generationConfig: {
+        temperature: 0.2, // Optimized for deterministic JSON output
+        topP: 0.9,
+        candidateCount: 1
+      }
+    });
   }
   
   static createOpenRouterClient(apiKey) {
@@ -113,8 +120,15 @@ function initializeAIProviders() {
   if (geminiKey && (geminiKey !== currentGeminiKey || !model)) {
     currentGeminiKey = geminiKey;
     genAI = new GoogleGenerativeAI(currentGeminiKey);
-    model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-    console.log('Gemini AI model initialized');
+    model = genAI.getGenerativeModel({ 
+      model: 'gemini-2.5-flash',
+      generationConfig: {
+        temperature: 0.2, // Optimized for deterministic JSON output
+        topP: 0.9,
+        candidateCount: 1
+      }
+    });
+    console.log('Gemini AI model initialized with reasoning suppression');
   }
   
   // Initialize OpenRouter
@@ -1801,7 +1815,14 @@ async function fetchHolidaysWithGemini(location, date) {
     // Initialize Gemini for holiday fetching
     console.log('Initializing Gemini for holiday fetching...');
     const tempGenAI = new GoogleGenerativeAI(geminiKey);
-    const tempModel = tempGenAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const tempModel = tempGenAI.getGenerativeModel({ 
+      model: 'gemini-2.5-flash',
+      generationConfig: {
+        temperature: 0.2, // Optimized for deterministic JSON output
+        topP: 0.9,
+        candidateCount: 1
+      }
+    });
     
     // Calculate date range (day before to day after)
     const targetDate = new Date(date);
@@ -1846,10 +1867,19 @@ IMPORTANT GUIDELINES:
 
       console.log(`🎉 Fetching holidays and festivals for ${dateRange} with Gemini...`);
       const result = await tempModel.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }]}],
+        contents: [
+          { 
+            role: 'user', 
+            parts: [{ 
+              text: `/no_think You are a holiday/festival data generator. Return ONLY valid JSON array with no reasoning, explanations, or commentary. Output pure JSON starting with [ and ending with ].\n\n${prompt}` 
+            }]
+          }
+        ],
         generationConfig: { 
           responseMimeType: 'application/json',
-          temperature: 0.3,
+          temperature: 0.2, // Optimized for deterministic JSON output
+          topP: 0.9,
+          candidateCount: 1
         }
       });
       
@@ -2597,10 +2627,19 @@ async function callGeminiModel(prompt, maxRetries = 3, abortSignal = null) {
       console.log(`🤖 [${new Date().toISOString()}] Gemini attempt ${attempt}/${maxRetries}`);
       
       const result = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }]}],
+        contents: [
+          { 
+            role: 'user', 
+            parts: [{ 
+              text: `/no_think You are a JSON generator. Return ONLY the requested JSON object with no reasoning traces, explanations, or commentary. Output pure JSON starting with { and ending with }.\n\n${prompt}` 
+            }]
+          }
+        ],
         generationConfig: { 
           responseMimeType: 'application/json',
-          temperature: 0.1,
+          temperature: 0.2, // Optimized for deterministic JSON output
+          topP: 0.9,
+          candidateCount: 1
         }
       });
       
@@ -3310,6 +3349,7 @@ function getModelSpecificConfig(modelName) {
       temperature: 0.2, // Balanced for quality and speed
       extraParams: {
         top_p: 0.9, // Slightly focused sampling
+        reasoning_tag: 'think' // For filtering reasoning content
       }
     };
   }
@@ -3319,7 +3359,9 @@ function getModelSpecificConfig(modelName) {
     console.log(`🔧 Configuring ${modelName} with low temperature for deterministic output`);
     return {
       temperature: 0.4, // Low temperature for deterministic, faster decoding
-      extraParams: {}
+      extraParams: {
+        reasoning_effort: 'low' // Suppress reasoning for GPT-OSS models
+      }
     };
   }
   
@@ -3374,6 +3416,7 @@ function getModelSpecificConfig(modelName) {
       temperature: 0.15, // Claude works well with very low temperature
       extraParams: {
         top_p: 0.95,
+        thinking_tokens: 0 // Disable thinking tokens for Sonnet models
       }
     };
   }
@@ -3389,6 +3432,18 @@ function getModelSpecificConfig(modelName) {
     };
   }
   
+  // Cohere models - need thinking parameter disabled
+  if (lowerModel.includes('cohere') || lowerModel.includes('command')) {
+    console.log(`🔧 Configuring ${modelName} with Cohere reasoning suppression`);
+    return {
+      temperature: 0.2,
+      extraParams: {
+        top_p: 0.9,
+        thinking: { type: 'disabled' } // Disable reasoning for Cohere models
+      }
+    };
+  }
+
   // Default configuration for unknown models
   console.log(`🔧 Using default configuration for ${modelName}`);
   return {
@@ -3405,17 +3460,17 @@ function getSystemMessage(modelName) {
   
   // DeepSeek models: concise instructions for R1 and Chat variants
   if (lowerModel.includes('deepseek')) {
-    return 'You are a JSON generator. Return ONLY the requested JSON object with no reasoning traces, explanations, or commentary. Output pure JSON starting with { and ending with }.';
+    return 'You are a JSON generator. Do not use <think> tags or reasoning traces. Return ONLY the requested JSON object with no explanations or commentary. Output pure JSON starting with { and ending with }.';
   }
   
-  // Nemotron models: system prompt for final answer only
+  // Nemotron models: system prompt for final answer only with /no_think directive
   if (lowerModel.includes('nemotron')) {
-    return 'You are a JSON generator. Respond ONLY with the requested JSON object. No intermediate reasoning, no explanations, no commentary. Final answer only. Do not use thinking or reasoning modes - return the JSON directly.';
+    return 'You are a JSON generator. /no_think Respond ONLY with the requested JSON object. No intermediate reasoning, no explanations, no commentary. Final answer only. Do not use thinking or reasoning modes - return the JSON directly.';
   }
   
   // GLM-Air and gpt-oss-20b: strong emphasis on direct JSON response
   if (lowerModel.includes('gpt-oss-20b') || lowerModel.includes('glm-air')) {
-    return 'You are a JSON response generator. You must respond ONLY with valid JSON matching the schema. Do NOT use reasoning mode, thinking mode, or any intermediate steps. Return the complete JSON object directly in your response content field. No explanations, no commentary, just pure JSON starting with { and ending with }.';
+    return 'You are a JSON response generator with reasoning_effort set to low. You must respond ONLY with valid JSON matching the schema. Do NOT use reasoning mode, thinking mode, or any intermediate steps. Return the complete JSON object directly in your response content field. No explanations, no commentary, just pure JSON starting with { and ending with }.';
   }
   
   // Qwen models: structured output emphasis
@@ -3433,9 +3488,9 @@ function getSystemMessage(modelName) {
     return 'Generate ONLY the requested JSON object. No explanations, no reasoning steps, no commentary. Return pure JSON starting with { and ending with }.';
   }
   
-  // Claude models: precise instructions
+  // Claude models: precise instructions with thinking tokens disabled
   if (lowerModel.includes('claude')) {
-    return 'You are a JSON generator. Return exclusively the requested JSON object matching the schema. No additional text, explanations, or reasoning - only the JSON starting with { and ending with }.';
+    return 'You are a JSON generator with thinking tokens disabled. Return exclusively the requested JSON object matching the schema. No additional text, explanations, thinking, or reasoning - only the JSON starting with { and ending with }.';
   }
   
   // GPT-4 models: balanced approach
@@ -3443,6 +3498,11 @@ function getSystemMessage(modelName) {
     return 'You are a JSON response generator. Return ONLY the requested JSON object matching the provided schema. No explanations, reasoning, or additional text - just pure JSON starting with { and ending with }.';
   }
   
+  // Cohere models: disable thinking parameter
+  if (lowerModel.includes('cohere') || lowerModel.includes('command')) {
+    return 'You are a JSON generator with thinking disabled. Return ONLY the requested JSON object matching the schema. No reasoning, no thinking, no explanations - just pure JSON starting with { and ending with }.';
+  }
+
   // Default system message
   return 'You are a helpful assistant that responds only in valid JSON format. You must return ONLY a single JSON object matching the provided schema in your response content. Do not include any explanatory text, reasoning, or commentary - just the JSON object starting with { and ending with }.';
 }
