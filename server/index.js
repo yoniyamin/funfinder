@@ -1378,6 +1378,21 @@ function cleanJsonString(text) {
   return cleaned;
 }
 
+function removeDuplicateFields(jsonString) {
+  // Fix duplicate fields in JSON objects (common issue with some models)
+  // This handles cases like: "field": "value", "field": "value2"
+  const duplicateFieldPattern = /"([^"]+)":\s*([^,}]+),\s*"([^"]+)":\s*([^,}]+)/g;
+  
+  return jsonString.replace(duplicateFieldPattern, (match, field1, value1, field2, value2) => {
+    // If fields are the same, keep only the first occurrence
+    if (field1 === field2) {
+      return `"${field1}": ${value1}`;
+    }
+    // Otherwise, keep both
+    return match;
+  });
+}
+
 function parseJsonWithFallback(text) {
   console.log(`📝 Attempting to parse ${text.length} character response`);
   
@@ -1405,6 +1420,9 @@ function parseJsonWithFallback(text) {
   try {
     let fixed = cleanJsonString(text);
     
+    // Remove duplicate fields first (common issue with some models)
+    fixed = removeDuplicateFields(fixed);
+    
     // Fix trailing commas
     fixed = fixed.replace(/,(\s*[}\]])/g, '$1');
     
@@ -1427,6 +1445,50 @@ function parseJsonWithFallback(text) {
     return result;
   } catch (e) {
     console.log('❌ Fixed JSON parse failed...', e.message);
+  }
+  
+  // Final attempt: More aggressive duplicate field removal
+  try {
+    let fixed = cleanJsonString(text);
+    
+    // More aggressive duplicate field removal - scan for patterns like:
+    // "field": value, ... "field": value2
+    const lines = fixed.split('\n');
+    const seenFields = new Set();
+    const cleanedLines = [];
+    
+    for (const line of lines) {
+      const fieldMatch = line.match(/"([^"]+)":\s*/);
+      if (fieldMatch) {
+        const fieldName = fieldMatch[1];
+        const lineKey = `${fieldName}_${JSON.stringify(line.match(/:\s*([^,}]+)/)?.[1] || '')}`;
+        
+        if (!seenFields.has(lineKey)) {
+          seenFields.add(lineKey);
+          cleanedLines.push(line);
+        } else {
+          console.log(`🔧 Removed duplicate field: ${fieldName}`);
+        }
+      } else {
+        cleanedLines.push(line);
+      }
+    }
+    
+    fixed = cleanedLines.join('\n');
+    
+    // Apply other fixes
+    fixed = fixed.replace(/,(\s*[}\]])/g, '$1');
+    fixed = fixed.replace(/}(\s*){/g, '}, {');
+    fixed = fixed.replace(/](\s*)\[/g, '], [');
+    fixed = fixed.replace(/'/g, '"');
+    fixed = fixed.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
+    
+    console.log(`🔧 Applied aggressive JSON fixes, final length: ${fixed.length}`);
+    const result = JSON.parse(fixed);
+    console.log('✅ JSON parsed successfully after aggressive fixes');
+    return result;
+  } catch (e) {
+    console.log('❌ Aggressive fixed JSON parse failed...', e.message);
     console.log('🚨 Raw response preview:', text.substring(0, 500) + '...');
     console.log('🚨 Cleaned response preview:', cleanJsonString(text).substring(0, 500) + '...');
     throw new Error(`Failed to parse JSON response after multiple attempts. The AI model may have returned malformed JSON. Please try again. Error: ${e.message}`);
@@ -3611,6 +3673,20 @@ function getModelSpecificConfig(modelName) {
   
   // Llama models - optimized for consistency
   if (lowerModel.includes('llama')) {
+    // Special handling for Llama 3.2 3B model which has JSON formatting issues
+    if (lowerModel.includes('llama-3.2-3b')) {
+      console.log(`🔧 Configuring ${modelName} with Llama 3.2-3B optimizations for JSON stability`);
+      return {
+        temperature: 0.1, // Very low temperature for better JSON consistency
+        extraParams: {
+          top_p: 0.85, // Lower top_p to reduce randomness
+          max_tokens: 2000, // Limit response length to prevent truncation issues
+          frequency_penalty: 0.2, // Reduce repetition/duplication
+          presence_penalty: 0.1 // Encourage varied output structure
+        }
+      };
+    }
+    
     console.log(`🔧 Configuring ${modelName} with Llama optimizations`);
     return {
       temperature: 0.2, // Good balance for Llama models
@@ -3729,6 +3805,11 @@ function getSystemMessage(modelName) {
   
   // Llama models: clear and direct instructions
   if (lowerModel.includes('llama')) {
+    // Special instructions for Llama 3.2 3B model to prevent JSON formatting issues
+    if (lowerModel.includes('llama-3.2-3b')) {
+      return 'You are a JSON response assistant. CRITICAL: Output ONLY valid JSON with NO duplicate field names in any object. Each field name must appear exactly once per object. Ensure proper JSON syntax with correct commas and brackets. No explanations, no reasoning, no extra text - just the JSON object starting with { and ending with }. Validate that every JSON object has unique field names before responding.';
+    }
+    
     return 'You are a JSON response assistant. Output ONLY valid JSON matching the provided schema. No explanations, no reasoning, no extra text - just the JSON object starting with { and ending with }.';
   }
   
