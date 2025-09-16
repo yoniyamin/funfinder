@@ -249,7 +249,8 @@ export class Neo4jDataManager {
         };
         
         const similarityResult = this.smartCache.calculateSimilarity(currentFeatures, candidateFeatures, candidateDistance, currentRequest, cachedRequest);
-        const similarityScore = similarityResult.score || similarityResult; // Handle both old and new format
+        const similarityDetails = similarityResult && typeof similarityResult === 'object' ? similarityResult : null;
+        const similarityScore = similarityDetails?.score ?? similarityResult; // Handle both old and new format
 
         // Skip if blocked by hard requirements
         if (similarityResult.blocked) {

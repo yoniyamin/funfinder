@@ -232,12 +232,6 @@ export default function CacheIndicator({ cacheInfo, onRefreshSearch, currentSear
             ...((tooltipPosition.horizontal === 'mobile-left' || tooltipPosition.horizontal === 'mobile-right') && {
               left: `${tooltipPosition.leftOffset}px`,
             }),
-            maxWidth: 'calc(100vw - 2rem)',
-            ...(tooltipPosition.horizontal === 'center'
-              ? { left: '50%', transform: 'translateX(-50%)' }
-              : tooltipPosition.horizontal === 'left'
-              ? { left: `${tooltipPosition.offset}px` }
-              : { right: `${tooltipPosition.offset}px` }),
           }}
         >
           <div className={`absolute ${

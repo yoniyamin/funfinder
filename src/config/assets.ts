@@ -1,15 +1,16 @@
 // Asset configuration for Fun Finder
-// This allows switching between local assets (development) and GitHub Pages (production)
+// This allows switching between local assets and GitHub Pages deployment
 
 const isDevelopment = import.meta.env.DEV;
+const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 const GITHUB_PAGES_BASE = import.meta.env.VITE_ASSET_BASE_URL || 'https://yourusername.github.io/yourrepo/assets';
 
 export const getAssetUrl = (filename: string): string => {
-  if (isDevelopment) {
-    // Use local assets during development
+  // Use local assets for development OR when running locally (even production builds)
+  if (isDevelopment || isLocalhost) {
     return `/${filename}`;
   } else {
-    // Use GitHub Pages assets in production
+    // Use GitHub Pages assets only when actually deployed to GitHub Pages
     return `${GITHUB_PAGES_BASE}/${filename}`;
   }
 };
