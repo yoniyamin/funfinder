@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import type { Activity, Context } from '../../lib/schema';
-import CacheIndicator from '../components/CacheIndicator';
+import CacheIndicator, { CacheInfo } from '../components/CacheIndicator';
 import { getImageUrl } from '../../config/assets';
 
 interface ResultsPageProps {
@@ -8,16 +8,7 @@ interface ResultsPageProps {
     activities: Activity[] | null;
     ctx: Context | null;
     webSources: Array<{title: string; url: string; source: string}> | null;
-    cacheInfo?: {
-      isCached: boolean;
-      cacheType: 'exact' | 'similar';
-      similarity: number;
-      originalSearch: {
-        location: string;
-        date: string;
-        searchKey: string;
-      };
-    };
+    cacheInfo?: CacheInfo;
     aiModel?: string;
   };
   searchParams: {

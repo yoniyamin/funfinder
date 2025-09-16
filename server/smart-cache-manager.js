@@ -1,5 +1,3 @@
-import neo4j from 'neo4j-driver';
-
 /**
  * Smart Cache Manager for Neo4j - Intelligent similarity-based result reuse
  * Identifies "close enough" search requests to reuse cached results
@@ -7,20 +5,32 @@ import neo4j from 'neo4j-driver';
 export class SmartCacheManager {
   constructor(neo4jDataManager, cacheSettings = {}) {
     this.dataManager = neo4jDataManager;
-    
-    // Similarity configuration - use settings or defaults
-    this.SIMILARITY_THRESHOLDS = {
-      location: { weight: cacheSettings.cache_location_weight || 0.2, maxDistance: 20 }, // km - strict local relevance
-      weather: { weight: cacheSettings.cache_weather_weight || 0.4, tolerance: 0.8 },   // More transferable between locations
-      temporal: { weight: cacheSettings.cache_temporal_weight || 0.3, dayRange: 14 },    // Seasonal patterns matter
-      demographic: { weight: cacheSettings.cache_demographic_weight || 0.1, ageFlexibility: 2 } // Age group flexibility in years
-    };
-    
-    // Minimum similarity score to consider a match (configurable threshold)
-    this.MIN_SIMILARITY_SCORE = cacheSettings.cache_similarity_threshold || 0.90;
-    
     // Geographic data cache for location features
     this.locationCache = new Map();
+
+    this.updateSettings(cacheSettings);
+  }
+
+  updateSettings(cacheSettings = {}) {
+    this.cacheSettings = { ...cacheSettings };
+
+    const toNumber = (value, fallback) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    };
+
+    // Similarity configuration - use settings or defaults
+    this.SIMILARITY_THRESHOLDS = {
+      location: { weight: toNumber(cacheSettings.cache_location_weight, 0.2), maxDistance: 20 }, // km - strict local relevance
+      weather: { weight: toNumber(cacheSettings.cache_weather_weight, 0.4), tolerance: 0.8 },   // More transferable between locations
+      temporal: { weight: toNumber(cacheSettings.cache_temporal_weight, 0.3), dayRange: 14 },    // Seasonal patterns matter
+      demographic: { weight: toNumber(cacheSettings.cache_demographic_weight, 0.1), ageFlexibility: 2 }, // Age group flexibility in years
+      instructions: { weight: toNumber(cacheSettings.cache_instructions_weight, 0.15) }
+    };
+
+    // Minimum similarity score to consider a match (configurable threshold)
+    this.MIN_SIMILARITY_SCORE = toNumber(cacheSettings.cache_similarity_threshold, 0.90);
+    this.MIN_INSTRUCTIONS_SCORE = toNumber(cacheSettings.cache_instructions_min_score, 0.55);
   }
 
   /**
@@ -54,11 +64,16 @@ export class SmartCacheManager {
     features.demographic = this.normalizeDemographicFeatures(ages, duration_hours);
     
     // === CONTEXT FEATURES ===
+    const instructionsText = (context.extra_instructions || '').toString().toLowerCase().trim();
+    const instructionsHash = instructionsText ? (this.simpleHash(instructionsText) % 1000) / 1000 : 0;
+
     features.context = {
       hasFestivals: (context.nearby_festivals?.length || 0) > 0 ? 1 : 0,
       festivalCount: Math.min((context.nearby_festivals?.length || 0) / 5, 1), // Normalize max 5 festivals
-      hasExtraInstructions: context.extra_instructions ? 1 : 0,
-      instructionsHash: context.extra_instructions ? (this.simpleHash(context.extra_instructions) % 1000) / 1000 : 0
+      hasExtraInstructions: instructionsText ? 1 : 0,
+      instructionsHash,
+      instructionsLength: Math.min(instructionsText.length / 300, 1),
+      instructionsComplexity: this.calculateInstructionComplexity(instructionsText)
     };
     
     return features;
@@ -216,7 +231,8 @@ export class SmartCacheManager {
       location: { score: 0, weight: this.SIMILARITY_THRESHOLDS.location.weight },
       weather: { score: 0, weight: this.SIMILARITY_THRESHOLDS.weather.weight },
       temporal: { score: 0, weight: this.SIMILARITY_THRESHOLDS.temporal.weight },
-      demographic: { score: 0, weight: this.SIMILARITY_THRESHOLDS.demographic.weight }
+      demographic: { score: 0, weight: this.SIMILARITY_THRESHOLDS.demographic.weight },
+      instructions: { score: 0, weight: this.SIMILARITY_THRESHOLDS.instructions.weight }
     };
     
     // === LOCATION SIMILARITY ===
@@ -252,6 +268,14 @@ export class SmartCacheManager {
     totalScore += demographicScore * this.SIMILARITY_THRESHOLDS.demographic.weight;
     totalWeight += this.SIMILARITY_THRESHOLDS.demographic.weight;
     
+    // === INSTRUCTIONS SIMILARITY ===
+    if (this.SIMILARITY_THRESHOLDS.instructions.weight > 0) {
+      const instructionsScore = this.calculateInstructionsSimilarity(features1.context || {}, features2.context || {});
+      breakdown.instructions.score = instructionsScore;
+      totalScore += instructionsScore * this.SIMILARITY_THRESHOLDS.instructions.weight;
+      totalWeight += this.SIMILARITY_THRESHOLDS.instructions.weight;
+    }
+
     const finalScore = totalWeight > 0 ? totalScore / totalWeight : 0;
     return { score: finalScore, breakdown };
   }
@@ -321,18 +345,70 @@ export class SmartCacheManager {
     const preschoolMatch = this.getGroupMatch(demo1.hasPreschool, demo2.hasPreschool);
     const schoolMatch = this.getGroupMatch(demo1.hasSchoolAge, demo2.hasSchoolAge);
     const teenMatch = this.getGroupMatch(demo1.hasTeens, demo2.hasTeens);
-    
+
     // Average age proximity
     const avgAgeDiff = Math.abs(demo1.avgAge - demo2.avgAge);
     const ageSimilarity = Math.max(0, 1 - avgAgeDiff * 2);
-    
+
     // Duration similarity - half-day vs full-day activities
     const durationDiff = Math.abs(demo1.duration - demo2.duration);
     const durationSimilarity = Math.max(0, 1 - durationDiff * 1.5);
-    
-    return (toddlerMatch + preschoolMatch + schoolMatch + teenMatch) * 0.15 + 
-           ageSimilarity * 0.3 + 
+
+    return (toddlerMatch + preschoolMatch + schoolMatch + teenMatch) * 0.15 +
+           ageSimilarity * 0.3 +
            durationSimilarity * 0.3;
+  }
+
+  /**
+   * Compare instruction fields to ensure cached preferences align with request
+   */
+  calculateInstructionsSimilarity(context1 = {}, context2 = {}) {
+    const hasInstructions1 = context1.hasExtraInstructions ? 1 : 0;
+    const hasInstructions2 = context2.hasExtraInstructions ? 1 : 0;
+
+    if (!hasInstructions1 && !hasInstructions2) {
+      return 1; // No instructions on either side
+    }
+
+    if (hasInstructions1 !== hasInstructions2) {
+      return 0.25; // One request had special instructions while the other did not
+    }
+
+    const hash1 = typeof context1.instructionsHash === 'number' ? context1.instructionsHash : 0;
+    const hash2 = typeof context2.instructionsHash === 'number' ? context2.instructionsHash : 0;
+    const hashDiff = Math.abs(hash1 - hash2);
+    const hashSimilarity = Math.max(0, 1 - hashDiff * 2);
+
+    const length1 = typeof context1.instructionsLength === 'number' ? context1.instructionsLength : 0;
+    const length2 = typeof context2.instructionsLength === 'number' ? context2.instructionsLength : 0;
+    const lengthDiff = Math.abs(length1 - length2);
+    const lengthSimilarity = Math.max(0, 1 - lengthDiff);
+
+    const complexity1 = typeof context1.instructionsComplexity === 'number' ? context1.instructionsComplexity : 0;
+    const complexity2 = typeof context2.instructionsComplexity === 'number' ? context2.instructionsComplexity : 0;
+    const complexityDiff = Math.abs(complexity1 - complexity2);
+    const complexitySimilarity = Math.max(0, 1 - complexityDiff * 2);
+
+    const combined = (hashSimilarity * 0.6) + (lengthSimilarity * 0.2) + (complexitySimilarity * 0.2);
+    return Math.max(0, Math.min(1, combined));
+  }
+
+  calculateInstructionComplexity(text) {
+    if (!text) {
+      return 0;
+    }
+
+    const tokens = text
+      .split(/[^a-z0-9]+/)
+      .map(token => token.trim())
+      .filter(Boolean);
+
+    if (tokens.length === 0) {
+      return 0;
+    }
+
+    const uniqueTokens = new Set(tokens);
+    return Math.min(uniqueTokens.size / 20, 1);
   }
 
   /**

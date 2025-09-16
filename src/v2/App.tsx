@@ -3,6 +3,7 @@ import SearchPage from './pages/SearchPage';
 import ResultsPage from './pages/ResultsPage';
 import BottomNavBar from './components/BottomNavBar';
 import Settings from '../components/Settings';
+import type { CacheInfo } from './components/CacheIndicator';
 import { toISODate, geocode, fetchHolidays, fetchWeatherDaily, fetchFestivalsWikidata, fetchHolidaysWithGemini } from '../lib/api';
 import type { Activity, Context, LLMResult } from '../lib/schema';
 import { getImageUrl, IMAGES } from '../config/assets';
@@ -33,16 +34,7 @@ interface AppState {
     activities: Activity[] | null;
     ctx: Context | null;
     webSources: Array<{title: string; url: string; source: string}> | null;
-    cacheInfo?: {
-      isCached: boolean;
-      cacheType: 'exact' | 'similar';
-      similarity: number;
-      originalSearch: {
-        location: string;
-        date: string;
-        searchKey: string;
-      };
-    };
+    cacheInfo?: CacheInfo;
     aiModel?: string;
   };
   loading: {
