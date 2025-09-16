@@ -2217,8 +2217,9 @@ app.get('/api/settings', (req, res) => {
       openwebninja_configured: !!apiKeys.openwebninja_api_key,
       ticketmaster_configured: !!apiKeys.ticketmaster_api_key,
       ai_provider: apiKeys.ai_provider || 'gemini',
-      openrouter_model: apiKeys.openrouter_model || 'deepseek/deepseek-r1-0528-qwen3-8b:free',
+      openrouter_model: apiKeys.openrouter_model || 'deepseek/deepseek-chat-v3.1:free',
       enable_gemini_holidays: !!apiKeys.enable_gemini_holidays,
+      enable_reasoning: !!apiKeys.enable_reasoning,
       max_activities: apiKeys.max_activities || 20,
       cache_include_model: !!apiKeys.cache_include_model,
       cache_similarity_threshold: apiKeys.cache_similarity_threshold || 0.90,
@@ -2474,6 +2475,220 @@ app.post('/api/test-apis', async (req, res) => {
   }
 });
 
+// Test model latency endpoint
+app.post('/api/test-model-latency', async (req, res) => {
+  try {
+    const { enableReasoning = false } = req.body;
+    console.log(`🚀 Starting comprehensive model latency tests... (reasoning: ${enableReasoning})`);
+    
+    const results = {
+      gemini: { 
+        configured: false, 
+        working: false, 
+        latency: null, 
+        error: null,
+        temperature: 0.1,
+        response_text: null,
+        response_length: null,
+        quality_analysis: null
+      },
+      openrouter_models: []
+    };
+    
+    // Different prompts based on reasoning mode
+    const testPrompt = enableReasoning 
+      ? 'Please recommend a fun outdoor activity for families in Paris during spring. Include specific location details, best times to visit, and practical tips like transportation and costs.'
+      : 'Suggest a quick outdoor activity in Paris for families in spring. Include the location name and one practical tip.';
+    
+    // Quality analysis function
+    function analyzeResponseQuality(responseText, isReasoningMode = false) {
+      if (!responseText) return null;
+      
+      const text = responseText.toLowerCase();
+      const length = responseText.length;
+      
+      // Check for location information
+      const hasLocationInfo = text.includes('paris') || 
+                             text.includes('location') || 
+                             text.includes('address') ||
+                             text.includes('metro') ||
+                             text.includes('station') ||
+                             /\d+\s*(rue|avenue|boulevard|place)/i.test(responseText);
+      
+      // Check for specific details
+      const hasSpecificDetails = text.includes('time') || 
+                                 text.includes('cost') || 
+                                 text.includes('price') || 
+                                 text.includes('transport') || 
+                                 text.includes('hour') ||
+                                 text.includes('entrance') ||
+                                 text.includes('ticket');
+      
+      // Completeness score (0-10)
+      let completeness = 0;
+      if (hasLocationInfo) completeness += 3;
+      if (hasSpecificDetails) completeness += 3;
+      if (length > 50) completeness += 2;
+      if (length > 150) completeness += 2;
+      
+      // Helpful score (0-10) 
+      let helpful = 0;
+      if (text.includes('families') || text.includes('children')) helpful += 2;
+      if (text.includes('spring')) helpful += 1;
+      if (hasLocationInfo) helpful += 3;
+      if (hasSpecificDetails) helpful += 3;
+      if (text.includes('tip') || text.includes('advice') || text.includes('recommend')) helpful += 1;
+      
+      return {
+        has_location_info: hasLocationInfo,
+        has_specific_details: hasSpecificDetails,
+        completeness_score: Math.min(completeness, 10),
+        helpful_score: Math.min(helpful, 10)
+      };
+    }
+    
+    // Test Gemini latency
+    if (apiKeys.gemini_api_key) {
+      results.gemini.configured = true;
+      try {
+        // Reinitialize in case key just changed
+        initializeAIProviders();
+        
+        if (!model) {
+          throw new Error('Gemini model not initialized - check API key');
+        }
+        
+        const startTime = performance.now();
+        const testResult = await model.generateContent({
+          contents: [{ role: 'user', parts: [{ text: testPrompt }]}],
+        });
+        const endTime = performance.now();
+        
+        const response = testResult.response.text();
+        if (response && response.length > 0) {
+          results.gemini.working = true;
+          results.gemini.latency = Math.round(endTime - startTime);
+          results.gemini.response_text = response;
+          results.gemini.response_length = response.length;
+          results.gemini.quality_analysis = analyzeResponseQuality(response, enableReasoning);
+        } else {
+          throw new Error('Empty response from Gemini');
+        }
+      } catch (error) {
+        console.error('Gemini latency test error:', error);
+        results.gemini.error = error.message;
+      }
+    }
+    
+    // Test OpenRouter models - test multiple free models
+    if (apiKeys.openrouter_api_key) {
+      const freeModelsToTest = [
+        { 
+          model: 'deepseek/deepseek-chat-v3.1:free',
+          name: 'DeepSeek V3.1',
+          description: 'Fast & Recommended',
+          temperature: enableReasoning ? 0.3 : 0.1
+        },
+        { 
+          model: 'meta-llama/llama-3.2-3b-instruct:free',
+          name: 'Llama 3.2 3B',
+          description: 'Lightweight & Fast',
+          temperature: enableReasoning ? 0.5 : 0.2
+        },
+        { 
+          model: 'mistralai/mistral-7b-instruct:free',
+          name: 'Mistral 7B Instruct',
+          description: 'Balanced Performance',
+          temperature: enableReasoning ? 0.4 : 0.1
+        },
+        { 
+          model: 'nvidia/nemotron-nano-9b-v2:free',
+          name: 'Nemotron Nano 9B V2',
+          description: 'Efficient & Fast',
+          temperature: enableReasoning ? 0.3 : 0.1
+        },
+        { 
+          model: 'google/gemma-2-2b-it:free',
+          name: 'Gemma 2 2B IT',
+          description: 'Google\'s lightweight model',
+          temperature: enableReasoning ? 0.4 : 0.1
+        },
+        { 
+          model: 'microsoft/phi-3-mini-128k-instruct:free',
+          name: 'Phi-3 Mini 128k',
+          description: 'Microsoft\'s efficient model',
+          temperature: enableReasoning ? 0.4 : 0.1
+        }
+      ];
+      
+      // Reinitialize in case key just changed
+      initializeAIProviders();
+      
+      for (const modelInfo of freeModelsToTest) {
+        const modelResult = {
+          model: modelInfo.model,
+          name: modelInfo.name,
+          description: modelInfo.description,
+          configured: true,
+          working: false,
+          latency: null,
+          error: null,
+          tokens_used: null,
+          is_current: modelInfo.model === (apiKeys.openrouter_model || 'deepseek/deepseek-chat-v3.1:free'),
+          temperature: modelInfo.temperature,
+          reasoning_enabled: enableReasoning,
+          response_text: null,
+          response_length: null,
+          quality_analysis: null
+        };
+        
+        try {
+          console.log(`Testing ${modelInfo.name} (${modelInfo.model})...`);
+          
+          const startTime = performance.now();
+          const testResponse = await openAI.chat.completions.create({
+            model: modelInfo.model,
+            messages: [{ role: 'user', content: testPrompt }],
+            max_tokens: enableReasoning ? 300 : 100,
+            temperature: modelInfo.temperature
+          });
+          const endTime = performance.now();
+          
+          const responseMessage = testResponse.choices?.[0]?.message;
+          let response = responseMessage?.content;
+          
+          // Check reasoning field if content is empty (for DeepSeek R1 models)
+          if (!response || response.trim() === '') {
+            response = responseMessage?.reasoning;
+          }
+          
+          if (response && response.length > 0) {
+            modelResult.working = true;
+            modelResult.latency = Math.round(endTime - startTime);
+            modelResult.tokens_used = testResponse.usage?.total_tokens || null;
+            modelResult.response_text = response;
+            modelResult.response_length = response.length;
+            modelResult.quality_analysis = analyzeResponseQuality(response, enableReasoning);
+          } else {
+            throw new Error('Empty response from OpenRouter');
+          }
+        } catch (error) {
+          console.error(`${modelInfo.name} latency test error:`, error);
+          modelResult.error = error.message;
+        }
+        
+        results.openrouter_models.push(modelResult);
+      }
+    }
+    
+    console.log('📊 Comprehensive latency test results:', results);
+    res.json({ ok: true, results });
+  } catch (err) {
+    console.error('Latency test error:', err);
+    res.status(500).json({ ok: false, error: 'Failed to test model latency' });
+  }
+});
+
 // Call OpenRouter API with isolated client
 async function callOpenRouterModel(prompt, maxRetries = 3, abortSignal = null) {
   const openRouterKey = apiKeys.openrouter_api_key || process.env.OPENROUTER_API_KEY || '';
@@ -2626,19 +2841,25 @@ async function callGeminiModel(prompt, maxRetries = 3, abortSignal = null) {
     try {
       console.log(`🤖 [${new Date().toISOString()}] Gemini attempt ${attempt}/${maxRetries}`);
       
+      // Adjust prompt and config based on reasoning setting
+      const reasoningEnabled = !!apiKeys.enable_reasoning;
+      const promptPrefix = reasoningEnabled 
+        ? 'You are an intelligent activity recommendation system. Use detailed reasoning and careful consideration to provide high-quality recommendations. Then return the complete JSON object with thoughtful suggestions.'
+        : '/no_think You are a JSON generator. Return ONLY the requested JSON object with no reasoning traces, explanations, or commentary. Output pure JSON starting with { and ending with }.';
+      
       const result = await model.generateContent({
         contents: [
           { 
             role: 'user', 
             parts: [{ 
-              text: `/no_think You are a JSON generator. Return ONLY the requested JSON object with no reasoning traces, explanations, or commentary. Output pure JSON starting with { and ending with }.\n\n${prompt}` 
+              text: `${promptPrefix}\n\n${prompt}` 
             }]
           }
         ],
         generationConfig: { 
           responseMimeType: 'application/json',
-          temperature: 0.2, // Optimized for deterministic JSON output
-          topP: 0.9,
+          temperature: reasoningEnabled ? 0.4 : 0.1, // Higher temp for reasoning
+          topP: reasoningEnabled ? 0.95 : 0.9,
           candidateCount: 1
         }
       });
@@ -3341,37 +3562,38 @@ process.on('SIGTERM', async () => {
 // Get model-specific configuration for optimal performance
 function getModelSpecificConfig(modelName) {
   const lowerModel = modelName.toLowerCase();
+  const reasoningEnabled = !!apiKeys.enable_reasoning;
   
   // DeepSeek models (R1, Chat) - optimized for reasoning control
   if (lowerModel.includes('deepseek')) {
-    console.log(`🔧 Configuring ${modelName} with optimized settings for DeepSeek`);
+    console.log(`🔧 Configuring ${modelName} with optimized settings for DeepSeek (reasoning: ${reasoningEnabled})`);
     return {
-      temperature: 0.2, // Balanced for quality and speed
+      temperature: reasoningEnabled ? 0.3 : 0.1, // Higher temp for reasoning, lower for speed
       extraParams: {
-        top_p: 0.9, // Slightly focused sampling
-        reasoning_tag: 'think' // For filtering reasoning content
+        top_p: reasoningEnabled ? 0.95 : 0.9,
+        reasoning_tag: 'think'
       }
     };
   }
   
   // GPT-OSS-20B and GLM-Air - need reasoning mode disabled
   if (lowerModel.includes('gpt-oss-20b') || lowerModel.includes('glm-air')) {
-    console.log(`🔧 Configuring ${modelName} with low temperature for deterministic output`);
+    console.log(`🔧 Configuring ${modelName} with temperature for output (reasoning: ${reasoningEnabled})`);
     return {
-      temperature: 0.4, // Low temperature for deterministic, faster decoding
+      temperature: reasoningEnabled ? 0.5 : 0.2, // Higher temp for reasoning
       extraParams: {
-        reasoning_effort: 'low' // Suppress reasoning for GPT-OSS models
+        reasoning_effort: reasoningEnabled ? 'medium' : 'low'
       }
     };
   }
   
   // Nemotron models - optimized for instruction following
   if (lowerModel.includes('nemotron')) {
-    console.log(`🔧 Configuring ${modelName} for final answer only with low temperature`);
+    console.log(`🔧 Configuring ${modelName} for instruction following (reasoning: ${reasoningEnabled})`);
     return {
-      temperature: 0.3, // Low temperature for deterministic, faster decoding
+      temperature: reasoningEnabled ? 0.4 : 0.1, // Higher temp for reasoning
       extraParams: {
-        top_p: 0.95, // High precision sampling
+        top_p: reasoningEnabled ? 0.95 : 0.9,
       }
     };
   }
@@ -3444,12 +3666,34 @@ function getModelSpecificConfig(modelName) {
     };
   }
 
+  // Google Gemma models - optimized for efficiency
+  if (lowerModel.includes('gemma')) {
+    console.log(`🔧 Configuring ${modelName} with Gemma optimizations (reasoning: ${reasoningEnabled})`);
+    return {
+      temperature: reasoningEnabled ? 0.4 : 0.1, // Higher temp for reasoning
+      extraParams: {
+        top_p: reasoningEnabled ? 0.95 : 0.9,
+      }
+    };
+  }
+
+  // Microsoft Phi models - optimized for instruction following
+  if (lowerModel.includes('phi')) {
+    console.log(`🔧 Configuring ${modelName} with Phi optimizations (reasoning: ${reasoningEnabled})`);
+    return {
+      temperature: reasoningEnabled ? 0.4 : 0.1, // Higher temp for reasoning
+      extraParams: {
+        top_p: reasoningEnabled ? 0.95 : 0.9,
+      }
+    };
+  }
+
   // Default configuration for unknown models
-  console.log(`🔧 Using default configuration for ${modelName}`);
+  console.log(`🔧 Using default configuration for ${modelName} (reasoning: ${reasoningEnabled})`);
   return {
-    temperature: 0.2, // Better default as requested
+    temperature: reasoningEnabled ? 0.4 : 0.1, // Higher temp for reasoning
     extraParams: {
-      top_p: 0.9, // Good default sampling
+      top_p: reasoningEnabled ? 0.95 : 0.9,
     }
   };
 }
@@ -3457,10 +3701,15 @@ function getModelSpecificConfig(modelName) {
 // Get model-specific system message
 function getSystemMessage(modelName) {
   const lowerModel = modelName.toLowerCase();
+  const reasoningEnabled = !!apiKeys.enable_reasoning;
   
   // DeepSeek models: concise instructions for R1 and Chat variants
   if (lowerModel.includes('deepseek')) {
-    return 'You are a JSON generator. Do not use <think> tags or reasoning traces. Return ONLY the requested JSON object with no explanations or commentary. Output pure JSON starting with { and ending with }.';
+    if (reasoningEnabled) {
+      return 'You are an intelligent activity recommendation system. Use detailed reasoning to provide comprehensive, well-thought-out recommendations. Consider all aspects thoroughly, then return the JSON object with high-quality, detailed suggestions. You may use reasoning steps, but ensure the final response includes the complete JSON object.';
+    } else {
+      return 'You are a JSON generator. Do not use <think> tags or reasoning traces. Return ONLY the requested JSON object with no explanations or commentary. Output pure JSON starting with { and ending with }.';
+    }
   }
   
   // Nemotron models: system prompt for final answer only with /no_think directive
@@ -3504,7 +3753,11 @@ function getSystemMessage(modelName) {
   }
 
   // Default system message
-  return 'You are a helpful assistant that responds only in valid JSON format. You must return ONLY a single JSON object matching the provided schema in your response content. Do not include any explanatory text, reasoning, or commentary - just the JSON object starting with { and ending with }.';
+  if (reasoningEnabled) {
+    return 'You are an intelligent activity recommendation system. Use detailed reasoning and careful consideration to provide high-quality, thoughtful recommendations. Take time to analyze the context, weather, location, and user preferences. Then provide a comprehensive JSON response with well-reasoned activity suggestions.';
+  } else {
+    return 'You are a helpful assistant that responds only in valid JSON format. You must return ONLY a single JSON object matching the provided schema in your response content. Do not include any explanatory text, reasoning, or commentary - just the JSON object starting with { and ending with }.';
+  }
 }
 
 // Helper function to extract complete JSON from text starting with {

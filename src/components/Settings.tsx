@@ -42,6 +42,45 @@ interface Neo4jTestResult {
   suggestions?: string[];
 }
 
+interface ModelLatencyResults {
+  gemini: { 
+    configured: boolean; 
+    working: boolean; 
+    latency: number | null; 
+    error: string | null;
+    temperature: number;
+    response_text: string | null;
+    response_length: number | null;
+    quality_analysis: {
+      has_location_info: boolean;
+      has_specific_details: boolean;
+      completeness_score: number;
+      helpful_score: number;
+    } | null;
+  };
+  openrouter_models: Array<{
+    model: string;
+    name: string;
+    description: string;
+    configured: boolean;
+    working: boolean;
+    latency: number | null;
+    error: string | null;
+    tokens_used: number | null;
+    is_current: boolean;
+    temperature: number;
+    reasoning_enabled: boolean;
+    response_text: string | null;
+    response_length: number | null;
+    quality_analysis: {
+      has_location_info: boolean;
+      has_specific_details: boolean;
+      completeness_score: number;
+      helpful_score: number;
+    } | null;
+  }>;
+}
+
 interface SettingsProps {
   isOpen: boolean;
   onClose: () => void;
@@ -59,7 +98,14 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
     google_search_api_key: '',
     google_search_engine_id: '',
     openwebninja_api_key: '',
-    ticketmaster_api_key: ''
+    ticketmaster_api_key: '',
+    enable_gemini_holidays: false,
+    enable_reasoning: false,
+    cache_similarity_threshold: 0.90,
+    cache_location_weight: 0.20,
+    cache_weather_weight: 0.40,
+    cache_temporal_weight: 0.30,
+    cache_demographic_weight: 0.10
   });
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -72,6 +118,9 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [cacheStats, setCacheStats] = useState<{searchResults: number; weather: number; festivals: number; history: number; locations: number} | null>(null);
   const [cacheOperations, setCacheOperations] = useState<{[key: string]: boolean}>({});
+  const [latencyTesting, setLatencyTesting] = useState(false);
+  const [latencyResults, setLatencyResults] = useState<ModelLatencyResults | null>(null);
+  const [enableReasoning, setEnableReasoning] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -100,6 +149,7 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
           openrouter_model: data.settings.openrouter_model || 'deepseek/deepseek-chat-v3.1:free',
           max_activities: data.settings.max_activities || 20,
           cache_include_model: data.settings.cache_include_model !== undefined ? data.settings.cache_include_model : prev.cache_include_model,
+          enable_reasoning: data.settings.enable_reasoning !== undefined ? data.settings.enable_reasoning : prev.enable_reasoning,
           // Load cache weight settings
           cache_similarity_threshold: data.settings.cache_similarity_threshold || 0.90,
           cache_location_weight: data.settings.cache_location_weight || 0.20,
@@ -107,6 +157,8 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
           cache_temporal_weight: data.settings.cache_temporal_weight || 0.30,
           cache_demographic_weight: data.settings.cache_demographic_weight || 0.10
         }));
+        // Sync the reasoning checkbox state with loaded settings
+        setEnableReasoning(data.settings.enable_reasoning || false);
       }
     } catch (error) {
       console.error('Failed to load settings:', error);
@@ -208,6 +260,27 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
       });
     } finally {
       setNeo4jTesting(false);
+    }
+  };
+
+  const testModelLatency = async () => {
+    setLatencyTesting(true);
+    setLatencyResults(null);
+    
+    try {
+      const response = await fetch('/api/test-model-latency', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enableReasoning })
+      });
+      const data = await response.json();
+      if (data.ok) {
+        setLatencyResults(data.results);
+      }
+    } catch (error) {
+      console.error('Failed to test model latency:', error);
+    } finally {
+      setLatencyTesting(false);
     }
   };
 
@@ -321,9 +394,11 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
     const modelMap: { [key: string]: string } = {
       'deepseek/deepseek-chat-v3.1:free': 'DeepSeek V3.1 (Free)',
       'deepseek/deepseek-r1-0528-qwen3-8b:free': 'DeepSeek R1 8B (Free)',
-      'google/gemini-flash-1.5:free': 'Gemini Flash 1.5 (Free)',
       'meta-llama/llama-3.2-3b-instruct:free': 'Llama 3.2 3B (Free)',
-      'qwen/qwen-2.5-7b-instruct:free': 'Qwen 2.5 7B (Free)',
+      'mistralai/mistral-7b-instruct:free': 'Mistral 7B Instruct (Free)',
+      'nvidia/nemotron-nano-9b-v2:free': 'Nemotron Nano 9B V2 (Free)',
+      'google/gemma-2-2b-it:free': 'Gemma 2 2B IT (Free)',
+      'microsoft/phi-3-mini-128k-instruct:free': 'Phi-3 Mini 128k (Free)',
       'deepseek/deepseek-r1-0528': 'DeepSeek R1 671B (Paid)',
       'openai/gpt-4o-mini': 'GPT-4o Mini (Paid)',
       'anthropic/claude-3-haiku': 'Claude 3 Haiku (Paid)'
@@ -604,21 +679,57 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                 </div>
               </div>
               
-              <div className="mt-4 flex gap-3">
-                <button 
-                  onClick={testApis}
-                  disabled={testing}
-                  className="btn btn-secondary flex items-center gap-2"
-                >
-                  {testing ? (
-                    <>
-                      <div className="animate-spin w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full"></div>
-                      Testing...
-                    </>
-                  ) : (
-                    <>🔧 Test API Connections</>
-                  )}
-                </button>
+              <div className="mt-4 space-y-3">
+                <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <label className="flex items-center gap-2 text-sm font-medium text-blue-800" style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                    <input
+                      type="checkbox"
+                      checked={enableReasoning}
+                      onChange={(e) => {
+                        setEnableReasoning(e.target.checked);
+                        handleApiKeyChange('enable_reasoning', e.target.checked);
+                      }}
+                      className="text-blue-600"
+                    />
+                    🧠 Enable Enhanced Reasoning
+                  </label>
+                  <div className="text-xs text-blue-700" style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                    Enables more detailed reasoning in both tests and real searches (higher quality but slower responses)
+                  </div>
+                </div>
+                
+                <div className="flex gap-3 flex-wrap">
+                  <button 
+                    onClick={testApis}
+                    disabled={testing}
+                    className="btn btn-secondary flex items-center gap-2"
+                    style={{ fontFamily: 'Baloo 2, sans-serif' }}
+                  >
+                    {testing ? (
+                      <>
+                        <div className="animate-spin w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full"></div>
+                        Testing...
+                      </>
+                    ) : (
+                      <>🔧 Test API Connections</>
+                    )}
+                  </button>
+                  <button 
+                    onClick={testModelLatency}
+                    disabled={latencyTesting}
+                    className="btn btn-primary flex items-center gap-2"
+                    style={{ fontFamily: 'Baloo 2, sans-serif' }}
+                  >
+                    {latencyTesting ? (
+                      <>
+                        <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div>
+                        Testing {enableReasoning ? 'Reasoning & ' : ''}Speed...
+                      </>
+                    ) : (
+                      <>⚡ Test Model {enableReasoning ? 'Reasoning & ' : ''}Speed</>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -626,51 +737,281 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
           {/* Test Results */}
           {testResults && (
             <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <h3 className="font-semibold mb-3 text-blue-800">API Test Results</h3>
+              <h3 className="font-semibold mb-3 text-blue-800" style={{ fontFamily: 'Baloo 2, sans-serif' }}>API Test Results</h3>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span>Gemini AI API:</span>
+                  <span style={{ fontFamily: 'Baloo 2, sans-serif' }}>Gemini AI API:</span>
                   <span className={`font-medium ${
                     testResults.gemini.working ? 'text-green-600' : 
                     testResults.gemini.configured ? 'text-red-600' : 'text-gray-500'
-                  }`}>
+                  }`} style={{ fontFamily: 'Baloo 2, sans-serif' }}>
                     {testResults.gemini.working ? '✅ Working' : 
                      testResults.gemini.configured ? `❌ Error: ${testResults.gemini.error}` : 
                      '⚪ Not configured'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>OpenRouter AI API:</span>
+                  <span style={{ fontFamily: 'Baloo 2, sans-serif' }}>OpenRouter AI API:</span>
                   <span className={`font-medium ${
                     testResults.openrouter.working ? 'text-green-600' : 
                     testResults.openrouter.configured ? 'text-red-600' : 'text-gray-500'
-                  }`}>
+                  }`} style={{ fontFamily: 'Baloo 2, sans-serif' }}>
                     {testResults.openrouter.working ? '✅ Working' : 
                      testResults.openrouter.configured ? `❌ Error: ${testResults.openrouter.error}` : 
                      '⚪ Not configured'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>Google Search API:</span>
+                  <span style={{ fontFamily: 'Baloo 2, sans-serif' }}>Google Search API:</span>
                   <span className={`font-medium ${
                     testResults.google_search.working ? 'text-green-600' : 
                     testResults.google_search.configured ? 'text-red-600' : 'text-gray-500'
-                  }`}>
+                  }`} style={{ fontFamily: 'Baloo 2, sans-serif' }}>
                     {testResults.google_search.working ? '✅ Working' : 
                      testResults.google_search.configured ? `❌ Error: ${testResults.google_search.error}` : 
                      '⚪ Not configured'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>OpenWeb Ninja API:</span>
+                  <span style={{ fontFamily: 'Baloo 2, sans-serif' }}>OpenWeb Ninja API:</span>
                   <span className={`font-medium ${
                     testResults.openwebninja.working ? 'text-green-600' : 
                     testResults.openwebninja.configured ? 'text-red-600' : 'text-gray-500'
-                  }`}>
+                  }`} style={{ fontFamily: 'Baloo 2, sans-serif' }}>
                     {testResults.openwebninja.working ? '✅ Working' : 
                      testResults.openwebninja.configured ? `❌ Error: ${testResults.openwebninja.error}` : 
                      '⚪ Not configured'}
                   </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Comprehensive Latency Test Results */}
+          {latencyResults && (
+            <div className="mb-6 p-4 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg border border-yellow-200">
+              <h3 className="font-semibold mb-4 text-orange-800 flex items-center gap-2" style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                <span>⚡</span>
+                Comprehensive AI Model Speed Test Results
+              </h3>
+              
+              {/* Gemini Results */}
+              <div className="mb-4">
+                <h4 className="font-medium mb-2 text-gray-700" style={{ fontFamily: 'Baloo 2, sans-serif' }}>Google Gemini AI</h4>
+                <div className="p-4 bg-white rounded-lg border">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">🤖</span>
+                      <div>
+                        <span className="font-medium" style={{ fontFamily: 'Baloo 2, sans-serif' }}>Gemini Flash 1.5</span>
+                        <div className="text-xs text-gray-600" style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                          Temperature: {latencyResults.gemini.temperature}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      {latencyResults.gemini.configured ? (
+                        latencyResults.gemini.working && latencyResults.gemini.latency !== null ? (
+                          <div>
+                            <span className="font-bold text-green-600" style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                              {latencyResults.gemini.latency}ms
+                            </span>
+                            <div className="text-xs text-green-600" style={{ fontFamily: 'Baloo 2, sans-serif' }}>✅ Response received</div>
+                          </div>
+                        ) : (
+                          <span className="text-red-600 text-sm" style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                            ❌ {latencyResults.gemini.error || 'Failed'}
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-gray-500 text-sm" style={{ fontFamily: 'Baloo 2, sans-serif' }}>⚪ Not configured</span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {latencyResults.gemini.working && latencyResults.gemini.quality_analysis && (
+                    <div className="mt-3 p-3 bg-gray-50 rounded-lg border">
+                      <div className="text-xs font-medium text-gray-700 mb-2" style={{ fontFamily: 'Baloo 2, sans-serif' }}>Response Quality Analysis</div>
+                      <div className="grid grid-cols-2 gap-4 text-xs">
+                        <div style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                          <span className="text-gray-600">Length:</span> <span className="font-medium">{latencyResults.gemini.response_length} chars</span>
+                        </div>
+                        <div style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                          <span className="text-gray-600">Location Info:</span> <span className={latencyResults.gemini.quality_analysis.has_location_info ? 'text-green-600' : 'text-red-600'}>
+                            {latencyResults.gemini.quality_analysis.has_location_info ? '✅ Yes' : '❌ No'}
+                          </span>
+                        </div>
+                        <div style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                          <span className="text-gray-600">Completeness:</span> <span className="font-medium">{latencyResults.gemini.quality_analysis.completeness_score}/10</span>
+                        </div>
+                        <div style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                          <span className="text-gray-600">Helpfulness:</span> <span className="font-medium">{latencyResults.gemini.quality_analysis.helpful_score}/10</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* OpenRouter Models Results */}
+              {latencyResults.openrouter_models && latencyResults.openrouter_models.length > 0 && (
+                <div>
+                  <h4 className="font-medium mb-3 text-gray-700" style={{ fontFamily: 'Baloo 2, sans-serif' }}>OpenRouter Models (Free Tier)</h4>
+                  <div className="space-y-2">
+                    {latencyResults.openrouter_models
+                      .sort((a, b) => {
+                        // Sort by: is_current first, then by latency (working models first)
+                        if (a.is_current && !b.is_current) return -1;
+                        if (!a.is_current && b.is_current) return 1;
+                        if (a.working && !b.working) return -1;
+                        if (!a.working && b.working) return 1;
+                        if (a.working && b.working) {
+                          return (a.latency || Infinity) - (b.latency || Infinity);
+                        }
+                        return 0;
+                      })
+                      .map((model, index) => (
+                      <div key={model.model} className={`p-4 rounded-lg border ${
+                        model.is_current ? 'bg-blue-50 border-blue-200' : 'bg-white'
+                      }`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">🚀</span>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium" style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                                  {model.name}
+                                </span>
+                                {model.is_current && (
+                                  <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs" style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                                    Currently Selected
+                                  </span>
+                                )}
+                                {model.reasoning_enabled && (
+                                  <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded-full text-xs" style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                                    🧠 Reasoning
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xs text-gray-600" style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                                {model.description} • Temperature: {model.temperature}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            {model.working && model.latency !== null ? (
+                              <div>
+                                <span className="font-bold text-green-600" style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                                  {model.latency}ms
+                                </span>
+                                {model.tokens_used && (
+                                  <div className="text-xs text-gray-500" style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                                    {model.tokens_used} tokens
+                                  </div>
+                                )}
+                                <div className="text-xs text-green-600" style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                                  ✅ Response received
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-red-600 text-sm" style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                                ❌ {model.error || 'Failed'}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {model.working && model.quality_analysis && (
+                          <div className="mt-3 p-3 bg-gray-50 rounded-lg border">
+                            <div className="text-xs font-medium text-gray-700 mb-2" style={{ fontFamily: 'Baloo 2, sans-serif' }}>Response Quality Analysis</div>
+                            <div className="grid grid-cols-2 gap-4 text-xs">
+                              <div style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                                <span className="text-gray-600">Length:</span> <span className="font-medium">{model.response_length} chars</span>
+                              </div>
+                              <div style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                                <span className="text-gray-600">Location Info:</span> <span className={model.quality_analysis.has_location_info ? 'text-green-600' : 'text-red-600'}>
+                                  {model.quality_analysis.has_location_info ? '✅ Yes' : '❌ No'}
+                                </span>
+                              </div>
+                              <div style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                                <span className="text-gray-600">Specific Details:</span> <span className={model.quality_analysis.has_specific_details ? 'text-green-600' : 'text-red-600'}>
+                                  {model.quality_analysis.has_specific_details ? '✅ Yes' : '❌ No'}
+                                </span>
+                              </div>
+                              <div style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                                <span className="text-gray-600">Completeness:</span> <span className="font-medium">{model.quality_analysis.completeness_score}/10</span>
+                              </div>
+                              <div style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                                <span className="text-gray-600">Helpfulness:</span> <span className="font-medium">{model.quality_analysis.helpful_score}/10</span>
+                              </div>
+                              <div style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                                <span className="text-gray-600">Overall Quality:</span> 
+                                <span className={`font-medium ${
+                                  (model.quality_analysis.completeness_score + model.quality_analysis.helpful_score) >= 14 ? 'text-green-600' :
+                                  (model.quality_analysis.completeness_score + model.quality_analysis.helpful_score) >= 10 ? 'text-yellow-600' : 'text-red-600'
+                                }`}>
+                                  {Math.round((model.quality_analysis.completeness_score + model.quality_analysis.helpful_score) / 2 * 10) / 10}/10
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Performance Analysis */}
+              <div className="mt-4 p-4 bg-orange-100 rounded-lg border border-orange-200">
+                <div className="text-sm text-orange-800 flex items-start gap-2">
+                  <span className="text-orange-600 flex-shrink-0">💡</span>
+                  <div style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                    <div className="font-medium mb-2">Comprehensive Performance & Quality Analysis:</div>
+                    
+                    {latencyResults.openrouter_models && latencyResults.openrouter_models.length > 0 && (
+                      <div className="space-y-2">
+                        <div>
+                          <span className="font-medium">⚡ Speed Leader:</span> <strong>
+                          {latencyResults.openrouter_models
+                            .filter(m => m.working && m.latency)
+                            .sort((a, b) => (a.latency || Infinity) - (b.latency || Infinity))[0]?.name || 'N/A'}</strong>
+                          {' '}({latencyResults.openrouter_models
+                            .filter(m => m.working && m.latency)
+                            .sort((a, b) => (a.latency || Infinity) - (b.latency || Infinity))[0]?.latency || 0}ms)
+                        </div>
+                        
+                        <div>
+                          <span className="font-medium">🏆 Quality Leader:</span> <strong>
+                          {latencyResults.openrouter_models
+                            .filter(m => m.working && m.quality_analysis)
+                            .sort((a, b) => {
+                              const scoreA = (a.quality_analysis?.completeness_score || 0) + (a.quality_analysis?.helpful_score || 0);
+                              const scoreB = (b.quality_analysis?.completeness_score || 0) + (b.quality_analysis?.helpful_score || 0);
+                              return scoreB - scoreA;
+                            })[0]?.name || 'N/A'}</strong>
+                          {' '}(Quality Score: {(() => {
+                            const topModel = latencyResults.openrouter_models
+                              .filter(m => m.working && m.quality_analysis)
+                              .sort((a, b) => {
+                                const scoreA = (a.quality_analysis?.completeness_score || 0) + (a.quality_analysis?.helpful_score || 0);
+                                const scoreB = (b.quality_analysis?.completeness_score || 0) + (b.quality_analysis?.helpful_score || 0);
+                                return scoreB - scoreA;
+                              })[0];
+                            return topModel ? Math.round(((topModel.quality_analysis?.completeness_score || 0) + (topModel.quality_analysis?.helpful_score || 0)) / 2 * 10) / 10 : 0;
+                          })()}/10)
+                        </div>
+                        
+                        <div>
+                          <span className="font-medium">🎯 Best Balance:</span> Consider models with both fast speed (&lt;3000ms) and high quality scores (&gt;7/10) for optimal user experience.
+                        </div>
+                        
+                        <div>
+                          <span className="font-medium">🧠 Reasoning Impact:</span> {enableReasoning ? 'Reasoning mode enabled - expect higher quality but potentially slower responses.' : 'Speed mode enabled - optimized for fast responses with good quality.'}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -716,7 +1057,7 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                       <div className="font-medium text-gray-900">
                         OpenRouter ({getModelDisplayName(apiKeys.openrouter_model)})
                       </div>
-                      <div className="text-sm text-gray-600">Multiple AI models including free options with excellent reasoning</div>
+                      <div className="text-sm text-gray-600">Multiple AI models including free options with optimized performance</div>
                     </div>
                   </label>
                 </div>
@@ -843,15 +1184,15 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                       onChange={(e) => handleApiKeyChange('openrouter_model', e.target.value)}
                     >
                       <option value="deepseek/deepseek-chat-v3.1:free">DeepSeek V3.1 (Free) - Fast & Recommended</option>
-                      <option value="deepseek/deepseek-r1-0528-qwen3-8b:free">DeepSeek R1 8B (Free) - Slower but better reasoning</option>
-                      <option value="google/gemini-flash-1.5:free">Google Gemini Flash 1.5 (Free) - Very fast</option>
-                      <option value="meta-llama/llama-3.2-3b-instruct:free">Meta Llama 3.2 3B (Free) - Lightweight</option>
-                      <option value="qwen/qwen-2.5-7b-instruct:free">Qwen 2.5 7B (Free) - Balanced</option>
-                      <option value="openai/gpt-oss-20b:free">gpt-oss-20b (free)</option>
+                      <option value="deepseek/deepseek-r1-0528-qwen3-8b:free">DeepSeek R1 8B (Free) - Advanced reasoning capabilities</option>
+                      <option value="meta-llama/llama-3.2-3b-instruct:free">Meta Llama 3.2 3B (Free) - Lightweight & Fast</option>
+                      <option value="mistralai/mistral-7b-instruct:free">Mistral 7B Instruct (Free) - Balanced Performance</option>
+                      <option value="nvidia/nemotron-nano-9b-v2:free">Nemotron Nano 9B V2 (Free) - Efficient & Fast</option>
+                      <option value="google/gemma-2-2b-it:free">Gemma 2 2B IT (Free) - Google's lightweight model</option>
+                      <option value="microsoft/phi-3-mini-128k-instruct:free">Phi-3 Mini 128k (Free) - Microsoft's efficient model</option>
                       <option value="openai/gpt-4o-mini">GPT-4o Mini (Paid)</option>
-                      <option value="nvidia/nemotron-nano-9b-v2:free">Nemotron Nano 9B V2 (free)</option>
                     </select>
-                    <p className="text-xs text-gray-500 mt-1">DeepSeek V3.1 is now the default - faster responses than R1 models!</p>
+                    <p className="text-xs text-gray-500 mt-1">Use the Speed Test above to compare actual performance of different models!</p>
                   </div>
                 </div>
               )}
