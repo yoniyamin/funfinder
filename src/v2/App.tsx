@@ -8,6 +8,24 @@ import { toISODate, geocode, fetchHolidays, fetchWeatherDaily, fetchFestivalsWik
 import type { Activity, Context, LLMResult } from '../lib/schema';
 import { getImageUrl, IMAGES } from '../config/assets';
 
+// Hook to detect screen size
+const useDesktopLayout = () => {
+  const [isDesktop, setIsDesktop] = useState(false);
+  
+  useEffect(() => {
+    const checkScreenSize = () => {
+      setIsDesktop(window.innerWidth >= 1024);
+    };
+    
+    checkScreenSize();
+    window.addEventListener('resize', checkScreenSize);
+    
+    return () => window.removeEventListener('resize', checkScreenSize);
+  }, []);
+  
+  return isDesktop;
+};
+
 interface SearchHistoryEntry {
   id: string;
   location: string;
@@ -97,9 +115,10 @@ const getEstimatedProgressSteps = () => {
 export default function App() {
   console.log('🔥 V2 App component mounting...');
   
+  const isDesktop = useDesktopLayout();
   const [state, setState] = useState<AppState>({
     currentPage: 'search',
-    showSplash: true,
+    showSplash: false, // Will be set to true for mobile in useEffect
     searchParams: {
       location: '',
       date: '',
@@ -120,10 +139,12 @@ export default function App() {
     },
     searchHistory: [],
     exclusionList: {},
-    showSettings: false
+    showSettings: false,
+    showExclusionManager: false
   });
   
   console.log('🔥 V2 App state initialized:', state.currentPage);
+  console.log('🖥️ Desktop layout:', isDesktop);
 
   // Add AbortController ref for search cancellation
   const searchAbortController = useRef<AbortController | null>(null);
@@ -141,13 +162,18 @@ export default function App() {
     loadExclusionList();
   }, []);
 
-  // Handle splash screen
+  // Handle splash screen - only show on mobile
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setState(prev => ({ ...prev, showSplash: false }));
-    }, 3000); // 3 seconds for animation
-    return () => clearTimeout(timer);
-  }, []);
+    if (!isDesktop) {
+      // Show splash screen on mobile/tablet
+      setState(prev => ({ ...prev, showSplash: true }));
+      const timer = setTimeout(() => {
+        setState(prev => ({ ...prev, showSplash: false }));
+      }, 3000); // 3 seconds for animation
+      return () => clearTimeout(timer);
+    }
+    // Desktop: showSplash remains false (initialized state)
+  }, [isDesktop]);
 
   // Cleanup function to prevent memory leaks and request cancellation
   useEffect(() => {
@@ -796,44 +822,179 @@ export default function App() {
     }
   };
 
+  // Desktop Top Navigation Component
+  const renderDesktopTopNav = () => (
+    <div className="desktop-top-nav">
+      <div className="flex items-center justify-between px-6 py-4">
+        <div className="flex items-center gap-4">
+          <h1 
+            className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent cursor-pointer hover:scale-105 transition-transform duration-200"
+            onClick={() => setState(prev => ({ ...prev, searchResults: { ...prev.searchResults, activities: null } }))}
+            title="Back to search"
+          >
+            Fun Finder
+          </h1>
+          {state.loading.isLoading && (
+            <div className="flex items-center gap-3">
+              <div className="loading-spinner-small">
+                <div className="spinner-ring-small"></div>
+              </div>
+              <span className="text-sm text-gray-600">{state.loading.status}</span>
+              <span className="text-sm font-bold text-purple-600">{state.loading.progress}%</span>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          {state.searchResults.activities && (
+            <button
+              onClick={handleRefreshSearch}
+              disabled={state.loading.isLoading}
+              className="desktop-nav-btn bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
+              title="Refresh search results"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Fresh Search
+            </button>
+          )}
+          <button
+            onClick={() => setState(prev => ({ ...prev, showExclusionManager: true }))}
+            className="desktop-nav-btn bg-red-50 hover:bg-red-100 text-red-700 border-red-200"
+            title="Manage exclusion list"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="15" y1="9" x2="9" y2="15"></line>
+              <line x1="9" y1="9" x2="15" y2="15"></line>
+            </svg>
+            Exclusions
+          </button>
+          <button
+            onClick={() => setState(prev => ({ ...prev, showSettings: true }))}
+            className="desktop-nav-btn bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-200"
+            title="Settings"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            Settings
+          </button>
+        </div>
+      </div>
+      {state.loading.isLoading && (
+        <div className="w-full bg-gray-200 h-1">
+          <div 
+            className="bg-gradient-to-r from-purple-500 via-pink-500 to-orange-500 h-1 transition-all duration-300 ease-out"
+            style={{ width: `${Math.max(0, Math.min(100, state.loading.progress))}%` }}
+          />
+        </div>
+      )}
+    </div>
+  );
+
   console.log('🔥 V2 App rendering, current page:', state.currentPage);
   
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
+      {/* Desktop Top Navigation */}
+      {isDesktop && renderDesktopTopNav()}
+      
       {/* Main Content */}
-      <main className={state.currentPage === 'search' ? 'pb-24' : ''}>
-        {state.currentPage === 'search' && (
-          <SearchPage
-            searchParams={state.searchParams}
-            updateSearchParams={updateSearchParams}
-            searchHistory={state.searchHistory}
-            loading={state.loading}
-            setLoading={setLoading}
-            setSearchResults={setSearchResults}
-            showResults={showResults}
-            deleteHistoryEntry={deleteHistoryEntry}
-            loadFromHistory={loadFromHistory}
-            reloadSearchHistory={reloadSearchHistory}
-            onSearch={handleSearch}
-          />
-        )}
-        
-        {state.currentPage === 'results' && (
-          <ResultsPage
-            searchResults={state.searchResults}
-            searchParams={state.searchParams}
-            loading={state.loading}
-            exclusionList={state.exclusionList}
-            addToExclusionList={addToExclusionList}
-            removeFromExclusionList={removeFromExclusionList}
-            backToSearch={backToSearch}
-            onRefreshSearch={handleRefreshSearch}
-          />
+      <main className={isDesktop ? '' : (state.currentPage === 'search' ? 'pb-24' : '')}>
+        {isDesktop ? (
+          // Desktop Layout: Side-by-side when results are available
+          <div className="desktop-layout">
+            {state.searchResults.activities ? (
+              // Side-by-side layout
+              <div className="flex" style={{ height: 'calc(100vh - 80px)' }}>
+                <div className="w-2/5 border-r border-gray-200 overflow-y-auto">
+                  <SearchPage
+                    searchParams={state.searchParams}
+                    updateSearchParams={updateSearchParams}
+                    searchHistory={state.searchHistory}
+                    loading={state.loading}
+                    setLoading={setLoading}
+                    setSearchResults={setSearchResults}
+                    showResults={showResults}
+                    deleteHistoryEntry={deleteHistoryEntry}
+                    loadFromHistory={loadFromHistory}
+                    reloadSearchHistory={reloadSearchHistory}
+                    onSearch={handleSearch}
+                    isDesktopSidebar={true}
+                    searchContext={state.searchResults.ctx}
+                  />
+                </div>
+                <div className="w-3/5 overflow-y-auto">
+                  <ResultsPage
+                    searchResults={state.searchResults}
+                    searchParams={state.searchParams}
+                    loading={state.loading}
+                    exclusionList={state.exclusionList}
+                    addToExclusionList={addToExclusionList}
+                    removeFromExclusionList={removeFromExclusionList}
+                    backToSearch={() => setState(prev => ({ ...prev, searchResults: { ...prev.searchResults, activities: null } }))}
+                    onRefreshSearch={handleRefreshSearch}
+                    isDesktopSideBySide={true}
+                  />
+                </div>
+              </div>
+            ) : (
+              // Full-width search page
+              <SearchPage
+                searchParams={state.searchParams}
+                updateSearchParams={updateSearchParams}
+                searchHistory={state.searchHistory}
+                loading={state.loading}
+                setLoading={setLoading}
+                setSearchResults={setSearchResults}
+                showResults={showResults}
+                deleteHistoryEntry={deleteHistoryEntry}
+                loadFromHistory={loadFromHistory}
+                reloadSearchHistory={reloadSearchHistory}
+                onSearch={handleSearch}
+                isDesktop={true}
+              />
+            )}
+          </div>
+        ) : (
+          // Mobile Layout: Original behavior
+          <>
+            {state.currentPage === 'search' && (
+              <SearchPage
+                searchParams={state.searchParams}
+                updateSearchParams={updateSearchParams}
+                searchHistory={state.searchHistory}
+                loading={state.loading}
+                setLoading={setLoading}
+                setSearchResults={setSearchResults}
+                showResults={showResults}
+                deleteHistoryEntry={deleteHistoryEntry}
+                loadFromHistory={loadFromHistory}
+                reloadSearchHistory={reloadSearchHistory}
+                onSearch={handleSearch}
+              />
+            )}
+            
+            {state.currentPage === 'results' && (
+              <ResultsPage
+                searchResults={state.searchResults}
+                searchParams={state.searchParams}
+                loading={state.loading}
+                exclusionList={state.exclusionList}
+                addToExclusionList={addToExclusionList}
+                removeFromExclusionList={removeFromExclusionList}
+                backToSearch={backToSearch}
+                onRefreshSearch={handleRefreshSearch}
+              />
+            )}
+          </>
         )}
       </main>
 
-      {/* Bottom Navigation - Only show on search page */}
-      {state.currentPage === 'search' && (
+      {/* Bottom Navigation - Only show on mobile search page */}
+      {!isDesktop && state.currentPage === 'search' && (
         <BottomNavBar
           currentPage={state.currentPage}
           setCurrentPage={setCurrentPage}
@@ -854,6 +1015,66 @@ export default function App() {
         isOpen={state.showSettings} 
         onClose={() => setState(prev => ({ ...prev, showSettings: false }))} 
       />
+
+      {/* Exclusion Manager Modal */}
+      {state.showExclusionManager && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold text-gray-900">Manage Excluded Activities</h2>
+                <button
+                  onClick={() => setState(prev => ({ ...prev, showExclusionManager: false }))}
+                  className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+                >
+                  ×
+                </button>
+              </div>
+              <p className="text-sm text-gray-600 mt-2">
+                Remove activities you don't want to see in future recommendations. Exclusions are saved per location.
+              </p>
+            </div>
+
+            <div className="p-6">
+              {Object.keys(state.exclusionList).length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <span className="text-4xl block mb-4">🎯</span>
+                  <p>No exclusions yet!</p>
+                  <p className="text-sm">Use the "Don't suggest this again" button on activities to add exclusions.</p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {Object.entries(state.exclusionList).map(([location, attractions]) => (
+                    <div key={location} className="border border-gray-200 rounded-lg p-4">
+                      <h3 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+                        <span>📍</span>
+                        {location}
+                        <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-full text-xs">
+                          {attractions.length} excluded
+                        </span>
+                      </h3>
+                      <div className="space-y-2">
+                        {attractions.map((attraction, index) => (
+                          <div key={index} className="flex items-center justify-between bg-red-50 border border-red-200 rounded-lg p-3">
+                            <span className="text-sm text-gray-700">{attraction}</span>
+                            <button
+                              onClick={() => removeFromExclusionList(location, attraction)}
+                              className="text-red-600 hover:text-red-800 text-sm font-medium"
+                              title="Remove from exclusions"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Splash Screen Overlay */}
       {state.showSplash && (

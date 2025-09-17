@@ -40,6 +40,9 @@ interface SearchPageProps {
   loadFromHistory: (entry: SearchHistoryEntry) => void;
   reloadSearchHistory: () => void;
   onSearch?: () => void; // Add external search trigger
+  isDesktop?: boolean; // For full-width desktop layout
+  isDesktopSidebar?: boolean; // For side-by-side layout
+  searchContext?: any; // Search context for sidebar mode
 }
 
 const AGE_OPTIONS = [
@@ -82,7 +85,10 @@ export default function SearchPage({
   deleteHistoryEntry,
   loadFromHistory,
   reloadSearchHistory,
-  onSearch
+  onSearch,
+  isDesktop = false,
+  isDesktopSidebar = false,
+  searchContext = null
 }: SearchPageProps) {
   const [showHistory, setShowHistory] = useState(false);
   const [showAgeModal, setShowAgeModal] = useState(false);
@@ -321,6 +327,695 @@ export default function SearchPage({
     return `Ages ${sortedAges.join(', ')}`;
   };
 
+  // Helper function to render all modals (same for both layouts)
+  const renderModals = () => (
+    <>
+      {/* Location Modal */}
+      {showLocationModal && (
+        <>
+          <div className="modal-backdrop" />
+          <div className="modal-container" ref={locationDropdownRef}>
+            <div className="modal-content location-modal">
+              <div className="modal-header">
+                <h3 className="modal-title">Select Location</h3>
+                <button
+                  type="button"
+                  onClick={() => setShowLocationModal(false)}
+                  className="modal-close"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="modal-body">
+                {/* Search Input */}
+                <div className="location-search">
+                  <div className="location-search-wrapper">
+                    <svg className="location-search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none">
+                      <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    <input
+                      type="text"
+                      value={locationSearchText}
+                      onChange={(e) => handleLocationSearch(e.target.value)}
+                      placeholder="Search for a city or country..."
+                      className="location-search-input"
+                      autoFocus
+                    />
+                  </div>
+                </div>
+                
+                {/* Results */}
+                <div className="location-results">
+                  {locationSuggestions.length > 0 ? (
+                    locationSuggestions.map((city, index) => (
+                      <button
+                        key={`${city.name}-${city.country}-${index}`}
+                        type="button"
+                        onClick={() => handleCitySelect(city)}
+                        className="location-result-item"
+                      >
+                        <div className="location-result-icon">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="#475569"/>
+                          </svg>
+                        </div>
+                        <div className="location-result-info">
+                          <span className="location-result-name">{city.name}</span>
+                          <span className="location-result-country">{city.country}</span>
+                        </div>
+                      </button>
+                    ))
+                  ) : locationSearchText.length >= 2 ? (
+                    <div className="location-no-results">
+                      No cities found for "{locationSearchText}"
+                    </div>
+                  ) : (
+                    <div className="location-section">
+                      {(() => {
+                        const uniqueLocations = getUniqueLocationsFromHistory();
+                        return uniqueLocations.length > 0 && (
+                          <>
+                            <div className="location-section-header">
+                              <h4 className="location-section-title">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="mr-2">
+                                  <path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0013 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z" fill="currentColor"/>
+                                </svg>
+                                Recent Locations
+                              </h4>
+                            </div>
+                            {uniqueLocations.map((location, index) => (
+                              <button
+                                key={`history-${location}-${index}`}
+                                type="button"
+                                onClick={() => handleLocationHistorySelect(location)}
+                                className="location-result-item location-history-item"
+                              >
+                                <div className="location-result-icon">
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                    <path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0013 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z" fill="#6B7280"/>
+                                  </svg>
+                                </div>
+                                <div className="location-result-info">
+                                  <span className="location-result-name">{location}</span>
+                                </div>
+                              </button>
+                            ))}
+                          </>
+                        );
+                      })()}
+                      <div className="location-placeholder">
+                        {getUniqueLocationsFromHistory().length > 0 ? 'Type to search for more locations...' : 'Start typing to search for cities...'}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Date Modal */}
+      {showDateModal && (
+        <>
+          <div className="modal-backdrop" />
+          <div className="modal-container" ref={dateModalRef}>
+            <div className="modal-content">
+              <div className="modal-header">
+                <h3 className="modal-title">Select Date</h3>
+                <button
+                  type="button"
+                  onClick={() => setShowDateModal(false)}
+                  className="modal-close"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="modal-body">
+                <div className="calendar-container">
+                  {/* Calendar Header */}
+                  <div className="calendar-header">
+                    <button
+                      type="button"
+                      onClick={() => navigateMonth('prev')}
+                      className="calendar-nav"
+                    >
+                      ‹
+                    </button>
+                    <h4 className="calendar-month">
+                      {currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={() => navigateMonth('next')}
+                      className="calendar-nav"
+                    >
+                      ›
+                    </button>
+                  </div>
+                  
+                  {/* Days of week */}
+                  <div className="calendar-weekdays">
+                    {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(day => (
+                      <div key={day} className="calendar-weekday">{day}</div>
+                    ))}
+                  </div>
+                  
+                  {/* Calendar Grid */}
+                  <div className="calendar-grid">
+                    {/* Empty cells for days before month starts */}
+                    {Array.from({ length: getFirstDayOfMonth(currentMonth) }).map((_, index) => (
+                      <div key={`empty-${index}`} className="calendar-day-empty"></div>
+                    ))}
+                    
+                    {/* Days of the month */}
+                    {Array.from({ length: getDaysInMonth(currentMonth) }).map((_, index) => {
+                      const day = index + 1;
+                      const isPast = isPastDate(day);
+                      const selected = isSelected(day);
+                      const today = isToday(day);
+                      
+                      return (
+                        <button
+                          key={day}
+                          type="button"
+                          onClick={() => !isPast && handleDateSelect(day)}
+                          disabled={isPast}
+                          className={`calendar-day ${selected ? 'calendar-day-selected' : ''} ${today ? 'calendar-day-today' : ''} ${isPast ? 'calendar-day-disabled' : ''}`}
+                        >
+                          {day}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Instructions Modal */}
+      {showInstructionsModal && (
+        <>
+          <div className="modal-backdrop" />
+          <div className="modal-container" ref={instructionsModalRef}>
+            <div className="modal-content">
+              <div className="modal-header">
+                <h3 className="modal-title">Other Instructions</h3>
+                <button
+                  type="button"
+                  onClick={() => setShowInstructionsModal(false)}
+                  className="modal-close"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="modal-body">
+                {/* Quick Tags */}
+                <div className="instructions-tags">
+                  <h4 className="instructions-tags-title">Quick Tags</h4>
+                  <div className="instructions-tags-scroll">
+                    {[
+                      '♿ Wheelchair accessible',
+                      '🚇 Near metro/public transport',
+                      '🌳 Outdoor activities preferred',
+                      '🏢 Indoor activities preferred',
+                      '💰 Budget-friendly options',
+                      '🎨 Creative/educational focus',
+                      '🏃‍♂️ High energy activities',
+                      '😴 Calm/quiet activities',
+                      '🍔 Food available on-site',
+                      '🅿️ Parking available'
+                    ].map((tag, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => {
+                          const tagText = tag.substring(2); // Remove emoji
+                          if (extraInstructions.includes(tagText)) {
+                            // Remove the tag
+                            setExtraInstructions(extraInstructions.replace(tagText, '').replace(/,\s*,/g, ',').replace(/^,\s*/, '').replace(/,\s*$/, ''));
+                          } else {
+                            // Add the tag
+                            setExtraInstructions(extraInstructions + (extraInstructions ? ', ' + tagText : tagText));
+                          }
+                        }}
+                        className={`instructions-tag-scroll ${extraInstructions.includes(tag.substring(2)) ? 'active' : ''}`}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                
+                {/* Instructions Input */}
+                <div className="instructions-input">
+                  <label className="instructions-label">
+                    Instructions
+                  </label>
+                  <textarea
+                    value={extraInstructions}
+                    onChange={(e) => setExtraInstructions(e.target.value)}
+                    placeholder="Click tags above or type your requirements..."
+                    className="instructions-input-field"
+                    rows={3}
+                  />
+                </div>
+                
+                {/* Action Buttons */}
+                <div className="instructions-actions">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExtraInstructions('');
+                      updateSearchParams({ extraInstructions: '' });
+                    }}
+                    className="instructions-btn instructions-btn-clear"
+                  >
+                    Clear All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateSearchParams({ extraInstructions: extraInstructions });
+                      setShowInstructionsModal(false);
+                    }}
+                    className="instructions-btn instructions-btn-save"
+                  >
+                    Save Instructions
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Age Modal */}
+      {showAgeModal && (
+        <>
+          <div className="modal-backdrop" />
+          <div className="modal-container" ref={ageModalRef}>
+            <div className="modal-content">
+              <div className="modal-header">
+                <h3 className="modal-title">Select Kids Ages</h3>
+                <button
+                  type="button"
+                  onClick={() => setShowAgeModal(false)}
+                  className="modal-close"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="modal-body">
+                <div className="age-options">
+                  {AGE_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => handleAgeOptionChange(option)}
+                      className="age-option-item"
+                    >
+                      <div className="age-option-icon">
+                        {option.value === 'toddlers' && '👶'}
+                        {option.value === 'preschoolers' && '🧒'}
+                        {option.value === 'early-elementary' && '👦'}
+                        {option.value === 'pre-teens' && '👧'}
+                        {option.value === 'teenagers' && '👨‍🎓'}
+                      </div>
+                      <div className="age-option-info">
+                        <span className="age-option-label">{option.label}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </>
+  );
+
+  // Desktop Compact Form Layout
+  if (isDesktop || isDesktopSidebar) {
+    return (
+      <div className={`desktop-search-container ${isDesktopSidebar ? 'sidebar-mode' : 'full-mode'}`}>
+        <div className="desktop-search-content">
+          {/* Background for desktop */}
+          {!isDesktopSidebar && (
+            <div className="desktop-bg-container">
+              <img
+                src={getImageUrl('FUNFINDER')}
+                alt="Fun Finder background with playground and kids"
+                className="desktop-bg-image"
+              />
+              <div className="desktop-bg-overlay"></div>
+            </div>
+          )}
+          
+          {/* Desktop Search Form */}
+          <div className={`desktop-form-wrapper ${isDesktopSidebar ? 'sidebar-form' : 'full-form-no-title'}`}>
+            
+            {/* Instructions Preview - Desktop */}
+            {searchParams.extraInstructions && !loading.isLoading && (
+              <div className="desktop-instructions-preview">
+                <div className="flex items-center gap-2 mb-2">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-yellow-600 flex-shrink-0">
+                    <path d="M14.828 2.828a4 4 0 015.657 0L22 4.343a4 4 0 010 5.657L20.828 11.172 7.172 24.828 1 23l1.828-6.172L16.586 3.414zm0 0L17.657 6.171" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  <span className="text-sm font-medium text-yellow-800">Special Instructions</span>
+                </div>
+                <p className="text-sm text-yellow-700 break-words">{searchParams.extraInstructions}</p>
+              </div>
+            )}
+            
+
+            {/* Desktop Search Form (hidden when loading) */}
+            {!loading.isLoading && (
+              <div className="desktop-search-form">
+                <div className="desktop-form-grid">
+                  {/* Location and Date - Row 1 */}
+                  <div className="desktop-form-row">
+                    <div className="desktop-form-field">
+                      <label className="desktop-field-label">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-purple-600">
+                          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="currentColor"/>
+                        </svg>
+                        Location
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleLocationModalOpen}
+                        className={`desktop-input-button ${searchParams.location ? 'has-value' : ''}`}
+                      >
+                        {searchParams.location || 'Enter location...'}
+                      </button>
+                    </div>
+                    
+                    <div className="desktop-form-field">
+                      <label className="desktop-field-label">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-blue-600">
+                          <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z" fill="currentColor"/>
+                        </svg>
+                        Date
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setShowDateModal(true)}
+                        className={`desktop-input-button ${searchParams.date ? 'has-value' : ''}`}
+                      >
+                        {searchParams.date ? new Date(searchParams.date).toLocaleDateString() : 'Select date...'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Duration and Ages - Row 2 */}
+                  <div className="desktop-form-row">
+                    <div className="desktop-form-field">
+                      <label className="desktop-field-label">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-purple-600">
+                          <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z" fill="currentColor"/>
+                          <path d="m12.5 7-1 1v6l1 1 4.25-2.5.75-1.25-5-3.25z" fill="currentColor"/>
+                        </svg>
+                        Duration: {searchParams.duration === 10 ? '10+' : searchParams.duration} hours
+                      </label>
+                      <input
+                        type="range"
+                        min="1"
+                        max="10"
+                        step="1"
+                        className="desktop-slider w-full cursor-pointer"
+                        value={searchParams.duration || 1}
+                        onChange={e => updateSearchParams({ duration: parseInt(e.target.value) })}
+                      />
+                      <div className="flex justify-between text-xs text-gray-500 mt-1">
+                        <span>1h</span>
+                        <span>5h</span>
+                        <span>10+h</span>
+                      </div>
+                    </div>
+                    
+                    <div className="desktop-form-field">
+                      <label className="desktop-field-label">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-green-600">
+                          <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="currentColor"/>
+                        </svg>
+                        Kids Ages
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setShowAgeModal(true)}
+                        className={`desktop-input-button ${searchParams.ages.length > 0 ? 'has-value' : ''}`}
+                      >
+                        {searchParams.ages.length > 0 ? getCurrentAgeLabel() : 'Select ages...'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons - Row 3 */}
+                  <div className={`desktop-form-actions ${isDesktopSidebar ? 'sidebar-actions' : ''}`}>
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={handleResetForm}
+                        className="desktop-action-btn secondary"
+                        title="Reset form"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M1 4v6h6"/>
+                          <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                        </svg>
+                        Reset
+                      </button>
+
+                      {searchHistory.length > 0 && (
+                        <div className="desktop-action-container" ref={historyDropdownRef}>
+                          <button
+                            type="button"
+                            onClick={() => setShowHistory(!showHistory)}
+                            className="desktop-action-btn secondary"
+                            title="Recent searches"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            History
+                          </button>
+                          
+                          {showHistory && (
+                            <div className="desktop-history-dropdown">
+                              {searchHistory.map((entry) => (
+                                <div key={entry.id} className="desktop-history-item">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      loadFromHistory(entry);
+                                      setShowHistory(false);
+                                    }}
+                                    className="desktop-history-button"
+                                  >
+                                    <div className="font-medium text-gray-900">{entry.location}</div>
+                                    <div className="text-sm text-gray-600">
+                                      {entry.date} • {entry.duration}h • Ages: {entry.kidsAges.join(', ')}
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                      {new Date(entry.timestamp).toLocaleDateString()}
+                                    </div>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      deleteHistoryEntry(entry.id);
+                                    }}
+                                    className="text-red-500 hover:text-red-700 p-1"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => setShowInstructionsModal(true)}
+                        className={`desktop-action-btn secondary ${extraInstructions ? 'has-instructions' : ''}`}
+                        title={extraInstructions ? 'Instructions saved - click to edit' : 'Add instructions'}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M14.828 2.828a4 4 0 015.657 0L22 4.343a4 4 0 010 5.657L20.828 11.172 7.172 24.828 1 23l1.828-6.172L16.586 3.414zm0 0L17.657 6.171"/>
+                        </svg>
+                        Instructions
+                      </button>
+                    </div>
+
+                    {/* Search Button - Full width in sidebar mode */}
+                    <button
+                      type="button"
+                      onClick={() => onSearch && onSearch()}
+                      disabled={!searchParams.location.trim() || !searchParams.date || searchParams.duration === '' || searchParams.ages.length === 0}
+                      className={`desktop-search-button ${isDesktopSidebar ? 'sidebar-search-button' : ''}`}
+                    >
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="m21 21-4.35-4.35"/>
+                      </svg>
+                      Search Activities
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Search Context in Sidebar Mode */}
+            {isDesktopSidebar && searchContext && (
+              <div className="desktop-sidebar-context">
+                <h3 className="text-sm font-semibold text-gray-800 mb-3">Search Context</h3>
+                
+                {/* Full Weather Card - matches mobile version */}
+                <div className={`p-3 rounded-xl border border-gray-200 text-white relative overflow-hidden mb-4 ${
+                  searchContext.weather.temperature_max_c === null && searchContext.weather.precipitation_probability_percent === null
+                    ? 'bg-gradient-to-br from-gray-500 via-gray-600 to-gray-700'
+                    : 'bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700'
+                }`}>
+                  <div className="absolute top-2 right-2 text-xs opacity-75">
+                    {new Date(searchContext.date).toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' })}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="text-2xl">
+                        {searchContext.weather.temperature_max_c === null && searchContext.weather.precipitation_probability_percent === null
+                          ? '🌫️' 
+                          : (searchContext.weather.precipitation_probability_percent > 70 ? '🌧️' : 
+                             searchContext.weather.precipitation_probability_percent > 40 ? '⛅' : 
+                             searchContext.weather.temperature_max_c > 25 ? '☀️' : 
+                             searchContext.weather.temperature_max_c < 10 ? '❄️' : '🌤️')
+                        }
+                      </div>
+                      <div>
+                        <div className="text-lg font-bold">
+                          {searchContext.weather.temperature_max_c ?? '—'}°
+                        </div>
+                        <div className="text-xs opacity-80">
+                          {searchContext.weather.temperature_max_c === null && searchContext.weather.temperature_min_c === null
+                            ? 'Weather data unavailable'
+                            : `${searchContext.weather.temperature_min_c ?? '—'}°~${searchContext.weather.temperature_max_c ?? '—'}°`
+                          }
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs">
+                      <div className="flex items-center gap-1">
+                        <span>💧</span>
+                        <span>{searchContext.weather.precipitation_probability_percent ?? '—'}%</span>
+                      </div>
+                      {typeof searchContext.weather.wind_speed_max_kmh === 'number' && (
+                        <div className="flex items-center gap-1">
+                          <span>💨</span>
+                          <span>{Math.round(searchContext.weather.wind_speed_max_kmh)}km/h</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {searchContext.weather.temperature_max_c === null && searchContext.weather.precipitation_probability_percent === null && (
+                    <div className="mt-2 text-xs opacity-80">
+                      Weather forecast unavailable for future dates
+                    </div>
+                  )}
+                </div>
+
+                {/* Compact Status Row */}
+                <div className="flex gap-2 text-xs mb-3">
+                  {/* Holiday Status */}
+                  <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-gray-200">
+                    <span className="text-sm">{searchContext.is_public_holiday ? '🎉' : '📅'}</span>
+                    <span className="text-gray-700">
+                      {searchContext.is_public_holiday 
+                        ? (searchContext.holidays && searchContext.holidays.length > 0 
+                            ? `${searchContext.holidays.length} holiday${searchContext.holidays.length > 1 ? 's' : ''}`
+                            : 'Public holiday')
+                        : 'No public holiday'}
+                    </span>
+                  </div>
+
+                  {/* Festival Status */}
+                  <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-gray-200">
+                    <span className="text-sm">🎪</span>
+                    <span className="text-gray-700">
+                      {searchContext.nearby_festivals.length > 0 
+                        ? `${searchContext.nearby_festivals.length} festival${searchContext.nearby_festivals.length > 1 ? 's' : ''}`
+                        : 'No festivals'
+                      }
+                    </span>
+                  </div>
+                </div>
+
+                {/* Holidays Detail (only if there are holidays) */}
+                {searchContext.holidays && searchContext.holidays.length > 0 && (
+                  <div className="space-y-2 mb-3">
+                    {searchContext.holidays.map((holiday: {name: string; localName: string; date: string}, i: number) => (
+                      <div key={i} className="flex items-center gap-2 p-2 rounded-lg bg-yellow-50 border border-yellow-200">
+                        <span className="text-sm">🎉</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium text-yellow-900 truncate">{holiday.localName}</div>
+                          {holiday.localName !== holiday.name && (
+                            <div className="text-xs text-yellow-700 truncate">{holiday.name}</div>
+                          )}
+                          <div className="text-xs text-yellow-600">
+                            {new Date(holiday.date).toLocaleDateString()}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Festivals Detail (only if there are festivals) */}
+                {searchContext.nearby_festivals.length > 0 && (
+                  <div className="space-y-2 mb-3">
+                    {searchContext.nearby_festivals.slice(0, 2).map((f: {name: string; start_date: string | null; end_date: string | null; url: string | null; distance_km: number | null}, i: number) => (
+                      <div key={i} className="flex items-center gap-2 p-2 rounded-lg bg-white border border-gray-200">
+                        <span className="text-sm">🎪</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium text-gray-900 truncate">{f.name}</div>
+                          {f.start_date && (
+                            <div className="text-xs text-gray-600">
+                              {f.start_date === f.end_date 
+                                ? (f.start_date ? new Date(f.start_date).toLocaleDateString() : 'Unknown')
+                                : `${f.start_date ? new Date(f.start_date).toLocaleDateString() : 'Unknown'} - ${f.end_date ? new Date(f.end_date).toLocaleDateString() : 'Unknown'}`
+                              }
+                            </div>
+                          )}
+                          {f.distance_km && (
+                            <div className="text-xs text-gray-500">{f.distance_km}km away</div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {searchContext.nearby_festivals.length > 2 && (
+                      <div className="text-center text-xs text-gray-500 py-1">
+                        +{searchContext.nearby_festivals.length - 2} more festivals
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+        
+        {/* All the modals remain the same */}
+        {renderModals()}
+      </div>
+    );
+  }
+
+  // Mobile Layout (Original)
   return (
     <div className="glass-search-page">
       {/* Background Image */}

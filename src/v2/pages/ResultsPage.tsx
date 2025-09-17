@@ -28,6 +28,7 @@ interface ResultsPageProps {
   removeFromExclusionList: (location: string, attraction: string) => Promise<boolean>;
   backToSearch: () => void;
   onRefreshSearch?: () => void;
+  isDesktopSideBySide?: boolean; // For side-by-side desktop layout
 }
 
 function getCategoryIcon(category: string): string {
@@ -115,7 +116,8 @@ export default function ResultsPage({
   addToExclusionList,
   removeFromExclusionList,
   backToSearch,
-  onRefreshSearch
+  onRefreshSearch,
+  isDesktopSideBySide = false
 }: ResultsPageProps) {
   const [fCat, setFCat] = useState<string>('');
   const [fFree, setFFree] = useState<string>('');
@@ -163,10 +165,11 @@ export default function ResultsPage({
 
   return (
     <div 
-      className="min-h-screen bg-cover bg-center bg-fixed"
-      style={{ backgroundImage: `url(${getImageUrl('BG6')})` }}
+      className={`min-h-screen bg-cover bg-center ${isDesktopSideBySide ? 'desktop-results-bg' : 'bg-fixed'}`}
+      style={{ backgroundImage: isDesktopSideBySide ? `url(${getImageUrl('BG6')})` : `url(${getImageUrl('BG6')})` }}
     >
-      {/* Header */}
+      {/* Header - Hidden in desktop side-by-side mode */}
+      {!isDesktopSideBySide && (
       <div className="bg-white/95 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-40 px-4 py-4">
         <div className="flex items-center gap-4">
           <button
@@ -278,11 +281,12 @@ export default function ResultsPage({
           )}
         </div>
       </div>
+      )}
 
       {/* Content */}
-      <main className="max-w-5xl mx-auto px-4 py-6 space-y-6 pb-32">
-        {/* Search Context */}
-        {ctx && (
+      <main className={`${isDesktopSideBySide ? 'p-4' : 'max-w-5xl mx-auto px-4 py-6 pb-32'} space-y-6`}>
+        {/* Search Context - Hide in desktop side-by-side mode to avoid duplication */}
+        {ctx && !isDesktopSideBySide && (
           <section id="search-context" className="card p-5 md:p-6 bg-white/95 backdrop-blur-sm">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">Search Context</h2>

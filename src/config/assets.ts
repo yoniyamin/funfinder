@@ -20,7 +20,8 @@ export const IMAGES = {
   BG5: 'bg5.jpeg',
   BG6: 'bg6.jpeg', 
   BG7: 'bg7.jpeg',
-  BGPC: 'bgpc.jpeg'
+  BGPC: 'bgpc.jpeg',
+  FUNFINDER: 'funfinder2_upscaled_2x.png'
 } as const;
 
 // Helper function to get image URLs

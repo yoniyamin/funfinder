@@ -22,18 +22,16 @@ try {
 
   console.log('✅ React root created, rendering loading screen...');
 
-  // Render a UI-matched loading screen first
-  root.render(<LoadingScreen />);
+  // Skip initial loading screen on desktop, show it only briefly on mobile
+  const checkIfDesktop = () => {
+    return window.innerWidth >= 1024;
+  };
 
-  // Then after a delay, try to load the main app
-  setTimeout(() => {
-    console.log('🔄 Switching to main App...');
+  if (checkIfDesktop()) {
+    // Desktop: Load main app immediately without loading screen
+    console.log('🖥️ Desktop detected - loading main app directly...');
     try {
-      root.render(
-        // <React.StrictMode>
-          <App />
-        // </React.StrictMode>
-      );
+      root.render(<App />);
       console.log('✅ Main App rendered successfully!');
     } catch (appError) {
       console.error('❌ Failed to render main App:', appError);
@@ -45,7 +43,28 @@ try {
         </div>
       );
     }
-  }, 1000);
+  } else {
+    // Mobile: Show loading screen briefly then switch to main app
+    console.log('📱 Mobile detected - showing loading screen first...');
+    root.render(<LoadingScreen />);
+
+    setTimeout(() => {
+      console.log('🔄 Switching to main App...');
+      try {
+        root.render(<App />);
+        console.log('✅ Main App rendered successfully!');
+      } catch (appError) {
+        console.error('❌ Failed to render main App:', appError);
+        root.render(
+          <div style={{ padding: '20px', color: 'red', fontFamily: 'monospace' }}>
+            <h1>❌ Main App Failed</h1>
+            <p>React works, but main App failed to load</p>
+            <p>Error: {appError.message}</p>
+          </div>
+        );
+      }
+    }, 1000);
+  }
 
   console.log('✅ V2 App render complete!');
 } catch (error) {
