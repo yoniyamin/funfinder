@@ -21,7 +21,7 @@ export const IMAGES = {
   BG6: 'bg6.jpeg', 
   BG7: 'bg7.jpeg',
   BGPC: 'bgpc.jpeg',
-  FUNFINDER: 'funfinder2_1600x1000.png'
+  FUNFINDER: 'funfinder2-1600x1000.png'
 } as const;
 
 // Helper function to get image URLs
