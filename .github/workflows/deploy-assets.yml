@@ -32,10 +32,16 @@ jobs:
       - name: Copy assets to docs
         run: |
           mkdir -p docs/assets
-          cp public/*.jpeg docs/assets/ 2>/dev/null || true
-          cp public/*.jpg docs/assets/ 2>/dev/null || true
-          cp public/*.png docs/assets/ 2>/dev/null || true
+          echo "Copying assets..."
+          cp public/*.jpeg docs/assets/ 2>/dev/null || echo "No JPEG files found"
+          cp public/*.jpg docs/assets/ 2>/dev/null || echo "No JPG files found"  
+          cp public/*.png docs/assets/ 2>/dev/null || echo "No PNG files found"
+          echo "Assets in source directory:"
+          ls -la public/
+          echo "Assets copied to docs/assets:"
           ls -la docs/assets/
+          echo "Checking file sizes:"
+          du -h docs/assets/*
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
