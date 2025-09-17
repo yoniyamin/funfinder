@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { toISODate, geocode, fetchHolidays, fetchWeatherDaily, fetchFestivalsWikidata, fetchHolidaysWithGemini } from './lib/api';
+import { toISODate, geocode, fetchHolidays, fetchHolidaysWithFallback, fetchWeatherDaily, fetchFestivalsWikidata, fetchHolidaysWithGemini } from './lib/api';
 import type { Activity, Context, LLMResult } from './lib/schema';
+import { validateAIResponse, getValidationErrorSummary, ValidationError } from './lib/validation-helpers';
 import Settings from './components/Settings';
 
 interface SearchHistoryEntry {
@@ -328,23 +329,39 @@ export default function App(){
       let isHoliday = false;
       let holidayDetails: Array<{name: string; localName: string; date: string}> = [];
       try {
-        const hol = await fetchHolidays(country_code, date.slice(0,4));
+        console.log(`🔍 Starting enhanced holiday detection for ${name}, ${country} (${country_code}) on ${date}`);
+        const hol = await fetchHolidaysWithFallback(country_code, date.slice(0,4), `${name}, ${country}`, date);
         // Ensure date is in YYYY-MM-DD format for comparison
         const normalizedDate = new Date(date).toISOString().split('T')[0];
-        const matches = hol.filter((h:any)=>h.date===normalizedDate);
-        isHoliday = matches.length>0;
+        
+        // More flexible date filtering: check for holidays within ±3 days of target date
+        const targetDateObj = new Date(normalizedDate);
+        const threeDaysBefore = new Date(targetDateObj.getTime() - 3 * 24 * 60 * 60 * 1000);
+        const threeDaysAfter = new Date(targetDateObj.getTime() + 3 * 24 * 60 * 60 * 1000);
+        
+        const matches = hol.filter((h: any) => {
+          if (!h.date && !h.start_date) return false;
+          const holidayDate = new Date(h.date || h.start_date);
+          return holidayDate >= threeDaysBefore && holidayDate <= threeDaysAfter;
+        });
+        
+        isHoliday = matches.length > 0;
         if (matches.length > 0) {
           holidayDetails = matches.map((h: any) => ({
             name: h.name,
-            localName: h.localName,
-            date: h.date
+            localName: h.localName || h.name,
+            date: h.date || h.start_date
           }));
-          console.log(`🎊 Found public holiday on ${normalizedDate}:`, matches.map((h: any) => h.localName || h.name).join(', '));
+          console.log(`🎊 Enhanced holiday detection found ${matches.length} holidays near ${normalizedDate}:`, matches.map((h: any) => h.localName || h.name).join(', '));
         } else {
-          console.log(`📅 No public holidays found for ${normalizedDate}`);
+          console.log(`📅 Enhanced holiday detection found no holidays near ${normalizedDate} in ${name}, ${country} (searched ${hol.length} total holidays)`);
+          // Log the holidays that were found for debugging
+          if (hol.length > 0) {
+            console.log(`🔍 Available holidays found:`, hol.map((h: any) => `${h.name} (${h.date || h.start_date})`).join(', '));
+          }
         }
       } catch (error) {
-        console.warn('Failed to fetch holidays, continuing without holiday data:', error);
+        console.warn('Enhanced holiday detection failed, continuing without holiday data:', error);
         // Continue without holiday data - don't let this block the entire search
       }
 
@@ -422,10 +439,29 @@ export default function App(){
           throw new Error('Invalid response from AI model');
         }
         
-        setStatus('Processing results…');
-        setProgress(95);
-        setActivities(data.data.activities);
-        setWebSources(data.data.web_sources || null);
+        setStatus('Validating results…');
+        setProgress(90);
+        
+        // Client-side validation of the AI response
+        try {
+          const validatedResult = validateAIResponse(data.data, 'Client-side API response');
+          console.log(`✅ Client-side validation successful: ${validatedResult.activities.length} activities validated`);
+          
+          setStatus('Processing results…');
+          setProgress(95);
+          setActivities(validatedResult.activities);
+          setWebSources(validatedResult.web_sources || null);
+        } catch (validationError) {
+          if (validationError instanceof ValidationError) {
+            const errorSummary = getValidationErrorSummary(validationError);
+            console.warn('⚠️ Client-side validation failed, using server response as-is:', errorSummary);
+            // Fallback to unvalidated data with warning
+            setActivities(data.data.activities);
+            setWebSources(data.data.web_sources || null);
+          } else {
+            throw validationError;
+          }
+        }
         
         setStatus('Complete!');
         setProgress(100);

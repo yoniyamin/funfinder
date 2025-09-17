@@ -9,6 +9,7 @@ import crypto from 'crypto';
 import { MongoClient } from 'mongodb';
 import neo4j from 'neo4j-driver';
 import { Neo4jDataManager } from './neo4j-data-manager.js';
+import { validateForModel, validateAIResponse, isResponseStructureValid, getValidationErrorSummary, ValidationError } from './validation.js';
 
 dotenv.config();
 
@@ -123,7 +124,7 @@ function initializeAIProviders() {
     model = genAI.getGenerativeModel({ 
       model: 'gemini-2.5-flash',
       generationConfig: {
-        temperature: 0.2, // Optimized for deterministic JSON output
+        temperature: 0.1, // Low for structured output, higher than holiday data
         topP: 0.9,
         candidateCount: 1
       }
@@ -1400,7 +1401,14 @@ function parseJsonWithFallback(text) {
   try {
     const result = JSON.parse(text);
     console.log('✅ JSON parsed successfully on first attempt');
-    return result;
+    
+    // Quick validation check to ensure it has the basic structure we need
+    if (isResponseStructureValid(result)) {
+      console.log('✅ Basic structure validation passed');
+      return result;
+    } else {
+      console.log('⚠️ JSON parsed but structure invalid, trying fallback methods...');
+    }
   } catch (e) {
     console.log('❌ Initial JSON parse failed, trying to clean...', e.message);
   }
@@ -1411,7 +1419,14 @@ function parseJsonWithFallback(text) {
     console.log(`🧹 Cleaned text from ${text.length} to ${cleaned.length} characters`);
     const result = JSON.parse(cleaned);
     console.log('✅ JSON parsed successfully after cleaning');
-    return result;
+    
+    // Structure validation for cleaned result
+    if (isResponseStructureValid(result)) {
+      console.log('✅ Cleaned result structure validation passed');
+      return result;
+    } else {
+      console.log('⚠️ Cleaned result structure invalid, continuing with fixes...');
+    }
   } catch (e) {
     console.log('❌ Cleaned JSON parse failed...', e.message);
   }
@@ -1442,7 +1457,14 @@ function parseJsonWithFallback(text) {
     console.log(`🔧 Applied JSON fixes, final length: ${fixed.length}`);
     const result = JSON.parse(fixed);
     console.log('✅ JSON parsed successfully after fixes');
-    return result;
+    
+    // Structure validation for fixed result
+    if (isResponseStructureValid(result)) {
+      console.log('✅ Fixed result structure validation passed');
+      return result;
+    } else {
+      console.log('⚠️ Fixed result structure invalid, trying aggressive repairs...');
+    }
   } catch (e) {
     console.log('❌ Fixed JSON parse failed...', e.message);
   }
@@ -1486,6 +1508,16 @@ function parseJsonWithFallback(text) {
     console.log(`🔧 Applied aggressive JSON fixes, final length: ${fixed.length}`);
     const result = JSON.parse(fixed);
     console.log('✅ JSON parsed successfully after aggressive fixes');
+    
+    // Final structure validation
+    if (isResponseStructureValid(result)) {
+      console.log('✅ Final structure validation passed');
+      return result;
+    } else {
+      console.log('⚠️ Final structure validation failed');
+      throw new Error('Parsed JSON does not have valid activity structure');
+    }
+    
     return result;
   } catch (e) {
     console.log('❌ Aggressive fixed JSON parse failed...', e.message);
@@ -1880,8 +1912,8 @@ async function fetchHolidaysWithGemini(location, date) {
     const tempModel = tempGenAI.getGenerativeModel({ 
       model: 'gemini-2.5-flash',
       generationConfig: {
-        temperature: 0.2, // Optimized for deterministic JSON output
-        topP: 0.9,
+        temperature: 0.0, // Maximum determinism for factual holiday data
+        topP: 0.8,
         candidateCount: 1
       }
     });
@@ -1933,14 +1965,21 @@ IMPORTANT GUIDELINES:
           { 
             role: 'user', 
             parts: [{ 
-              text: `/no_think You are a holiday/festival data generator. Return ONLY valid JSON array with no reasoning, explanations, or commentary. Output pure JSON starting with [ and ending with ].\n\n${prompt}` 
+              text: `You are a factual holiday and festival data generator. CRITICAL INSTRUCTIONS:
+- Use temperature 0.0 for maximum determinism
+- Do NOT use reasoning, thinking, or analysis
+- Return ONLY valid JSON array with no explanations
+- Output pure JSON starting with [ and ending with ]
+- For factual holiday data, be completely deterministic
+
+${prompt}` 
             }]
           }
         ],
         generationConfig: { 
           responseMimeType: 'application/json',
-          temperature: 0.2, // Optimized for deterministic JSON output
-          topP: 0.9,
+          temperature: 0.0, // Maximum determinism for factual holiday data
+          topP: 0.8,
           candidateCount: 1
         }
       });
@@ -2056,6 +2095,226 @@ app.post('/api/search-enhanced', async (req, res) => {
   } catch (err){
     console.error('Enhanced search error:', err);
     res.status(500).json({ ok:false, error: err.message || 'Enhanced search failed' });
+  }
+});
+
+// Enhanced holiday detection endpoint with multiple API fallbacks
+app.post('/api/holidays-enhanced', async (req, res) => {
+  try {
+    const { location, date, countryCode, year } = req.body;
+    if (!location || !date || !countryCode || !year) { 
+      return res.status(400).json({ 
+        ok: false, 
+        error: 'Missing required parameters: location, date, countryCode, year' 
+      }); 
+    }
+
+    console.log(`🔍 Enhanced holiday detection request for: ${location} (${countryCode}) on ${date}`);
+    
+    let holidays = [];
+    let source = 'none';
+    
+    // Step 1: Check for cached data
+    if (isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+      try {
+        const cachedFestivals = await dataManager.getCachedFestivalData(location, date);
+        if (cachedFestivals && cachedFestivals.length > 0) {
+          console.log(`🎭 Using cached holiday data for: ${location} on ${date}`);
+          return res.json({ 
+            ok: true, 
+            holidays: cachedFestivals, 
+            total: cachedFestivals.length,
+            source: 'cache'
+          });
+        }
+      } catch (cacheError) {
+        console.log('Holiday cache retrieval failed (non-blocking):', cacheError.message);
+      }
+    }
+    
+    // Step 2: Try Nager.Date API first (for supported countries)
+    const isKnownUnsupported = ['IL', 'SA', 'AE', 'QA', 'BH', 'KW', 'OM', 'JO', 'LB', 'SY', 'IQ', 'YE'].includes(countryCode.toUpperCase());
+    
+    if (!isKnownUnsupported) {
+      try {
+        console.log(`🌍 Trying Nager.Date API for ${countryCode}/${year}`);
+        const nagerResponse = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/${countryCode}`);
+        
+        if (nagerResponse.ok && nagerResponse.status !== 204) {
+          const nagerData = await nagerResponse.json();
+          if (nagerData && nagerData.length > 0) {
+            holidays = nagerData;
+            source = 'nager';
+            console.log(`✅ Nager.Date API successful: Found ${holidays.length} holidays`);
+          }
+        }
+      } catch (nagerError) {
+        console.log(`⚠️ Nager.Date API failed: ${nagerError.message}`);
+      }
+    } else {
+      console.log(`🎯 Country ${countryCode} known to have limited Nager.Date support - skipping`);
+    }
+    
+    // Step 3: Try Wikidata SPARQL query (if no holidays found yet)
+    if (holidays.length === 0) {
+      try {
+        console.log(`🌍 Trying Wikidata SPARQL holiday detection for ${location} (${countryCode})`);
+        
+        // Map country codes to Wikidata country entities
+        const countryEntityMap = {
+          'IL': 'Q801',    // Israel
+          'US': 'Q30',     // United States
+          'GB': 'Q145',    // United Kingdom
+          'DE': 'Q183',    // Germany
+          'FR': 'Q142',    // France
+          'SA': 'Q851',    // Saudi Arabia
+          'AE': 'Q878',    // UAE
+          'EG': 'Q79',     // Egypt
+          'TR': 'Q43',     // Turkey
+          'JO': 'Q810',    // Jordan
+          'LB': 'Q822',    // Lebanon
+          'SY': 'Q858',    // Syria
+          'IQ': 'Q796',    // Iraq
+          'IR': 'Q794',    // Iran
+          'AF': 'Q889',    // Afghanistan
+          'PK': 'Q843',    // Pakistan
+          'BD': 'Q902',    // Bangladesh
+          'MY': 'Q833',    // Malaysia
+          'ID': 'Q252',    // Indonesia
+          'TH': 'Q869',    // Thailand
+          'IN': 'Q668',    // India
+          'CN': 'Q148',    // China
+        };
+        
+        const countryEntity = countryEntityMap[countryCode.toUpperCase()];
+        
+        if (!countryEntity) {
+          console.log(`⚠️ No Wikidata entity mapping for country code: ${countryCode}`);
+          throw new Error(`Country ${countryCode} not supported in Wikidata mapping`);
+        }
+        
+        const wikidataQuery = `
+          SELECT DISTINCT ?item ?itemLabel ?observed ?start ?end WHERE {
+            {
+              ?item wdt:P31/wdt:P279* wd:Q1197685 .  # Public holiday
+              ?item wdt:P17 wd:${countryEntity} .     # Dynamic country
+              OPTIONAL { ?item wdt:P837 ?observed . }
+              OPTIONAL { ?item wdt:P580 ?start . }
+              OPTIONAL { ?item wdt:P582 ?end . }
+            }
+            UNION
+            {
+              ?item wdt:P31/wdt:P279* wd:Q1445650 .  # Religious holiday
+              ?item wdt:P17 wd:${countryEntity} .     # Dynamic country
+              OPTIONAL { ?item wdt:P837 ?observed . }
+              OPTIONAL { ?item wdt:P580 ?start . }
+              OPTIONAL { ?item wdt:P582 ?end . }
+            }
+            SERVICE wikibase:label { bd:serviceParam wikibase:language "en" . }
+          } LIMIT 50
+        `;
+        
+        const wikidataUrl = new URL('https://query.wikidata.org/sparql');
+        wikidataUrl.searchParams.set('format', 'json');
+        wikidataUrl.searchParams.set('query', wikidataQuery);
+        
+        const wikidataResponse = await fetch(wikidataUrl, {
+          headers: { 'Accept': 'application/sparql-results+json' }
+        });
+        
+        if (wikidataResponse.ok) {
+          const wikidataData = await wikidataResponse.json();
+          const wikidataHolidays = [];
+          
+          for (const binding of wikidataData.results.bindings) {
+            const name = binding.itemLabel?.value;
+            const observed = binding.observed?.value ? binding.observed.value.substring(0, 10) : null;
+            const start = binding.start?.value ? binding.start.value.substring(0, 10) : null;
+            const end = binding.end?.value ? binding.end.value.substring(0, 10) : null;
+            
+            if (name && (observed || start)) {
+              wikidataHolidays.push({
+                date: observed || start || date,
+                name: name,
+                localName: name,
+                countryCode: countryCode,
+                fixed: false,
+                global: true,
+                launchYear: null,
+                types: ["Public"]
+              });
+            }
+          }
+          
+          if (wikidataHolidays.length > 0) {
+            holidays = wikidataHolidays;
+            source = 'wikidata';
+            console.log(`✅ Wikidata SPARQL successful: Found ${holidays.length} holidays`);
+          }
+        }
+      } catch (wikidataError) {
+        console.log(`⚠️ Wikidata SPARQL failed: ${wikidataError.message}`);
+      }
+    }
+    
+    // Step 4: If still no holidays found, try Gemini AI detection
+    if (holidays.length === 0) {
+      try {
+        console.log(`🤖 Trying AI holiday detection for ${location}`);
+        const geminiHolidays = await fetchHolidaysWithGemini(location, date);
+        
+        if (geminiHolidays && geminiHolidays.length > 0) {
+          holidays = geminiHolidays.map(h => ({
+            date: h.start_date || date,
+            name: h.name,
+            localName: h.name,
+            countryCode: countryCode,
+            fixed: false,
+            global: true,
+            launchYear: null,
+            types: ["Public"]
+          }));
+          source = 'ai';
+          console.log(`✅ AI holiday detection successful: Found ${holidays.length} holidays`);
+        }
+      } catch (geminiError) {
+        console.log(`⚠️ AI holiday detection failed: ${geminiError.message}`);
+      }
+    }
+    
+    // Step 5: Cache the results if we found any
+    if (holidays.length > 0 && isNeo4jConnected && dataManager instanceof Neo4jDataManager) {
+      try {
+        const targetDate = new Date(date);
+        const dayBefore = new Date(targetDate);
+        dayBefore.setDate(targetDate.getDate() - 1);
+        const dayAfter = new Date(targetDate);
+        dayAfter.setDate(targetDate.getDate() + 1);
+        
+        const searchStartDate = dayBefore.toISOString().split('T')[0];
+        const searchEndDate = dayAfter.toISOString().split('T')[0];
+        
+        await dataManager.cacheFestivalData(location, searchStartDate, searchEndDate, holidays);
+        console.log(`💾 Cached ${holidays.length} holidays for future use`);
+      } catch (cacheError) {
+        console.log('Failed to cache holiday data (non-blocking):', cacheError.message);
+      }
+    }
+    
+    res.json({ 
+      ok: true, 
+      holidays, 
+      total: holidays.length,
+      source,
+      message: holidays.length > 0 ? `Found ${holidays.length} holidays via ${source}` : 'No holidays found'
+    });
+    
+  } catch (err) {
+    console.error('Enhanced holiday detection error:', err);
+    res.status(500).json({ 
+      ok: false, 
+      error: err.message || 'Enhanced holiday detection failed' 
+    });
   }
 });
 
@@ -3051,13 +3310,30 @@ async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivitie
     }
   }
   
-  // Validate response
-  if (!json.activities || !Array.isArray(json.activities)) {
-    throw new Error('Response missing activities array');
-  }
-  
-  if (json.activities.length === 0) {
-    throw new Error('No activities returned');
+  // Enhanced Zod validation with model-specific handling
+  try {
+    const modelName = getActiveModelName();
+    console.log(`🔍 Starting validation for model: ${modelName}`);
+    
+    // First check basic structure before expensive validation
+    if (!isResponseStructureValid(json)) {
+      throw new Error('Response structure is invalid - missing activities array or required fields');
+    }
+    
+    // Perform comprehensive validation with model-specific configuration
+    json = validateForModel(json, modelName);
+    
+    console.log(`✅ Response validation successful: ${json.activities.length} activities validated`);
+    
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      const errorSummary = getValidationErrorSummary(error);
+      console.error('❌ Zod validation failed:', errorSummary);
+      throw new Error(`AI response validation failed: ${errorSummary}`);
+    } else {
+      console.error('❌ Validation error:', error.message);
+      throw new Error(`Response validation failed: ${error.message}`);
+    }
   }
   
   // Add web search sources to the result

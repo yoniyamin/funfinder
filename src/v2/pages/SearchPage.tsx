@@ -90,6 +90,10 @@ export default function SearchPage({
   isDesktopSidebar = false,
   searchContext = null
 }: SearchPageProps) {
+  
+  // State for prompt viewing (desktop only)
+  const [showPrompt, setShowPrompt] = useState<boolean>(false);
+  const [prompt, setPrompt] = useState<string>('');
   const [showHistory, setShowHistory] = useState(false);
   const [showAgeModal, setShowAgeModal] = useState(false);
   const [showDateModal, setShowDateModal] = useState(false);

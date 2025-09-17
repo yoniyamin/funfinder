@@ -4,8 +4,9 @@ import ResultsPage from './pages/ResultsPage';
 import BottomNavBar from './components/BottomNavBar';
 import Settings from '../components/Settings';
 import type { CacheInfo } from './components/CacheIndicator';
-import { toISODate, geocode, fetchHolidays, fetchWeatherDaily, fetchFestivalsWikidata, fetchHolidaysWithGemini } from '../lib/api';
+import { toISODate, geocode, fetchHolidays, fetchHolidaysWithFallback, fetchWeatherDaily, fetchFestivalsWikidata, fetchHolidaysWithGemini } from '../lib/api';
 import type { Activity, Context, LLMResult } from '../lib/schema';
+import { validateAIResponse, getValidationErrorSummary, ValidationError } from '../lib/validation-helpers';
 import { getImageUrl, IMAGES } from '../config/assets';
 
 // Hook to detect screen size
@@ -463,23 +464,39 @@ export default function App() {
       let isHoliday = false;
       let holidayDetails: Array<{name: string; localName: string; date: string}> = [];
       try {
-        const hol = await fetchHolidays(country_code, date.slice(0,4));
+        console.log(`🔍 Starting enhanced holiday detection for ${name}, ${country} (${country_code}) on ${date}`);
+        const hol = await fetchHolidaysWithFallback(country_code, date.slice(0,4), `${name}, ${country}`, date);
         // Ensure date is in YYYY-MM-DD format for comparison
         const normalizedDate = new Date(date).toISOString().split('T')[0];
-        const matches = hol.filter((h:any)=>h.date===normalizedDate);
-        isHoliday = matches.length>0;
+        
+        // More flexible date filtering: check for holidays within ±3 days of target date
+        const targetDateObj = new Date(normalizedDate);
+        const threeDaysBefore = new Date(targetDateObj.getTime() - 3 * 24 * 60 * 60 * 1000);
+        const threeDaysAfter = new Date(targetDateObj.getTime() + 3 * 24 * 60 * 60 * 1000);
+        
+        const matches = hol.filter((h: any) => {
+          if (!h.date && !h.start_date) return false;
+          const holidayDate = new Date(h.date || h.start_date);
+          return holidayDate >= threeDaysBefore && holidayDate <= threeDaysAfter;
+        });
+        
+        isHoliday = matches.length > 0;
         if (matches.length > 0) {
           holidayDetails = matches.map((h: any) => ({
             name: h.name,
-            localName: h.localName,
-            date: h.date
+            localName: h.localName || h.name,
+            date: h.date || h.start_date
           }));
-          console.log(`🎊 Found public holiday on ${normalizedDate}:`, matches.map((h: any) => h.localName || h.name).join(', '));
+          console.log(`🎊 Enhanced holiday detection found ${matches.length} holidays near ${normalizedDate}:`, matches.map((h: any) => h.localName || h.name).join(', '));
         } else {
-          console.log(`📅 No public holidays found for ${normalizedDate}`);
+          console.log(`📅 Enhanced holiday detection found no holidays near ${normalizedDate} in ${name}, ${country} (searched ${hol.length} total holidays)`);
+          // Log the holidays that were found for debugging
+          if (hol.length > 0) {
+            console.log(`🔍 Available holidays found:`, hol.map((h: any) => `${h.name} (${h.date || h.start_date})`).join(', '));
+          }
         }
       } catch (error) {
-        console.warn('Failed to fetch holidays, continuing without holiday data:', error);
+        console.warn('Enhanced holiday detection failed, continuing without holiday data:', error);
       }
 
       setLoading({ isLoading: true, progress: 55, status: 'Preparing search context…' });
@@ -603,21 +620,37 @@ export default function App() {
           throw new Error('Invalid response from AI model');
         }
         
+        // Client-side validation of the AI response
+        let validatedResult = data.data;
+        try {
+          validatedResult = validateAIResponse(data.data, 'V2 Client-side API response');
+          console.log(`✅ V2 Client-side validation successful: ${validatedResult.activities.length} activities validated`);
+        } catch (validationError) {
+          if (validationError instanceof ValidationError) {
+            const errorSummary = getValidationErrorSummary(validationError);
+            console.warn('⚠️ V2 Client-side validation failed, using server response as-is:', errorSummary);
+            // Fallback to unvalidated data with warning
+            validatedResult = data.data;
+          } else {
+            throw validationError;
+          }
+        }
+        
         // Log activity search completion and duration
         const activitySearchEnd = Date.now();
         const duration = activitySearchEnd - activitySearchStart;
         console.log(`✅ AI search completed in ${(duration / 1000).toFixed(2)}s`);
         
         // Store search duration for future progress estimation
-        storeSearchDuration(duration, data.data.ai_provider || 'unknown');
+        storeSearchDuration(duration, validatedResult.ai_provider || 'unknown');
         
         setLoading({ isLoading: true, progress: 95, status: 'Processing results…' });
         setSearchResults({
-          activities: data.data.activities,
-          webSources: data.data.web_sources || null,
+          activities: validatedResult.activities,
+          webSources: validatedResult.web_sources || null,
           ctx: context,
-          cacheInfo: (data.data as any).cacheInfo,
-          aiModel: data.data.ai_model || undefined
+          cacheInfo: (validatedResult as any).cacheInfo,
+          aiModel: validatedResult.ai_model || undefined
         });
         
         setLoading({ isLoading: true, progress: 100, status: 'Complete!' });
@@ -794,15 +827,30 @@ export default function App() {
         throw new Error('Invalid response from AI model');
       }
       
+      // Client-side validation for fresh search
+      let validatedFreshResult = data.data;
+      try {
+        validatedFreshResult = validateAIResponse(data.data, 'V2 Fresh search API response');
+        console.log(`✅ V2 Fresh search validation successful: ${validatedFreshResult.activities.length} activities validated`);
+      } catch (validationError) {
+        if (validationError instanceof ValidationError) {
+          const errorSummary = getValidationErrorSummary(validationError);
+          console.warn('⚠️ V2 Fresh search validation failed, using server response as-is:', errorSummary);
+          validatedFreshResult = data.data;
+        } else {
+          throw validationError;
+        }
+      }
+      
       setLoading({ isLoading: true, progress: 95, status: 'Processing fresh results...' });
       
       // Update with fresh results
       setSearchResults({
-        activities: data.data.activities,
-        webSources: data.data.web_sources || null,
+        activities: validatedFreshResult.activities,
+        webSources: validatedFreshResult.web_sources || null,
         ctx: context,
-        cacheInfo: (data.data as any).cacheInfo,
-        aiModel: data.data.ai_model || undefined
+        cacheInfo: (validatedFreshResult as any).cacheInfo,
+        aiModel: validatedFreshResult.ai_model || undefined
       });
       
       setLoading({ isLoading: true, progress: 100, status: 'Fresh search complete!' });
