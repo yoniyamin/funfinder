@@ -74,8 +74,12 @@ export const ActivitySchema = z.object({
   
   address: z.string()
     .trim()
+    .nullable()
     .optional()
-    .transform(addr => addr === "" ? undefined : addr?.replace(/^["']|["']$/g, '')),
+    .transform(addr => {
+      if (!addr || addr === "" || addr === "null") return undefined;
+      return addr.replace(/^["']|["']$/g, '');
+    }),
   
   lat: z.number()
     .min(-90).max(90)
@@ -94,7 +98,10 @@ export const ActivitySchema = z.object({
     .nullable()
     .optional()
     .catch(undefined)
-    .transform(url => url === "" ? undefined : url),
+    .transform(url => {
+      if (!url || url === "" || url === "null") return undefined;
+      return url;
+    }),
   
   free: z.boolean()
     .nullable()
@@ -106,8 +113,12 @@ export const ActivitySchema = z.object({
   
   notes: z.string()
     .trim()
+    .nullable()
     .optional()
-    .transform(notes => notes === "" ? undefined : notes?.replace(/^["']|["']$/g, '')),
+    .transform(notes => {
+      if (!notes || notes === "" || notes === "null") return undefined;
+      return notes.replace(/^["']|["']$/g, '');
+    }),
   
   evidence: z.array(z.string().trim())
     .optional()
@@ -135,7 +146,7 @@ export const LLMResultSchema = z.object({
   
   activities: z.array(ActivitySchema)
     .min(1, "At least one activity must be provided")
-    .max(20, "Too many activities (maximum 20)"),
+    .max(30, "Too many activities (maximum 30)"),
   
   web_sources: z.array(WebSourceSchema)
     .optional()

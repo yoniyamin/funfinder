@@ -46,7 +46,8 @@ app.get('/api/health', (req, res) => {
       neo4j: typeof dataManager !== 'undefined' && dataManager ? 'connected' : 'disconnected',
       ai_providers: {
         gemini: process.env.GEMINI_API_KEY ? 'configured' : 'not_configured',
-        openrouter: process.env.OPENROUTER_API_KEY ? 'configured' : 'not_configured'
+        openrouter: process.env.OPENROUTER_API_KEY ? 'configured' : 'not_configured',
+        together: process.env.TOGETHER_API_KEY ? 'configured' : 'not_configured'
       }
     }
   };
@@ -106,6 +107,99 @@ class AIProviderFactory {
       apiKey: apiKey,
     });
   }
+  
+  static createTogetherClient(apiKey) {
+    if (!apiKey) {
+      throw new Error('Together.ai API key not provided');
+    }
+    return new OpenAI({
+      baseURL: 'https://api.together.xyz/v1',
+      apiKey: apiKey,
+    });
+  }
+}
+
+// JSON Schema for structured activity responses (Together.ai JSON mode)
+function getActivityResponseSchema() {
+  return {
+    type: "object",
+    properties: {
+      query: {
+        type: "object",
+        properties: {
+          location: { type: "string" },
+          date: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+          duration_hours: { type: "number" },
+          ages: { 
+            type: "array",
+            items: { type: "integer" }
+          },
+          weather: {
+            type: "object",
+            properties: {
+              temperature_min_c: { type: "number" },
+              temperature_max_c: { type: "number" },
+              precipitation_probability_percent: { type: "number" },
+              wind_speed_max_kmh: { type: ["number", "null"] }
+            },
+            required: ["temperature_min_c", "temperature_max_c", "precipitation_probability_percent"]
+          },
+          is_public_holiday: { type: "boolean" },
+          nearby_festivals: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                start_date: { type: ["string", "null"] },
+                end_date: { type: ["string", "null"] },
+                url: { type: ["string", "null"] },
+                distance_km: { type: ["number", "null"] }
+              },
+              required: ["name"]
+            }
+          },
+          holidays: { type: "array" },
+          exclusions: { type: "array" }
+        },
+        required: ["location", "date", "duration_hours", "ages", "weather", "is_public_holiday"]
+      },
+      activities: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            title: { type: "string" },
+            category: { 
+              type: "string",
+              enum: ["outdoor", "indoor", "museum", "park", "playground", "water", "hike", "creative", "festival", "show", "seasonal", "other"]
+            },
+            description: { type: "string" },
+            suitable_ages: { type: "string" },
+            duration_hours: { type: "number" },
+            address: { type: ["string", "null"] },
+            lat: { type: ["number", "null"] },
+            lon: { type: ["number", "null"] },
+            booking_url: { type: ["string", "null"] },
+            free: { type: ["boolean", "string"] },
+            weather_fit: { 
+              type: "string",
+              enum: ["good", "ok", "bad"]
+            },
+            notes: { type: ["string", "null"] },
+            evidence: {
+              type: "array",
+              items: { type: "string" }
+            }
+          },
+          required: ["title", "category", "description", "suitable_ages", "duration_hours", "weather_fit", "evidence"]
+        },
+        minItems: 1,
+        maxItems: 30
+      }
+    },
+    required: ["query", "activities"]
+  };
 }
 
 // Initialize AI providers (deprecated - kept for settings/test endpoints)
@@ -250,8 +344,10 @@ let ENCRYPTION_KEY = null;
 let apiKeys = {
   gemini_api_key: '',
   openrouter_api_key: '',
-  ai_provider: 'gemini', // 'gemini' or 'openrouter'
+  together_api_key: '',
+  ai_provider: 'gemini', // 'gemini', 'openrouter', or 'together'
   openrouter_model: 'deepseek/deepseek-chat-v3.1:free',
+  together_model: 'meta-llama/Llama-3.2-3B-Instruct-Turbo',
   google_search_api_key: '',
   google_search_engine_id: '',
   openwebninja_api_key: '',
@@ -1095,10 +1191,19 @@ async function loadApiKeys() {
 
 function loadFromEnvironment() {
   // Load from environment variables as fallback
+  // AI Provider Environment Variables:
+  // - GEMINI_API_KEY: Google Gemini API key
+  // - OPENROUTER_API_KEY: OpenRouter API key  
+  // - TOGETHER_API_KEY: Together.ai API key (supports JSON mode)
+  // - AI_PROVIDER: 'gemini', 'openrouter', or 'together'
+  // - OPENROUTER_MODEL: OpenRouter model name
+  // - TOGETHER_MODEL: Together.ai model name (JSON mode supported models recommended)
   apiKeys.gemini_api_key = process.env.GEMINI_API_KEY || '';
   apiKeys.openrouter_api_key = process.env.OPENROUTER_API_KEY || '';
+  apiKeys.together_api_key = process.env.TOGETHER_API_KEY || '';
   apiKeys.ai_provider = process.env.AI_PROVIDER || 'gemini';
   apiKeys.openrouter_model = process.env.OPENROUTER_MODEL || 'deepseek/deepseek-chat-v3.1:free';
+  apiKeys.together_model = process.env.TOGETHER_MODEL || 'meta-llama/Llama-3.2-3B-Instruct-Turbo';
   apiKeys.google_search_api_key = process.env.GOOGLE_SEARCH_API_KEY || '';
   apiKeys.google_search_engine_id = process.env.GOOGLE_SEARCH_ENGINE_ID || '';
   apiKeys.openwebninja_api_key = process.env.OPENWEBNINJA_API_KEY || '';
@@ -1238,6 +1343,11 @@ const JSON_SCHEMA = {
 
 function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActivities = null, holidayFestivalInfo = null){
   const activityCount = maxActivities || apiKeys.max_activities || 20;
+  
+  // Detect if this is a Llama model to provide specific instructions
+  const currentModel = getActiveModelName();
+  const isLlamaModel = currentModel && currentModel.includes('llama');
+  
   const basePrompt = [
     `You are a local family activities planner. Using the provided context JSON, suggest ${activityCount} kid-friendly activities.`,
     'HARD RULES:',
@@ -1248,15 +1358,45 @@ function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActiviti
     '- Prefer options relevant to public holidays or nearby festivals when applicable.',
     '- Consider if attractions might be closed or have special hours on public holidays.',
     '- IMPORTANT: When possible, include official website links or booking URLs in the booking_url field for attractions, venues, or activities.',
-    '- IMPORTANT: Also research and include any public holidays, festivals, or special celebrations happening on or around this date in this location.',
-    '- Add discovered holidays/festivals to the "discovered_holidays" array in your response.',
+    ''
+  ];
+
+  // Add model-specific JSON instructions
+  if (isLlamaModel) {
+    basePrompt.push(
+      '🚨 ULTRA-STRICT JSON FORMATTING RULES FOR LLAMA MODELS:',
+      '⚠️ CRITICAL: Return ONLY valid JSON - absolutely no markdown, no explanations, no extra text',
+      '⚠️ STRUCTURE: Start with {"query":{...},"activities":[...]} and end with exactly }',
+      '⚠️ PROPERTIES: Each activity must be a completely separate object in the activities array',
+      '⚠️ NO DUPLICATES: Never repeat property names within the same activity object',
+      '⚠️ QUOTES: Use only simple double quotes: "property": "value" - never use \\" or smart quotes',
+      '⚠️ VALUES: Keep all values simple - strings, numbers, booleans, or null only',
+      '⚠️ CATEGORIES: Use only these exact categories: outdoor, indoor, museum, park, playground, water, hike, creative, festival, show, seasonal, other',
+      '⚠️ WEATHER_FIT: Use only these exact values: good, ok, bad',
+      '⚠️ BOOLEANS: Use true/false for free field, or "true"/"false" as strings',
+      '⚠️ NUMBERS: lat/lon should be actual numbers like 41.7853, not strings',
+      '⚠️ NULLS: Use null (not "null") for missing lat/lon/address/booking_url/notes',
+      '⚠️ NO HOLIDAYS: Do NOT include discovered_holidays field to prevent JSON errors',
+      '⚠️ COMPLETE: Always finish with proper closing brackets: ]}',
+      '⚠️ EXAMPLE ACTIVITY: {"title":"Sample Activity","category":"park","description":"A sample description","suitable_ages":"All ages","duration_hours":2,"address":"123 Main St","lat":41.7853,"lon":2.2749,"booking_url":null,"free":true,"weather_fit":"good","notes":null,"evidence":[]}',
+      ''
+    );
+  } else {
+    basePrompt.push(
+      '- IMPORTANT: Also research and include any public holidays, festivals, or special celebrations happening on or around this date in this location.',
+      '- Add discovered holidays/festivals to the "discovered_holidays" array in your response.',
+      ''
+    );
+  }
+
+  basePrompt.push(
     '- Return ONLY a single valid JSON object matching the schema.',
     '- NO markdown code blocks, NO explanatory text, NO commentary.',
     '- Start your response with { and end with }.',
     '- Ensure all strings are properly quoted and escaped.',
     '- Do not include trailing commas.',
     ''
-  ];
+  );
 
   // Add holiday/festival context if available
   if (holidayFestivalInfo && holidayFestivalInfo.length > 0) {
@@ -1454,6 +1594,43 @@ function parseJsonWithFallback(text) {
     // Fix missing quotes around property names
     fixed = fixed.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
     
+    // Enhanced fixes for Llama model-specific issues
+    console.log('🔧 Applying Llama-specific JSON repairs...');
+    
+    // Fix malformed escaped quotes (major issue with Llama models)
+    // Pattern: "name\\\":\\\"value\\\" → "name":"value"
+    fixed = fixed.replace(/"([^"]+)\\+"\s*:\s*\\+"([^"]*?)\\+"/g, '"$1":"$2"');
+    
+    // Fix missing quotes around common enum values (weather_fit, category, etc.)
+    const enumValues = ['good', 'ok', 'bad', 'outdoor', 'indoor', 'museum', 'park', 'playground', 'water', 'hike', 'creative', 'festival', 'show', 'seasonal', 'other'];
+    enumValues.forEach(value => {
+      // Fix unquoted enum values: "weather_fit":good → "weather_fit":"good"
+      const unquotedRegex = new RegExp(`(:\\s*)${value}(\\s*[,}])`, 'g');
+      fixed = fixed.replace(unquotedRegex, `$1"${value}"$2`);
+    });
+    
+    // Fix boolean values without quotes: "free":true → "free":"true"
+    fixed = fixed.replace(/(:\s*)true(\s*[,}])/g, '$1"true"$2');
+    fixed = fixed.replace(/(:\s*)false(\s*[,}])/g, '$1"false"$2');
+    
+    // Fix numeric strings that should be numbers: "duration_hours":"2" → "duration_hours":2
+    fixed = fixed.replace(/("duration_hours"\s*:\s*)"(\d+(?:\.\d+)?)"/g, '$1$2');
+    fixed = fixed.replace(/("lat"\s*:\s*)"(-?\d+(?:\.\d+)?)"/g, '$1$2');
+    fixed = fixed.replace(/("lon"\s*:\s*)"(-?\d+(?:\.\d+)?)"/g, '$1$2');
+    
+    // Fix extra spaces in quoted values: "free ":"true " → "free":"true"
+    fixed = fixed.replace(/"([^"]+)\s+"\s*:\s*"([^"]*)\s*"/g, '"$1":"$2"');
+    
+    // Fix malformed activity objects that are concatenated instead of in array
+    // Look for pattern: },"title": that should be },{"title":
+    fixed = fixed.replace(/},\s*"title":/g, '},{"title":');
+    
+    // Remove problematic discovered_holidays section that often has malformed JSON
+    if (fixed.includes('discovered_holidays')) {
+      console.log('🔧 Removing problematic discovered_holidays section...');
+      fixed = fixed.replace(/,?\s*"discovered_holidays"\s*:\s*\[[^\]]*$/g, '');
+    }
+    
     console.log(`🔧 Applied JSON fixes, final length: ${fixed.length}`);
     const result = JSON.parse(fixed);
     console.log('✅ JSON parsed successfully after fixes');
@@ -1498,12 +1675,184 @@ function parseJsonWithFallback(text) {
     
     fixed = cleanedLines.join('\n');
     
-    // Apply other fixes
+    // Apply other fixes with enhanced Llama handling
     fixed = fixed.replace(/,(\s*[}\]])/g, '$1');
     fixed = fixed.replace(/}(\s*){/g, '}, {');
     fixed = fixed.replace(/](\s*)\[/g, '], [');
     fixed = fixed.replace(/'/g, '"');
     fixed = fixed.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
+    
+    // Additional fixes for Llama's specific issues
+    // Fix empty property values that should be null/false/defaults
+    fixed = fixed.replace(/"lat"\s*:\s*""\s*,/g, '"lat":null,');
+    fixed = fixed.replace(/"lon"\s*:\s*""\s*,/g, '"lon":null,');
+    fixed = fixed.replace(/"free"\s*:\s*""\s*,/g, '"free":false,');
+    fixed = fixed.replace(/"weather_fit"\s*:\s*""\s*,/g, '"weather_fit":"ok",');
+    fixed = fixed.replace(/"booking_url"\s*:\s*""\s*,/g, '"booking_url":null,');
+    fixed = fixed.replace(/"notes"\s*:\s*""\s*,/g, '"notes":null,');
+    fixed = fixed.replace(/"address"\s*:\s*""\s*,/g, '"address":null,');
+    
+    // Handle incomplete JSON by ensuring proper closing
+    if (!fixed.trim().endsWith('}') && !fixed.trim().endsWith(']')) {
+      console.log('🔧 Adding missing JSON closing brackets...');
+      if (fixed.includes('"activities":[')) {
+        // Ensure activities array is properly closed
+        if (!fixed.includes(']}')) {
+          fixed = fixed.replace(/[,\s]*$/, '') + ']}';
+        }
+      } else {
+        fixed = fixed.replace(/[,\s]*$/, '') + '}';
+      }
+    }
+    
+    // Additional Llama-specific aggressive repairs
+    console.log('🔧 Applying aggressive Llama-specific repairs...');
+    
+    // Enhanced Llama activity reconstruction
+    try {
+      console.log('🔧 Starting enhanced Llama activity reconstruction...');
+      
+      // Find the activities array content - use permissive regex for incomplete JSON
+      const activitiesMatch = fixed.match(/"activities"\s*:\s*\[(.*)$/);
+      if (activitiesMatch) {
+        let activitiesContent = activitiesMatch[1];
+        console.log(`🔧 Found activities content: ${activitiesContent.length} characters`);
+        
+        // Check for multiple title properties (indicates malformed structure)
+        const titleMatches = activitiesContent.match(/"title"\s*:/g);
+        if (titleMatches && titleMatches.length > 1) {
+          console.log(`🔧 Found ${titleMatches.length} title properties, reconstructing...`);
+          
+          // More sophisticated reconstruction approach
+          const activities = [];
+          const requiredFields = ['title', 'category', 'description', 'suitable_ages', 'duration_hours', 'weather_fit'];
+          
+          // Split on title boundaries and reconstruct each activity
+          const titleSplits = activitiesContent.split(/(?="title"\s*:)/);
+          
+          for (let i = 0; i < titleSplits.length; i++) {
+            const segment = titleSplits[i].trim();
+            if (!segment || segment.length < 10) continue; // Skip tiny segments
+            
+            console.log(`🔧 Processing segment ${i + 1}: ${segment.substring(0, 100)}...`);
+            
+            try {
+              // Extract properties from this segment until we hit the next title
+              let activityProps = {};
+              
+              // Find all property patterns in this segment
+              const propRegex = /"([^"]+)"\s*:\s*([^,}]+(?:}|,|$))/g;
+              let match;
+              let foundProperties = 0;
+              
+              while ((match = propRegex.exec(segment)) !== null) {
+                const [, propName, propValue] = match;
+                
+                // Stop if we hit a property that belongs to the next activity
+                if (propName === 'title' && foundProperties > 0) break;
+                
+                // Clean the property value
+                let cleanValue = propValue.trim().replace(/,$/, '');
+                
+                // Handle quoted strings
+                if (cleanValue.startsWith('"') && cleanValue.endsWith('"')) {
+                  cleanValue = cleanValue.slice(1, -1);
+                }
+                
+                // Handle empty strings and special values
+                if (cleanValue === '' || cleanValue === '""') {
+                  if (['booking_url', 'notes', 'address'].includes(propName)) {
+                    cleanValue = null;
+                  } else if (['lat', 'lon'].includes(propName)) {
+                    cleanValue = null;
+                  } else if (propName === 'free') {
+                    cleanValue = false;
+                  } else if (propName === 'weather_fit') {
+                    cleanValue = 'ok';
+                  } else if (propName === 'category') {
+                    cleanValue = 'other';
+                  } else if (propName === 'suitable_ages') {
+                    cleanValue = 'All ages';
+                  } else if (propName === 'description') {
+                    cleanValue = 'Activity description';
+                  }
+                }
+                
+                // Convert numeric strings to actual numbers
+                if (propName === 'duration_hours' && typeof cleanValue === 'string') {
+                  cleanValue = parseFloat(cleanValue) || 2;
+                }
+                if (['lat', 'lon'].includes(propName) && typeof cleanValue === 'string' && cleanValue !== '') {
+                  cleanValue = parseFloat(cleanValue) || null;
+                }
+                
+                // Handle invalid category formats (like "park|playground")
+                if (propName === 'category' && typeof cleanValue === 'string' && cleanValue.includes('|')) {
+                  // Take the first valid category from pipe-separated list
+                  const validCategories = ['outdoor', 'indoor', 'museum', 'park', 'playground', 'water', 'hike', 'creative', 'festival', 'show', 'seasonal', 'other'];
+                  const categories = cleanValue.split('|').map(c => c.trim().toLowerCase());
+                  cleanValue = categories.find(c => validCategories.includes(c)) || 'other';
+                }
+                
+                activityProps[propName] = cleanValue;
+                foundProperties++;
+              }
+              
+              // Ensure we have minimum required fields
+              const hasRequired = requiredFields.every(field => activityProps.hasOwnProperty(field));
+              if (hasRequired && activityProps.title) {
+                // Set defaults for missing fields
+                if (!activityProps.evidence) activityProps.evidence = [];
+                if (activityProps.duration_hours && typeof activityProps.duration_hours === 'string') {
+                  activityProps.duration_hours = parseFloat(activityProps.duration_hours) || 2;
+                }
+                
+                activities.push(activityProps);
+                console.log(`✅ Successfully reconstructed activity: "${activityProps.title}"`);
+              }
+            } catch (segmentError) {
+              console.log(`⚠️ Failed to process segment ${i + 1}:`, segmentError.message);
+            }
+          }
+          
+          if (activities.length > 0) {
+            // Reconstruct as proper JSON
+            const reconstructedJson = JSON.stringify(activities);
+            fixed = fixed.replace(/"activities"\s*:\s*\[[^\]]*(?:\]|$)/, `"activities":${reconstructedJson}`);
+            console.log(`🔧 Successfully reconstructed ${activities.length} activities from malformed structure`);
+          }
+        }
+        
+        // Handle malformed discovered_holidays section (common in Llama responses)
+        if (fixed.includes('discovered_holidays')) {
+          console.log('🔧 Fixing malformed discovered_holidays section...');
+          // Remove malformed discovered_holidays that cause JSON parsing errors
+          fixed = fixed.replace(/,?\s*"discovered_holidays"\s*:\s*\[[^\]]*\]?[^}]*$/g, '');
+          // Also handle escaped quotes in discovered_holidays  
+          fixed = fixed.replace(/"discovered_holidays"\s*:\s*\[.*?"name\\\\\"[^}]*$/g, '');
+        }
+        
+        // Handle incomplete JSON (missing closing brackets)
+        if (!fixed.endsWith('}')) {
+          console.log('🔧 Fixing incomplete JSON ending...');
+          // Remove any trailing incomplete content and close properly
+          fixed = fixed.replace(/[,\s]*$/, '') + '}';
+        }
+      }
+    } catch (reconstructError) {
+      console.log('⚠️ Enhanced activity reconstruction failed:', reconstructError.message);
+    }
+    
+    // Apply enum and boolean fixes again after reconstruction
+    const enumValues = ['good', 'ok', 'bad', 'outdoor', 'indoor', 'museum', 'park', 'playground', 'water', 'hike', 'creative', 'festival', 'show', 'seasonal', 'other'];
+    enumValues.forEach(value => {
+      const unquotedRegex = new RegExp(`(:\\s*)${value}(\\s*[,}])`, 'g');
+      fixed = fixed.replace(unquotedRegex, `$1"${value}"$2`);
+    });
+    
+    fixed = fixed.replace(/(:\s*)true(\s*[,}])/g, '$1"true"$2');
+    fixed = fixed.replace(/(:\s*)false(\s*[,}])/g, '$1"false"$2');
+    fixed = fixed.replace(/"([^"]+)\s+"\s*:\s*"([^"]*)\s*"/g, '"$1":"$2"');
     
     console.log(`🔧 Applied aggressive JSON fixes, final length: ${fixed.length}`);
     const result = JSON.parse(fixed);
@@ -2534,11 +2883,13 @@ app.get('/api/settings', (req, res) => {
     const settings = {
       gemini_configured: !!apiKeys.gemini_api_key,
       openrouter_configured: !!apiKeys.openrouter_api_key,
+      together_configured: !!apiKeys.together_api_key,
       google_search_configured: !!(apiKeys.google_search_api_key && apiKeys.google_search_engine_id),
       openwebninja_configured: !!apiKeys.openwebninja_api_key,
       ticketmaster_configured: !!apiKeys.ticketmaster_api_key,
       ai_provider: apiKeys.ai_provider || 'gemini',
       openrouter_model: apiKeys.openrouter_model || 'deepseek/deepseek-chat-v3.1:free',
+      together_model: apiKeys.together_model || 'meta-llama/Llama-3.2-3B-Instruct-Turbo',
       enable_gemini_holidays: !!apiKeys.enable_gemini_holidays,
       enable_reasoning: !!apiKeys.enable_reasoning,
       max_activities: apiKeys.max_activities || 20,
@@ -2602,11 +2953,13 @@ app.post('/api/settings', async (req, res) => {
     const settings = {
       gemini_configured: !!apiKeys.gemini_api_key,
       openrouter_configured: !!apiKeys.openrouter_api_key,
+      together_configured: !!apiKeys.together_api_key,
       google_search_configured: !!(apiKeys.google_search_api_key && apiKeys.google_search_engine_id),
       openwebninja_configured: !!apiKeys.openwebninja_api_key,
       ticketmaster_configured: !!apiKeys.ticketmaster_api_key,
       ai_provider: apiKeys.ai_provider || 'gemini',
       openrouter_model: apiKeys.openrouter_model || 'deepseek/deepseek-chat-v3.1:free',
+      together_model: apiKeys.together_model || 'meta-llama/Llama-3.2-3B-Instruct-Turbo',
       enable_gemini_holidays: !!apiKeys.enable_gemini_holidays,
       max_activities: apiKeys.max_activities || 20,
       cache_include_model: !!apiKeys.cache_include_model,
@@ -2708,6 +3061,7 @@ app.post('/api/test-apis', async (req, res) => {
     const results = {
       gemini: { configured: false, working: false, error: null },
       openrouter: { configured: false, working: false, error: null },
+      together: { configured: false, working: false, error: null },
       google_search: { configured: false, working: false, error: null },
       openwebninja: { configured: false, working: false, error: null }
     };
@@ -2764,6 +3118,33 @@ app.post('/api/test-apis', async (req, res) => {
       } catch (error) {
         console.error('OpenRouter test error:', error);
         results.openrouter.error = error.message;
+      }
+    }
+    
+    // Test Together.ai API
+    if (apiKeys.together_api_key) {
+      results.together.configured = true;
+      try {
+        // Reinitialize in case key just changed
+        console.log('Testing Together.ai with model:', apiKeys.together_model || 'meta-llama/Llama-3.2-3B-Instruct-Turbo');
+        const togetherAI = AIProviderFactory.createTogetherClient(apiKeys.together_api_key);
+        const testResponse = await togetherAI.chat.completions.create({
+          model: apiKeys.together_model || 'meta-llama/Llama-3.2-3B-Instruct-Turbo',
+          messages: [{ role: 'user', content: 'Hello, respond with just "OK" to test the API.' }],
+          max_tokens: 10,
+          temperature: 0.1
+        });
+        console.log('Together.ai test response:', JSON.stringify(testResponse, null, 2));
+        const responseMessage = testResponse.choices?.[0]?.message;
+        const response = responseMessage?.content;
+        
+        results.together.working = response && response.length > 0;
+        if (!results.together.working) {
+          results.together.error = 'Empty response from Together.ai';
+        }
+      } catch (error) {
+        console.error('Together.ai test error:', error);
+        results.together.error = error.message;
       }
     }
     
@@ -3208,6 +3589,100 @@ async function callGeminiModel(prompt, maxRetries = 3, abortSignal = null) {
   }
 }
 
+// Call Together.ai API with JSON mode support
+async function callTogetherModel(prompt, maxRetries = 3, abortSignal = null) {
+  const togetherKey = apiKeys.together_api_key || process.env.TOGETHER_API_KEY || '';
+  if (!togetherKey) {
+    throw new Error('Together.ai API key not available');
+  }
+  
+  // Create isolated client for this request
+  const togetherAI = AIProviderFactory.createTogetherClient(togetherKey);
+  const modelName = apiKeys.together_model || 'meta-llama/Llama-3.2-3B-Instruct-Turbo';
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    // Check for cancellation before each attempt
+    if (abortSignal?.aborted) {
+      throw new Error('Request was cancelled');
+    }
+    
+    const startTime = performance.now();
+    try {
+      console.log(`🤖 [${new Date().toISOString()}] Together.ai attempt ${attempt}/${maxRetries} using model: ${modelName}`);
+      
+      // Build request with JSON mode support
+      const requestBody = {
+        model: modelName,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a JSON response assistant. Generate a comprehensive activities response matching the provided schema. Only respond with valid JSON matching the schema structure.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.1, // Low temperature for consistent JSON output
+        max_tokens: 8000,
+        response_format: {
+          type: "json_schema",
+          schema: getActivityResponseSchema()
+        }
+      };
+      
+      console.log(`🔧 Together.ai JSON mode enabled for ${modelName}`);
+      
+      const response = await togetherAI.chat.completions.create(requestBody);
+      
+      const duration = performance.now() - startTime;
+      const responseData = response.choices?.[0]?.message;
+      
+      console.log(`✅ [${new Date().toISOString()}] Together.ai completed (${duration.toFixed(2)}ms)`);
+      
+      if (!responseData || !responseData.content) {
+        throw new Error('No content in Together.ai response');
+      }
+      
+      const text = responseData.content;
+      console.log(`Together.ai response length: ${text.length} characters`);
+      console.log('Together.ai response preview:', text.substring(0, 200) + '...');
+      
+      // Parse JSON response (should be valid due to schema enforcement)
+      let json;
+      try {
+        json = JSON.parse(text);
+        console.log('✅ JSON parsed successfully from Together.ai JSON mode');
+        
+        // Basic structure validation
+        if (!json.query || !Array.isArray(json.activities)) {
+          throw new Error('Invalid response structure from Together.ai');
+        }
+        
+        console.log(`✅ Together.ai generated ${json.activities.length} activities`);
+        return json;
+        
+      } catch (parseError) {
+        console.error('❌ Failed to parse Together.ai JSON response:', parseError.message);
+        throw new Error(`Together.ai JSON parsing failed: ${parseError.message}`);
+      }
+      
+    } catch (error) {
+      const duration = performance.now() - startTime;
+      console.error(`❌ [${new Date().toISOString()}] Together.ai attempt ${attempt} failed (${duration.toFixed(2)}ms):`, error.message);
+      
+      if (attempt === maxRetries) {
+        throw error;
+      }
+      
+      // Exponential backoff with jitter
+      const baseDelay = Math.pow(2, attempt) * 1000;
+      const jitter = Math.random() * 500;
+      await new Promise(resolve => setTimeout(resolve, baseDelay + jitter));
+    }
+  }
+}
+
 async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivities = null, abortSignal = null) {
   let webSearchResults = null;
   let holidayFestivalInfo = null;
@@ -3282,6 +3757,8 @@ async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivitie
   try {
     if (provider === 'openrouter') {
       json = await callOpenRouterModel(prompt, maxRetries, abortSignal);
+    } else if (provider === 'together') {
+      json = await callTogetherModel(prompt, maxRetries, abortSignal);
     } else {
       json = await callGeminiModel(prompt, maxRetries, abortSignal);
     }
@@ -3291,22 +3768,33 @@ async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivitie
       throw error;
     }
     
-    // If selected provider fails, try the other one as fallback
+    // If selected provider fails, try fallback strategies
     console.log(`Primary provider (${provider}) failed, trying fallback...`);
     try {
-      if (provider === 'openrouter') {
+      if (provider === 'together') {
+        // For Together.ai, first try OpenRouter, then Gemini
+        json = await callOpenRouterModel(prompt, maxRetries, abortSignal);
+        console.log('Fallback to OpenRouter successful');
+      } else if (provider === 'openrouter') {
+        // For OpenRouter, try Gemini as fallback
         json = await callGeminiModel(prompt, maxRetries, abortSignal);
         console.log('Fallback to Gemini successful');
       } else {
-        json = await callOpenRouterModel(prompt, maxRetries, abortSignal);
-        console.log('Fallback to OpenRouter successful');
+        // For Gemini, try Together.ai first (with JSON mode), then OpenRouter
+        try {
+          json = await callTogetherModel(prompt, maxRetries, abortSignal);
+          console.log('Fallback to Together.ai successful');
+        } catch (togetherError) {
+          json = await callOpenRouterModel(prompt, maxRetries, abortSignal);
+          console.log('Fallback to OpenRouter successful');
+        }
       }
     } catch (fallbackError) {
       // Check if fallback was cancelled
       if (abortSignal?.aborted || fallbackError.message.includes('cancelled')) {
         throw fallbackError;
       }
-      throw new Error(`Both AI providers failed. Primary: ${error.message}, Fallback: ${fallbackError.message}`);
+      throw new Error(`All AI providers failed. Primary: ${error.message}, Fallback: ${fallbackError.message}`);
     }
   }
   
@@ -3406,6 +3894,8 @@ function getActiveModelName() {
   const provider = apiKeys.ai_provider || 'gemini';
   if (provider === 'openrouter') {
     return `openrouter-${apiKeys.openrouter_model || 'deepseek/deepseek-chat-v3.1:free'}`;
+  } else if (provider === 'together') {
+    return `together-${apiKeys.together_model || 'meta-llama/Llama-3.2-3B-Instruct-Turbo'}`;
   }
   return 'gemini-2.5-flash';
 }
@@ -3638,24 +4128,34 @@ app.post('/api/activities', async (req, res) => {
 
       filterOutFestivalActivities(json);
 
-      // Cache the results (only if using Neo4j)
+      // Cache the results (only if using Neo4j and not fallback responses)
       if (isNeo4jConnected && dataManager instanceof Neo4jDataManager && json) {
-        try {
-          const modelName = getModelIdentifier();
-          const cacheKey = `${allowed}-${maxActivities || 'default'}`;
-          await dataManager.cacheSearchResults(
-            ctx.location,
-            ctx.date,
-            ctx.duration_hours,
-            ctx.ages,
-            cacheKey,
-            json,
-            ctx.extra_instructions || '',
-            modelName,
-            ctx // Pass full context for smart caching
-          );
-        } catch (cacheError) {
-          console.log('Failed to cache search results (non-blocking):', cacheError.message);
+        // Check if this is a fallback response that we should NOT cache
+        const isFallbackResponse = json.activities && json.activities.length === 1 && 
+          (json.activities[0].title === 'Activity Search Failed' || 
+           json.activities[0].description?.includes('Please try again'));
+        
+        if (!isFallbackResponse) {
+          try {
+            const modelName = getModelIdentifier();
+            const cacheKey = `${allowed}-${maxActivities || 'default'}`;
+            await dataManager.cacheSearchResults(
+              ctx.location,
+              ctx.date,
+              ctx.duration_hours,
+              ctx.ages,
+              cacheKey,
+              json,
+              ctx.extra_instructions || '',
+              modelName,
+              ctx // Pass full context for smart caching
+            );
+            console.log(`✅ Successfully cached search results with ${json.activities.length} activities`);
+          } catch (cacheError) {
+            console.log('Failed to cache search results (non-blocking):', cacheError.message);
+          }
+        } else {
+          console.log('⚠️ Skipping cache for fallback response - user should try again');
         }
       }
     }
@@ -3951,23 +4451,27 @@ function getModelSpecificConfig(modelName) {
   if (lowerModel.includes('llama')) {
     // Special handling for Llama 3.2 3B model which has JSON formatting issues
     if (lowerModel.includes('llama-3.2-3b')) {
-      console.log(`🔧 Configuring ${modelName} with Llama 3.2-3B optimizations for JSON stability`);
+      console.log(`🔧 Configuring ${modelName} with Llama 3.2-3B enhanced JSON stability optimizations`);
       return {
-        temperature: 0.1, // Very low temperature for better JSON consistency
+        temperature: 0.05, // Ultra-low temperature for maximum JSON consistency
         extraParams: {
-          top_p: 0.85, // Lower top_p to reduce randomness
-          max_tokens: 2000, // Limit response length to prevent truncation issues
-          frequency_penalty: 0.2, // Reduce repetition/duplication
-          presence_penalty: 0.1 // Encourage varied output structure
+          top_p: 0.8, // Very low top_p to minimize randomness
+          max_tokens: 2500, // Enough tokens for complete response
+          frequency_penalty: 0.3, // Higher penalty to reduce property duplication
+          presence_penalty: 0.2, // Encourage structured output variety
+          repetition_penalty: 1.1, // Additional penalty for repetition
+          stop: ["}]}", "```", "```json"] // Stop tokens to prevent extra content
         }
       };
     }
     
     console.log(`🔧 Configuring ${modelName} with Llama optimizations`);
     return {
-      temperature: 0.2, // Good balance for Llama models
+      temperature: 0.15, // Lower temperature for better JSON consistency
       extraParams: {
-        top_p: 0.92,
+        top_p: 0.88, // Slightly lower for more deterministic output
+        frequency_penalty: 0.1, // Reduce repetition
+        stop: ["}]}", "```", "```json"] // Stop tokens to prevent extra content
       }
     };
   }
@@ -4175,6 +4679,158 @@ function extractSurroundingJson(text, targetIndex) {
   
   // Extract from that point
   return extractCompleteJson(text.substring(startIndex));
+}
+
+// Enhanced JSON validation and reconstruction functions for Llama models
+function isValidJSONStructure(jsonString) {
+  try {
+    const parsed = JSON.parse(jsonString);
+    return parsed && 
+           typeof parsed === 'object' && 
+           parsed.query && 
+           Array.isArray(parsed.activities);
+  } catch (e) {
+    return false;
+  }
+}
+
+function reconstructLlamaActivities(malformedJSON) {
+  try {
+    console.log('🔧 Starting sophisticated Llama JSON reconstruction...');
+    
+    // Extract the base query part
+    const queryMatch = malformedJSON.match(/"query"\s*:\s*(\{[^}]+\})/);
+    if (!queryMatch) {
+      console.log('❌ Could not extract query object');
+      return null;
+    }
+    
+    const queryObject = queryMatch[1];
+    
+    // Find activities section - be very permissive
+    const activitiesMatch = malformedJSON.match(/"activities"\s*:\s*\[(.*)$/s);
+    if (!activitiesMatch) {
+      console.log('❌ Could not find activities section');
+      return null;
+    }
+    
+    let activitiesContent = activitiesMatch[1];
+    console.log(`🔧 Found activities content: ${activitiesContent.length} characters`);
+    
+    // Clean up malformed discovered_holidays section first
+    activitiesContent = activitiesContent.replace(/,\s*"discovered_holidays"[^}]*\}.*$/, '');
+    activitiesContent = activitiesContent.replace(/\\"[^"]*\\"/g, '""'); // Remove escaped quotes
+    
+    // Find all activity segments by splitting on title occurrences
+    const titlePattern = /"title"\s*:\s*"([^"]*)"/g;
+    const titleMatches = [...activitiesContent.matchAll(titlePattern)];
+    
+    if (titleMatches.length === 0) {
+      console.log('❌ No activity titles found');
+      return null;
+    }
+    
+    console.log(`🔧 Found ${titleMatches.length} potential activities`);
+    const reconstructedActivities = [];
+    
+    for (let i = 0; i < titleMatches.length; i++) {
+      const titleMatch = titleMatches[i];
+      const title = titleMatch[1];
+      const startIndex = titleMatch.index;
+      const endIndex = i < titleMatches.length - 1 ? titleMatches[i + 1].index : activitiesContent.length;
+      
+      const activitySegment = activitiesContent.substring(startIndex, endIndex);
+      console.log(`🔧 Processing activity ${i + 1}: "${title}"`);
+      
+      // Extract properties with fallbacks
+      const activity = {
+        title: title,
+        category: extractPropertyValue(activitySegment, 'category', ['outdoor', 'indoor', 'museum', 'park', 'playground', 'water', 'hike', 'creative', 'festival', 'show', 'seasonal', 'other'], 'other'),
+        description: extractPropertyValue(activitySegment, 'description', [], '') || `Interesting ${title.toLowerCase()} activity`,
+        suitable_ages: extractPropertyValue(activitySegment, 'suitable_ages', [], 'All ages'),
+        duration_hours: parseNumericProperty(activitySegment, 'duration_hours', 2),
+        address: extractPropertyValue(activitySegment, 'address', [], '') || null,
+        lat: parseNumericProperty(activitySegment, 'lat', null),
+        lon: parseNumericProperty(activitySegment, 'lon', null), 
+        booking_url: extractPropertyValue(activitySegment, 'booking_url', [], '') || null,
+        free: parseBooleanProperty(activitySegment, 'free', true),
+        weather_fit: extractPropertyValue(activitySegment, 'weather_fit', ['good', 'ok', 'bad'], 'good'),
+        notes: extractPropertyValue(activitySegment, 'notes', [], '') || null,
+        evidence: []
+      };
+      
+      // Validate activity has essential fields
+      if (activity.title && activity.category && activity.description) {
+        reconstructedActivities.push(activity);
+        console.log(`✅ Successfully reconstructed: "${title}"`);
+      } else {
+        console.log(`❌ Skipping invalid activity: "${title}"`);
+      }
+    }
+    
+    if (reconstructedActivities.length === 0) {
+      console.log('❌ No valid activities could be reconstructed');
+      return null;
+    }
+    
+    // Rebuild complete JSON
+    const reconstructedJSON = `{"query":${queryObject},"activities":${JSON.stringify(reconstructedActivities)}}`;
+    
+    // Validate the reconstructed JSON
+    if (isValidJSONStructure(reconstructedJSON)) {
+      console.log(`🎉 Successfully reconstructed valid JSON with ${reconstructedActivities.length} activities`);
+      return reconstructedJSON;
+    } else {
+      console.log('❌ Reconstructed JSON failed validation');
+      return null;
+    }
+    
+  } catch (error) {
+    console.log('❌ Reconstruction failed:', error.message);
+    return null;
+  }
+}
+
+function extractPropertyValue(text, propertyName, validValues = [], defaultValue = '') {
+  const pattern = new RegExp(`"${propertyName}"\\s*:\\s*"([^"]*)"`, 'i');
+  const match = text.match(pattern);
+  if (!match) return defaultValue;
+  
+  const value = match[1].trim();
+  if (validValues.length > 0) {
+    // Check if value is in valid list, handle pipe-separated values
+    if (value.includes('|')) {
+      const parts = value.split('|');
+      const validPart = parts.find(part => validValues.includes(part.trim()));
+      return validPart || defaultValue;
+    }
+    return validValues.includes(value) ? value : defaultValue;
+  }
+  
+  return value || defaultValue;
+}
+
+function parseNumericProperty(text, propertyName, defaultValue = null) {
+  const pattern = new RegExp(`"${propertyName}"\\s*:\\s*([0-9.]+)`, 'i');
+  const stringPattern = new RegExp(`"${propertyName}"\\s*:\\s*"([^"]*)"`, 'i');
+  
+  let match = text.match(pattern);
+  if (!match) {
+    match = text.match(stringPattern);
+    if (!match) return defaultValue;
+  }
+  
+  const value = parseFloat(match[1]);
+  return isNaN(value) ? defaultValue : value;
+}
+
+function parseBooleanProperty(text, propertyName, defaultValue = false) {
+  const pattern = new RegExp(`"${propertyName}"\\s*:\\s*(true|false|"true"|"false")`, 'i');
+  const match = text.match(pattern);
+  if (!match) return defaultValue;
+  
+  const value = match[1].toLowerCase().replace(/"/g, '');
+  return value === 'true';
 }
 
 app.listen(PORT, '0.0.0.0', () => {

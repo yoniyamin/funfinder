@@ -335,3 +335,18 @@ export function validateForModel(rawResponse: any, modelName?: string): Validate
     return validateWithFallbacks(rawResponse);
   }
 }
+
+// Re-export ValidationError and other types from validation.ts for convenience
+export { ValidationError } from './validation';
+export type { 
+  ValidatedActivity,
+  ValidatedLLMResult,
+  ValidatedContext,
+  ValidatedWeather,
+  ValidatedFestival,
+  ValidatedHoliday,
+  ValidatedWebSource,
+  ValidatedDiscoveredHoliday,
+  ValidatedGeocodingResult,
+  ValidatedWeatherApiResponse
+} from './validation';

@@ -74,8 +74,12 @@ const ActivitySchema = z.object({
   
   address: z.string()
     .trim()
+    .nullable()
     .optional()
-    .transform(addr => addr === "" ? undefined : addr?.replace(/^["']|["']$/g, '')),
+    .transform(addr => {
+      if (!addr || addr === "" || addr === "null") return undefined;
+      return addr?.replace(/^["']|["']$/g, '');
+    }),
   
   lat: z.number()
     .min(-90).max(90)
@@ -94,7 +98,10 @@ const ActivitySchema = z.object({
     .nullable()
     .optional()
     .catch(undefined)
-    .transform(url => url === "" ? undefined : url),
+    .transform(url => {
+      if (!url || url === "" || url === "null") return undefined;
+      return url;
+    }),
   
   free: z.boolean()
     .nullable()
@@ -106,8 +113,12 @@ const ActivitySchema = z.object({
   
   notes: z.string()
     .trim()
+    .nullable()
     .optional()
-    .transform(notes => notes === "" ? undefined : notes?.replace(/^["']|["']$/g, '')),
+    .transform(notes => {
+      if (!notes || notes === "" || notes === "null") return undefined;
+      return notes.replace(/^["']|["']$/g, '');
+    }),
   
   evidence: z.array(z.string().trim())
     .optional()
@@ -135,7 +146,7 @@ const LLMResultSchema = z.object({
   
   activities: z.array(ActivitySchema)
     .min(1, "At least one activity must be provided")
-    .max(20, "Too many activities (maximum 20)"),
+    .max(30, "Too many activities (maximum 30)"),
   
   web_sources: z.array(WebSourceSchema)
     .optional()
@@ -401,17 +412,25 @@ const ModelValidationConfig = {
   'openrouter': {
     enableStrictValidation: true,
     enableRepairAttempts: true,
-    maxActivities: 15
+    maxActivities: 25
   },
   'gemini': {
     enableStrictValidation: true,
     enableRepairAttempts: true,
-    maxActivities: 12
+    maxActivities: 30 // Gemini can handle more activities reliably
+  },
+  // Llama models need special handling due to JSON formatting issues
+  'openrouter-meta-llama/llama-3.2-3b-instruct:free': {
+    enableStrictValidation: false,
+    enableRepairAttempts: true,
+    enableAdvancedRepairs: true,
+    maxActivities: 10, // Increased from 8 but still conservative
+    requireFallbackHandling: true
   },
   'default': {
     enableStrictValidation: false,
     enableRepairAttempts: true,
-    maxActivities: 10
+    maxActivities: 20
   }
 };
 
@@ -419,7 +438,35 @@ const ModelValidationConfig = {
 function validateForModel(rawResponse, modelName) {
   const config = ModelValidationConfig[modelName] || ModelValidationConfig.default;
   
-  console.log(`🔍 Validating response for model: ${modelName || 'unknown'} (strict: ${config.enableStrictValidation})`);
+  console.log(`🔍 Validating response for model: ${modelName || 'unknown'} (strict: ${config.enableStrictValidation}, repairs: ${config.enableRepairAttempts})`);
+  
+  // Special handling for Llama models that are known to have JSON formatting issues
+  if (config.requireFallbackHandling) {
+    console.log(`⚠️ Model ${modelName} requires special fallback handling due to known JSON formatting issues`);
+    
+    try {
+      // Try with fallbacks first for problematic models
+      return validateWithFallbacks(rawResponse);
+    } catch (error) {
+      console.warn(`🔧 Primary validation with fallbacks failed for ${modelName}, creating emergency valid response`);
+      
+      // For models known to have severe issues, create a valid minimal response
+      if (isResponseStructureValid(rawResponse)) {
+        // If basic structure is valid, try to extract what we can
+        try {
+          const activities = rawResponse.activities || [];
+          if (activities.length > 0) {
+            return createMinimalValidResponse(rawResponse);
+          }
+        } catch (extractError) {
+          console.log('Failed to extract activities from malformed response');
+        }
+      }
+      
+      // Last resort for completely malformed responses
+      return createMinimalValidResponse(rawResponse);
+    }
+  }
   
   if (config.enableStrictValidation) {
     return validateAIResponse(rawResponse, `Model: ${modelName}`);
