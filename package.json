@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.11.4",
+    "cheerio": "^1.1.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^5.1.0",
@@ -34,7 +35,7 @@
     "autoprefixer": "^10.4.19",
     "concurrently": "^8.2.2",
     "jsdom": "^16.5.3",
-    "nodemon": "^1.19.4",
+    "nodemon": "^3.1.10",
     "playwright": "^1.55.0",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.6",

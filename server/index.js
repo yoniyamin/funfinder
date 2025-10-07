@@ -10,8 +10,13 @@ import { MongoClient } from 'mongodb';
 import neo4j from 'neo4j-driver';
 import { Neo4jDataManager } from './neo4j-data-manager.js';
 import { validateForModel, validateAIResponse, isResponseStructureValid, getValidationErrorSummary, ValidationError } from './validation.js';
+import { scrapeFeverEvents, formatEventsForAI, getFeverEventsWithCache } from './fever-scraper.js';
+import SimpleCache from './simple-cache.js';
 
 dotenv.config();
+
+// Initialize simple cache for Fever events (fallback when Neo4j not available)
+const feverCache = new SimpleCache();
 
 const PORT = process.env.PORT || 8787;
 const app = express();
@@ -1344,14 +1349,46 @@ const JSON_SCHEMA = {
   } ]
 };
 
-function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActivities = null, holidayFestivalInfo = null){
+function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActivities = null, holidayFestivalInfo = null, realEvents = null){
   const activityCount = maxActivities || apiKeys.max_activities || 20;
   
   // Detect if this is a Llama model to provide specific instructions
   const currentModel = getActiveModelName();
   const isLlamaModel = currentModel && currentModel.includes('llama');
   
-  const basePrompt = [
+  // Change approach based on whether we have real events
+  const hasRealEvents = realEvents && realEvents.length > 0;
+  
+  // Get kids ages safely
+  const kidsAges = ctx.kids_ages || ctx.kidsAges || [];
+  const agesList = kidsAges.length > 0 ? kidsAges.join(', ') + ' years old' : 'all ages';
+  
+  const basePrompt = hasRealEvents ? [
+    `You are an intelligent event curator and family activities advisor.`,
+    '',
+    `TASK: Review the ${realEvents.length} real events/activities listed below and SELECT the ${activityCount} BEST ones that match the search criteria.`,
+    '',
+    'SELECTION CRITERIA (ALL MUST BE SATISFIED):',
+    `✓ Age Appropriateness: Activities MUST be suitable for: ${agesList}`,
+    `✓ Duration Match: Activities should fit within ${ctx.duration_hours} hours`,
+    '✓ Weather Suitability: Consider weather conditions and mark indoor/outdoor appropriateness',
+    '✓ Date Relevance: Prefer events happening on or around the target date',
+    '✓ Family-Friendly: Filter out adult-only content (bars, nightclubs, 18+ events)',
+    '',
+    'ENRICHMENT REQUIREMENTS:',
+    '- Add specific age recommendations (e.g., "Ages 5-12") based on activity type',
+    '- Set accurate weather_fit: good (indoor/weather-proof), ok (mixed), bad (outdoor-dependent)',
+    '- Estimate duration_hours if not specified',
+    '- Preserve original booking URLs from the events',
+    '- Add helpful notes about age suitability or special considerations',
+    '',
+    'HARD RULES:',
+    '- You MUST select from the provided events list below - do NOT invent new activities',
+    '- If an event lacks clear age info, make an educated assessment based on the title/description',
+    '- Exclude events clearly not suitable for children (adult entertainment, bars, etc.)',
+    '- Maintain original event URLs in the booking_url field',
+    ''
+  ] : [
     `You are a local family activities planner. Using the provided context JSON, suggest ${activityCount} kid-friendly activities.`,
     'HARD RULES:',
     '- Tailor to the exact city and date.',
@@ -1437,6 +1474,22 @@ function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActiviti
       'DO NOT SUGGEST THESE ATTRACTIONS/ACTIVITIES (user has excluded them):',
       ...ctx.exclusions.map(item => `- ${item}`),
       'Please avoid suggesting these specific attractions, activities, or venues.',
+      ''
+    );
+  }
+
+  // Add real events if available
+  if (hasRealEvents) {
+    basePrompt.push(
+      '═══════════════════════════════════════════════════════════',
+      `AVAILABLE EVENTS (${realEvents.length} total - SELECT ${activityCount} BEST matches):`,
+      '═══════════════════════════════════════════════════════════',
+      '',
+      JSON.stringify(realEvents, null, 2),
+      '',
+      '═══════════════════════════════════════════════════════════',
+      'END OF EVENTS LIST - Now select and enrich the best matches',
+      '═══════════════════════════════════════════════════════════',
       ''
     );
   }
@@ -3747,12 +3800,27 @@ async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivitie
     console.log('Web search failed, continuing without web insights:', error.message);
   }
 
+  // 🎪 NEW: Fetch real events from Fever for better recommendations
+  let realEvents = null;
+  try {
+    console.log('🎪 Fetching real events from Fever...');
+    const feverEvents = await getFeverEventsWithCache(ctx.location, feverCache);
+    if (feverEvents && feverEvents.length > 0) {
+      realEvents = formatEventsForAI(feverEvents, 30); // Limit to 30 events to avoid token limits
+      console.log(`✅ Loaded ${realEvents.length} real events from Fever for AI filtering`);
+    } else {
+      console.log('ℹ️ No Fever events found, AI will generate recommendations from general knowledge');
+    }
+  } catch (error) {
+    console.log('⚠️ Fever events fetch failed, continuing without real events:', error.message);
+  }
+
   // Check for cancellation before AI call
   if (abortSignal?.aborted) {
     throw new Error('Request was cancelled');
   }
 
-  const prompt = buildUserMessage(enrichedCtx, allowedCats, webSearchResults, maxActivities, holidayFestivalInfo);
+  const prompt = buildUserMessage(enrichedCtx, allowedCats, webSearchResults, maxActivities, holidayFestivalInfo, realEvents);
   
   // Determine which AI provider to use
   const provider = apiKeys.ai_provider || 'gemini';
