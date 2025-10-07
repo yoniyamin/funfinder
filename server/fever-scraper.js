@@ -51,6 +51,8 @@ const FEVER_CITY_SLUGS = {
   'munich': { slug: 'munich', lang: 'en', country: 'de' }
 };
 
+const DESCRIPTION_MAX_LENGTH = 360;
+
 /**
  * Normalize location name for Fever lookup
  */
@@ -144,9 +146,8 @@ export async function scrapeFeverEvents(location, options = {}) {
       const category = cleanText($el.find('[class*="category"], [class*="tag"], [data-test*="category"]').first().text());
 
       const locationText = extractLocationFromCard($el, linkElement);
-      const teaserDescription = truncateText(
-        $el.find('[class*="description"], [class*="subtitle"], p').first().text(),
-        DESCRIPTION_MAX_LENGTH
+      const teaserDescription = cleanText(
+        $el.find('[class*="description"], [class*="subtitle"], p').first().text()
       );
 
       // Only add if we have at least a title
@@ -184,7 +185,7 @@ export async function scrapeFeverEvents(location, options = {}) {
                 price_from: priceFromOffers,
                 free: priceFromOffers === 0 || event.isAccessibleForFree === true,
                 category: event.eventAttendanceMode || 'other',
-                description: truncateText(event.description, DESCRIPTION_MAX_LENGTH),
+                description: event.description ? cleanText(event.description).substring(0, 240) : null,
                 start_date: event.startDate,
                 end_date: event.endDate,
                 location: locationInfo.name || null,
@@ -274,6 +275,11 @@ function inferKidFriendly(title, description = '') {
   return null;
 }
 
+function cleanText(value) {
+  if (!value) return '';
+  return value.replace(/\s+/g, ' ').trim();
+}
+
 function extractLocationFromCard($el, linkElement) {
   const selectors = [
     '[class*="location"]',
@@ -333,19 +339,13 @@ function mergeEventData(target, source) {
     if (value === undefined || value === null) continue;
     if (typeof value === 'string' && value.trim() === '') continue;
 
-    const incomingValue = key === 'description'
-      ? truncateText(value, DESCRIPTION_MAX_LENGTH)
-      : value;
-
-    if (incomingValue === null || incomingValue === undefined) continue;
-
     const currentValue = target[key];
     const isCurrentEmpty = currentValue === undefined || currentValue === null ||
       (typeof currentValue === 'string' && currentValue.trim() === '') ||
       (Array.isArray(currentValue) && currentValue.length === 0);
 
     if (isCurrentEmpty) {
-      target[key] = incomingValue;
+      target[key] = value;
     }
   }
   return target;
@@ -519,7 +519,7 @@ async function fetchEventDetails(url) {
       }
 
       if (!details.description && data.description) {
-        details.description = truncateText(data.description, DESCRIPTION_MAX_LENGTH);
+        details.description = cleanText(data.description);
       }
 
       if (!details.start_date && data.startDate) {
@@ -554,7 +554,7 @@ async function fetchEventDetails(url) {
   if (!details.description) {
     const metaDescription = $('meta[name="description"]').attr('content');
     if (metaDescription) {
-      details.description = truncateText(metaDescription, DESCRIPTION_MAX_LENGTH);
+      details.description = cleanText(metaDescription);
     }
   }
 
