@@ -27,6 +27,8 @@ const FEVER_CITY_SLUGS = {
   'munich': { slug: 'munich', lang: 'en', country: 'de' }
 };
 
+const DESCRIPTION_MAX_LENGTH = 360;
+
 /**
  * Normalize location name for Fever lookup
  */
@@ -68,7 +70,7 @@ export async function scrapeFeverEvents(location, options = {}) {
     
     const url = `https://feverup.com/${cityConfig.lang}/${cityConfig.slug}`;
     console.log(`🌐 [Fever] Fetching from: ${url}`);
-    
+
     const response = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -92,40 +94,57 @@ export async function scrapeFeverEvents(location, options = {}) {
     // Method 1: Look for event cards with specific class patterns
     $('[class*="event"], [class*="card"], [class*="experience"]').each((index, element) => {
       if (events.length >= 50) return false; // Limit to 50 events
-      
+
       const $el = $(element);
-      
+
       // Extract event data
-      const title = $el.find('[class*="title"], h2, h3, h4').first().text().trim() ||
-                   $el.find('a').first().attr('aria-label') ||
-                   $el.find('img').first().attr('alt');
-      
-      const link = $el.find('a').first().attr('href');
-      const imgSrc = $el.find('img').first().attr('src');
-      
+      const title = cleanText(
+        $el.find('[class*="title"], h2, h3, h4').first().text()
+      ) || cleanText($el.attr('aria-label')) ||
+        cleanText($el.find('a').first().attr('aria-label')) ||
+        cleanText($el.find('img').first().attr('alt'));
+
+      const linkElement = $el.is('a') ? $el : $el.find('a').first();
+      const rawLink = linkElement.attr('href') ||
+        linkElement.attr('data-href') ||
+        linkElement.attr('data-link') ||
+        linkElement.attr('data-url');
+      const link = rawLink ? (rawLink.startsWith('http') ? rawLink : `https://feverup.com${rawLink}`) : null;
+
+      const imgSrcRaw = $el.find('img').first().attr('src') || linkElement.attr('data-img');
+      const imgSrc = imgSrcRaw ? (imgSrcRaw.startsWith('http') ? imgSrcRaw : `https://feverup.com${imgSrcRaw}`) : null;
+
       // Try to find price
-      const priceText = $el.find('[class*="price"]').first().text().trim();
+      const priceText = cleanText($el.find('[class*="price"], [data-test*="price"]').first().text());
       const price = extractPrice(priceText);
-      
+
       // Try to find category/tags
-      const category = $el.find('[class*="category"], [class*="tag"]').first().text().trim();
-      
+      const category = cleanText($el.find('[class*="category"], [class*="tag"], [data-test*="category"]').first().text());
+
+      const locationText = extractLocationFromCard($el, linkElement);
+      const teaserDescription = truncateText(
+        $el.find('[class*="description"], [class*="subtitle"], p').first().text(),
+        DESCRIPTION_MAX_LENGTH
+      );
+
       // Only add if we have at least a title
-      if (title && title.length > 3 && !title.toLowerCase().includes('fever')) {
+      if (title && title.length > 3 && link && !title.toLowerCase().includes('fever')) {
         events.push({
           title: title,
-          url: link ? (link.startsWith('http') ? link : `https://feverup.com${link}`) : null,
+          url: link,
           price_from: price,
           free: price === 0,
           category: category || 'other',
           image_url: imgSrc,
           source: 'Fever',
-          description: null, // Will be populated if we click into the event
+          description: teaserDescription || null,
+          location: locationText || null,
+          address: null,
           suitable_for_kids: inferKidFriendly(title, category)
         });
       }
     });
-    
+
     // Method 2: Try JSON-LD structured data if available
     const jsonLdScripts = $('script[type="application/ld+json"]');
     jsonLdScripts.each((index, element) => {
@@ -135,16 +154,20 @@ export async function scrapeFeverEvents(location, options = {}) {
           const eventData = Array.isArray(jsonData) ? jsonData : [jsonData];
           eventData.forEach(event => {
             if (event.name && events.length < 50) {
+              const locationInfo = normalizeLocationData(event.location);
+              const priceFromOffers = extractPriceFromOffers(event.offers);
               events.push({
                 title: event.name,
                 url: event.url || null,
-                price_from: event.offers?.price ? parseFloat(event.offers.price) : null,
-                free: event.offers?.price === 0 || event.isAccessibleForFree === true,
+                price_from: priceFromOffers,
+                free: priceFromOffers === 0 || event.isAccessibleForFree === true,
                 category: event.eventAttendanceMode || 'other',
-                description: event.description?.substring(0, 200),
+                description: truncateText(event.description, DESCRIPTION_MAX_LENGTH),
                 start_date: event.startDate,
                 end_date: event.endDate,
-                location: event.location?.name,
+                location: locationInfo.name || null,
+                address: locationInfo.address || null,
+                image_url: Array.isArray(event.image) ? event.image[0] : event.image,
                 source: 'Fever',
                 suitable_for_kids: inferKidFriendly(event.name, event.description)
               });
@@ -155,24 +178,21 @@ export async function scrapeFeverEvents(location, options = {}) {
         // Skip invalid JSON
       }
     });
-    
+
+    // Deduplicate and merge event data
+    const mergedEvents = mergeEvents(events);
+
+    // Optionally enrich with event detail pages for missing info
+    if (!options.disableDetailFetch) {
+      await enrichEventDetails(mergedEvents, options);
+    }
+
     const duration = performance.now() - startTime;
     console.log(`✅ [Fever] Scraped ${events.length} events in ${duration.toFixed(2)}ms`);
-    
-    // Deduplicate by title
-    const uniqueEvents = [];
-    const seenTitles = new Set();
-    
-    for (const event of events) {
-      if (!seenTitles.has(event.title)) {
-        seenTitles.add(event.title);
-        uniqueEvents.push(event);
-      }
-    }
-    
-    console.log(`📊 [Fever] Returning ${uniqueEvents.length} unique events`);
-    return uniqueEvents;
-    
+
+    console.log(`📊 [Fever] Returning ${mergedEvents.length} unique events`);
+    return mergedEvents;
+
   } catch (error) {
     const duration = performance.now() - startTime;
     console.error(`❌ [Fever] Scraping error (${duration.toFixed(2)}ms):`, error.message);
@@ -232,6 +252,342 @@ function inferKidFriendly(title, description = '') {
   return null;
 }
 
+function cleanText(value) {
+  if (!value) return '';
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function truncateText(value, maxLength = DESCRIPTION_MAX_LENGTH) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const text = cleanText(value);
+  if (!text) {
+    return null;
+  }
+
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, Math.max(0, maxLength - 1))}…`;
+}
+
+function extractLocationFromCard($el, linkElement) {
+  const selectors = [
+    '[class*="location"]',
+    '[class*="venue"]',
+    '[data-test*="location"]',
+    '[data-testid*="location"]',
+    '[data-qa*="location"]'
+  ];
+
+  for (const selector of selectors) {
+    const text = cleanText($el.find(selector).first().text());
+    if (text) {
+      return text;
+    }
+  }
+
+  const attrCandidates = [
+    'data-location',
+    'data-venue',
+    'data-analytics-location',
+    'data-analytics-venue',
+    'data-place'
+  ];
+
+  for (const attr of attrCandidates) {
+    const value = cleanText($el.attr(attr) || linkElement?.attr(attr));
+    if (value) {
+      return value;
+    }
+  }
+
+  return '';
+}
+
+function mergeEvents(events) {
+  const result = [];
+  const seen = new Map();
+
+  for (const event of events) {
+    if (!event || !event.title) continue;
+
+    const dedupeKey = (event.url ? event.url.toLowerCase() : event.title.toLowerCase());
+    if (!seen.has(dedupeKey)) {
+      seen.set(dedupeKey, { ...event });
+      result.push(seen.get(dedupeKey));
+    } else {
+      const existing = seen.get(dedupeKey);
+      mergeEventData(existing, event);
+    }
+  }
+
+  return result;
+}
+
+function mergeEventData(target, source) {
+  for (const [key, value] of Object.entries(source)) {
+    if (value === undefined || value === null) continue;
+    if (typeof value === 'string' && value.trim() === '') continue;
+
+    const incomingValue = key === 'description'
+      ? truncateText(value, DESCRIPTION_MAX_LENGTH)
+      : value;
+
+    if (incomingValue === null || incomingValue === undefined) continue;
+
+    const currentValue = target[key];
+    const isCurrentEmpty = currentValue === undefined || currentValue === null ||
+      (typeof currentValue === 'string' && currentValue.trim() === '') ||
+      (Array.isArray(currentValue) && currentValue.length === 0);
+
+    if (isCurrentEmpty) {
+      target[key] = incomingValue;
+    }
+  }
+  return target;
+}
+
+function normalizeLocationData(locationData) {
+  if (!locationData) {
+    return {};
+  }
+
+  if (Array.isArray(locationData)) {
+    for (const entry of locationData) {
+      const normalized = normalizeLocationData(entry);
+      if (normalized.name || normalized.address) {
+        return normalized;
+      }
+    }
+    return {};
+  }
+
+  if (typeof locationData === 'string') {
+    return { name: cleanText(locationData) };
+  }
+
+  const name = cleanText(locationData.name || locationData['@name']);
+  let address = null;
+  const addressData = locationData.address;
+
+  if (typeof addressData === 'string') {
+    address = cleanText(addressData);
+  } else if (addressData && typeof addressData === 'object') {
+    const parts = [
+      addressData.streetAddress,
+      addressData.addressLocality,
+      addressData.addressRegion,
+      addressData.postalCode,
+      addressData.addressCountry
+    ].map(cleanText).filter(Boolean);
+    if (parts.length > 0) {
+      address = parts.join(', ');
+    }
+  }
+
+  return {
+    name: name || null,
+    address: address || null
+  };
+}
+
+function extractPriceFromOffers(offers) {
+  if (!offers) {
+    return null;
+  }
+
+  const offerArray = Array.isArray(offers) ? offers : [offers];
+  for (const offer of offerArray) {
+    if (!offer) continue;
+    if (offer.price !== undefined) {
+      const price = parseFloat(offer.price);
+      if (!Number.isNaN(price)) {
+        return price;
+      }
+    }
+
+    if (offer.priceSpecification?.price !== undefined) {
+      const price = parseFloat(offer.priceSpecification.price);
+      if (!Number.isNaN(price)) {
+        return price;
+      }
+    }
+  }
+
+  return null;
+}
+
+async function enrichEventDetails(events, options = {}) {
+  const {
+    maxDetailRequests = 6,
+    detailConcurrency = 2
+  } = options;
+
+  if (!Array.isArray(events) || events.length === 0 || maxDetailRequests <= 0) {
+    return;
+  }
+
+  const eventsNeedingDetails = events
+    .filter(event => event.url && event.url.includes('feverup.com'))
+    .filter(event => !event.location || !event.description || !event.start_date || !event.end_date)
+    .slice(0, maxDetailRequests);
+
+  if (eventsNeedingDetails.length === 0) {
+    return;
+  }
+
+  console.log(`🔍 [Fever] Enriching ${eventsNeedingDetails.length} events with detail pages...`);
+
+  let currentIndex = 0;
+
+  const worker = async () => {
+    while (currentIndex < eventsNeedingDetails.length) {
+      const index = currentIndex++;
+      const event = eventsNeedingDetails[index];
+
+      try {
+        const details = await fetchEventDetails(event.url);
+
+        if (details.description) {
+          event.description = details.description;
+        }
+
+        if (details.location) {
+          event.location = details.location;
+        }
+
+        if (details.address) {
+          event.address = details.address;
+        }
+
+        if (details.start_date) {
+          event.start_date = details.start_date;
+        }
+
+        if (details.end_date) {
+          event.end_date = details.end_date;
+        }
+
+        if (details.price_from !== undefined && details.price_from !== null) {
+          event.price_from = details.price_from;
+          event.free = details.price_from === 0;
+        }
+
+        if (details.image_url && !event.image_url) {
+          event.image_url = details.image_url;
+        }
+      } catch (err) {
+        console.log(`⚠️ [Fever] Detail fetch failed for ${event.url}:`, err.message);
+      }
+    }
+  };
+
+  const workers = Array.from({ length: Math.min(detailConcurrency, eventsNeedingDetails.length) }, () => worker());
+  await Promise.all(workers);
+}
+
+async function fetchEventDetails(url) {
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9'
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  const html = await response.text();
+  const $ = cheerio.load(html);
+
+  const details = {};
+
+  const jsonLdData = extractJsonLdData($);
+  for (const data of jsonLdData) {
+    if (!data || typeof data !== 'object') continue;
+
+    const type = Array.isArray(data['@type']) ? data['@type'] : [data['@type']];
+    if (type.includes('Event') || type.includes('EventSeries')) {
+      if (!details.title && data.name) {
+        details.title = cleanText(data.name);
+      }
+
+      if (!details.description && data.description) {
+        details.description = truncateText(data.description, DESCRIPTION_MAX_LENGTH);
+      }
+
+      if (!details.start_date && data.startDate) {
+        details.start_date = data.startDate;
+      }
+
+      if (!details.end_date && data.endDate) {
+        details.end_date = data.endDate;
+      }
+
+      if (!details.image_url && data.image) {
+        details.image_url = Array.isArray(data.image) ? data.image[0] : data.image;
+      }
+
+      const locationInfo = normalizeLocationData(data.location);
+      if (locationInfo.name && !details.location) {
+        details.location = locationInfo.name;
+      }
+      if (locationInfo.address && !details.address) {
+        details.address = locationInfo.address;
+      }
+
+      if (details.price_from == null) {
+        const priceFromOffers = extractPriceFromOffers(data.offers);
+        if (priceFromOffers !== null) {
+          details.price_from = priceFromOffers;
+        }
+      }
+    }
+  }
+
+  if (!details.description) {
+    const metaDescription = $('meta[name="description"]').attr('content');
+    if (metaDescription) {
+      details.description = truncateText(metaDescription, DESCRIPTION_MAX_LENGTH);
+    }
+  }
+
+  if (!details.location) {
+    const fallbackLocation = cleanText($("[class*='location'], [data-test*='location']").first().text());
+    if (fallbackLocation) {
+      details.location = fallbackLocation;
+    }
+  }
+
+  return details;
+}
+
+function extractJsonLdData($) {
+  const data = [];
+  $('script[type="application/ld+json"]').each((_, element) => {
+    const jsonText = $(element).contents().text();
+    if (!jsonText) return;
+
+    try {
+      const parsed = JSON.parse(jsonText);
+      if (Array.isArray(parsed)) {
+        data.push(...parsed);
+      } else {
+        data.push(parsed);
+      }
+    } catch (err) {
+      // Ignore malformed JSON blocks
+    }
+  });
+  return data;
+}
+
 /**
  * Format events for AI consumption
  */
@@ -247,8 +603,12 @@ export function formatEventsForAI(events, maxEvents = 30) {
     category: event.category || 'other',
     price_from: event.price_from,
     free: event.free,
-    description: event.description || `Event available in ${event.source}`,
+    description: truncateText(event.description, DESCRIPTION_MAX_LENGTH) ||
+      (event.source ? `Event available on ${event.source}` : null),
     url: event.url,
+    location: event.location || null,
+    address: event.address || null,
+    image_url: event.image_url || null,
     suitable_for_kids: event.suitable_for_kids,
     start_date: event.start_date || null,
     end_date: event.end_date || null
