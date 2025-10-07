@@ -88,8 +88,9 @@ class AIProviderFactory {
       throw new Error('Gemini API key not provided');
     }
     const genAI = new GoogleGenerativeAI(apiKey);
+    const geminiModel = apiKeys.gemini_model || process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
     return genAI.getGenerativeModel({ 
-      model: 'gemini-1.5-flash',
+      model: geminiModel,
       generationConfig: {
         temperature: 0.2, // Optimized for deterministic JSON output
         topP: 0.9,
@@ -212,13 +213,14 @@ let openAI = null;
 function initializeAIProviders() {
   // Initialize Gemini
   const geminiKey = apiKeys.gemini_api_key || process.env.GEMINI_API_KEY || '';
+  const geminiModel = apiKeys.gemini_model || process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
   if (geminiKey && (geminiKey !== currentGeminiKey || !model)) {
     currentGeminiKey = geminiKey;
     genAI = new GoogleGenerativeAI(currentGeminiKey);
     model = genAI.getGenerativeModel({ 
-      model: 'gemini-2.5-flash',
+      model: geminiModel,
       generationConfig: {
-        temperature: 0.1, // Low for structured output, higher than holiday data
+        temperature: 0.5, // Low for structured output, higher than holiday data
         topP: 0.9,
         candidateCount: 1
       }
@@ -343,6 +345,7 @@ let ENCRYPTION_KEY = null;
 // API Key Storage
 let apiKeys = {
   gemini_api_key: '',
+  gemini_model: 'gemini-2.5-flash-lite', // Gemini model to use
   openrouter_api_key: '',
   together_api_key: '',
   ai_provider: 'gemini', // 'gemini', 'openrouter', or 'together'
@@ -2258,8 +2261,9 @@ async function fetchHolidaysWithGemini(location, date) {
     // Initialize Gemini for holiday fetching
     console.log('Initializing Gemini for holiday fetching...');
     const tempGenAI = new GoogleGenerativeAI(geminiKey);
+    const geminiModel = apiKeys.gemini_model || process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
     const tempModel = tempGenAI.getGenerativeModel({ 
-      model: 'gemini-2.5-flash',
+      model: geminiModel,
       generationConfig: {
         temperature: 0.0, // Maximum determinism for factual holiday data
         topP: 0.8,
@@ -2888,6 +2892,7 @@ app.get('/api/settings', (req, res) => {
       openwebninja_configured: !!apiKeys.openwebninja_api_key,
       ticketmaster_configured: !!apiKeys.ticketmaster_api_key,
       ai_provider: apiKeys.ai_provider || 'gemini',
+      gemini_model: apiKeys.gemini_model || 'gemini-2.5-flash-lite',
       openrouter_model: apiKeys.openrouter_model || 'deepseek/deepseek-chat-v3.1:free',
       together_model: apiKeys.together_model || 'meta-llama/Llama-3.2-3B-Instruct-Turbo',
       enable_gemini_holidays: !!apiKeys.enable_gemini_holidays,
@@ -3897,7 +3902,7 @@ function getActiveModelName() {
   } else if (provider === 'together') {
     return `together-${apiKeys.together_model || 'meta-llama/Llama-3.2-3B-Instruct-Turbo'}`;
   }
-  return 'gemini-2.5-flash';
+  return apiKeys.gemini_model || process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
 }
 
 
