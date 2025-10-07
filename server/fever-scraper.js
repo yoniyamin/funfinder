@@ -5,6 +5,30 @@
 
 import * as cheerio from 'cheerio';
 
+const DESCRIPTION_MAX_LENGTH = 360;
+
+function cleanText(value) {
+  if (!value) return '';
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+export function truncateText(value, maxLength = DESCRIPTION_MAX_LENGTH) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const text = cleanText(value);
+  if (!text) {
+    return null;
+  }
+
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, Math.max(0, maxLength - 1))}…`;
+}
+
 // City slug mapping for Fever URLs
 const FEVER_CITY_SLUGS = {
   'madrid': { slug: 'madrid', lang: 'es', country: 'es' },
