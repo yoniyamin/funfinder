@@ -27,6 +27,8 @@ const FEVER_CITY_SLUGS = {
   'munich': { slug: 'munich', lang: 'en', country: 'de' }
 };
 
+const DESCRIPTION_MAX_LENGTH = 360;
+
 /**
  * Normalize location name for Fever lookup
  */
@@ -577,7 +579,8 @@ export function formatEventsForAI(events, maxEvents = 30) {
     category: event.category || 'other',
     price_from: event.price_from,
     free: event.free,
-    description: event.description || `Event available in ${event.source}`,
+    description: truncateText(event.description, DESCRIPTION_MAX_LENGTH) ||
+      (event.source ? `Event available on ${event.source}` : null),
     url: event.url,
     location: event.location || null,
     address: event.address || null,
