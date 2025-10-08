@@ -30,14 +30,15 @@ export function truncateText(value, maxLength = DESCRIPTION_MAX_LENGTH) {
 }
 
 // City slug mapping for Fever URLs
+// Note: Using 'en' for all cities to ensure English descriptions in the UI
 const FEVER_CITY_SLUGS = {
-  'madrid': { slug: 'madrid', lang: 'es', country: 'es' },
-  'barcelona': { slug: 'barcelona', lang: 'es', country: 'es' },
-  'valencia': { slug: 'valencia', lang: 'es', country: 'es' },
-  'sevilla': { slug: 'sevilla', lang: 'es', country: 'es' },
-  'bilbao': { slug: 'bilbao', lang: 'es', country: 'es' },
+  'madrid': { slug: 'madrid', lang: 'en', country: 'es' },
+  'barcelona': { slug: 'barcelona', lang: 'en', country: 'es' },
+  'valencia': { slug: 'valencia', lang: 'en', country: 'es' },
+  'sevilla': { slug: 'sevilla', lang: 'en', country: 'es' },
+  'bilbao': { slug: 'bilbao', lang: 'en', country: 'es' },
   'london': { slug: 'london', lang: 'en', country: 'uk' },
-  'paris': { slug: 'paris', lang: 'fr', country: 'fr' },
+  'paris': { slug: 'paris', lang: 'en', country: 'fr' },
   'new york': { slug: 'new-york', lang: 'en', country: 'us' },
   'los angeles': { slug: 'los-angeles', lang: 'en', country: 'us' },
   'miami': { slug: 'miami', lang: 'en', country: 'us' },
@@ -50,8 +51,6 @@ const FEVER_CITY_SLUGS = {
   'berlin': { slug: 'berlin', lang: 'en', country: 'de' },
   'munich': { slug: 'munich', lang: 'en', country: 'de' }
 };
-
-const DESCRIPTION_MAX_LENGTH = 360;
 
 /**
  * Normalize location name for Fever lookup
@@ -273,11 +272,6 @@ function inferKidFriendly(title, description = '') {
   
   // Default to potentially suitable (let AI decide)
   return null;
-}
-
-function cleanText(value) {
-  if (!value) return '';
-  return value.replace(/\s+/g, ' ').trim();
 }
 
 function extractLocationFromCard($el, linkElement) {
@@ -611,7 +605,8 @@ export function formatEventsForAI(events, maxEvents = 30) {
     image_url: event.image_url || null,
     suitable_for_kids: event.suitable_for_kids,
     start_date: event.start_date || null,
-    end_date: event.end_date || null
+    end_date: event.end_date || null,
+    source: event.source || null
   }));
 }
 

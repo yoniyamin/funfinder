@@ -196,7 +196,8 @@ function getActivityResponseSchema() {
             evidence: {
               type: "array",
               items: { type: "string" }
-            }
+            },
+            source: { type: ["string", "null"] }
           },
           required: ["title", "category", "description", "suitable_ages", "duration_hours", "weather_fit", "evidence"]
         },
@@ -1339,7 +1340,8 @@ const JSON_SCHEMA = {
     free: 'boolean|optional',
     weather_fit: 'good|ok|bad',
     notes: 'string|optional',
-    evidence: ['string[]|optional']
+    evidence: ['string[]|optional'],
+    source: 'string|optional'
   } ],
   discovered_holidays: [ {
     name: 'string',
@@ -1349,55 +1351,65 @@ const JSON_SCHEMA = {
   } ]
 };
 
-function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActivities = null, holidayFestivalInfo = null, realEvents = null){
-  const activityCount = maxActivities || apiKeys.max_activities || 20;
+function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActivities = null, holidayFestivalInfo = null, feverEvents = null, aiGeneratedCount = null){
+  const totalActivityCount = maxActivities || apiKeys.max_activities || 20;
   
   // Detect if this is a Llama model to provide specific instructions
   const currentModel = getActiveModelName();
   const isLlamaModel = currentModel && currentModel.includes('llama');
   
-  // Change approach based on whether we have real events
-  const hasRealEvents = realEvents && realEvents.length > 0;
+  // Determine counts based on whether we have Fever events
+  const hasFeverEvents = feverEvents && feverEvents.length > 0;
+  const feverCount = hasFeverEvents ? feverEvents.length : 0;
+  const aiCount = aiGeneratedCount !== null ? aiGeneratedCount : totalActivityCount;
   
   // Get kids ages safely
   const kidsAges = ctx.kids_ages || ctx.kidsAges || [];
   const agesList = kidsAges.length > 0 ? kidsAges.join(', ') + ' years old' : 'all ages';
   
-  const basePrompt = hasRealEvents ? [
+  const basePrompt = hasFeverEvents ? [
     `You are an intelligent event curator and family activities advisor.`,
     '',
-    `TASK: Review the ${realEvents.length} real events/activities listed below and SELECT the ${activityCount} BEST ones that match the search criteria.`,
+    `TASK: Provide ${totalActivityCount} total activities (${feverCount} from curated events + ${aiCount} generated).`,
     '',
-    'SELECTION CRITERIA (ALL MUST BE SATISFIED):',
-    `✓ Age Appropriateness: Activities MUST be suitable for: ${agesList}`,
-    `✓ Duration Match: Activities should fit within ${ctx.duration_hours} hours`,
-    '✓ Weather Suitability: Consider weather conditions and mark indoor/outdoor appropriateness',
-    '✓ Date Relevance: Prefer events happening on or around the target date',
-    '✓ Family-Friendly: Filter out adult-only content (bars, nightclubs, 18+ events)',
+    `The ${feverCount} events below have been pre-filtered for age-appropriateness and date relevance.`,
+    `You should use ALL of them, then add ${aiCount} more activities from your knowledge.`,
     '',
-    'ENRICHMENT REQUIREMENTS:',
-    '- Add specific age recommendations (e.g., "Ages 5-12") based on activity type',
-    '- Set accurate weather_fit: good (indoor/weather-proof), ok (mixed), bad (outdoor-dependent)',
-    '- Estimate duration_hours if not specified',
-    '- Preserve original booking URLs from the events',
-    '- Add helpful notes about age suitability or special considerations',
+    'FOR THE PRE-FILTERED EVENTS:',
+    '✓ Use all events provided below',
+    '✓ 🚨 CRITICAL: Copy the "source" field exactly from each event (e.g., source: "Fever")',
+    '✓ 🚨 CRITICAL: Copy the event "url" field to "booking_url" in your response',
+    '✓ Translate any non-English content to English',
+    '✓ Add age recommendations if missing (e.g., "Ages 3-10")',
+    '✓ Set weather_fit based on indoor/outdoor nature',
+    '✓ Estimate duration_hours if not specified',
+    '',
+    `FOR AI-GENERATED ACTIVITIES (${aiCount} activities):`,
+    `✓ Generate ${aiCount} additional activities from your knowledge of ${ctx.location}`,
+    `✓ Tailor to ages: ${agesList}`,
+    `✓ Match duration window: ${ctx.duration_hours} hours`,
+    '✓ Consider weather conditions',
+    '✓ Set source to null for activities you generate',
+    '✓ Include booking URLs when possible',
     '',
     'HARD RULES:',
-    '- You MUST select from the provided events list below - do NOT invent new activities',
-    '- If an event lacks clear age info, make an educated assessment based on the title/description',
-    '- Exclude events clearly not suitable for children (adult entertainment, bars, etc.)',
-    '- Maintain original event URLs in the booking_url field',
+    '✓ ALL content must be in English',
+    '✓ Exclude adult-only venues (bars, nightclubs, 18+ events)',
+    '✓ Consider public holidays and festivals',
+    '✓ Set accurate weather_fit: good (indoor/all-weather), ok (mixed), bad (outdoor-dependent)',
     ''
   ] : [
-    `You are a local family activities planner. Using the provided context JSON, suggest ${activityCount} kid-friendly activities.`,
+    `You are a local family activities planner. Using the provided context JSON, suggest ${totalActivityCount} kid-friendly activities.`,
     'HARD RULES:',
     '- Tailor to the exact city and date.',
     '- Respect the duration window.',
-    '- Activities must fit ALL provided ages.',
+    `- Activities must be suitable for: ${agesList}`,
     '- Consider weather; set weather_fit to good/ok/bad.',
     '- Prefer options relevant to public holidays or nearby festivals when applicable.',
     '- Consider if attractions might be closed or have special hours on public holidays.',
     '- IMPORTANT: When possible, include official website links or booking URLs in the booking_url field for attractions, venues, or activities.',
+    '- ALL content (titles, descriptions) must be in English.',
+    '- Set source to null for all activities.',
     ''
   ];
 
@@ -1418,7 +1430,8 @@ function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActiviti
       '⚠️ NULLS: Use null (not "null") for missing lat/lon/address/booking_url/notes',
       '⚠️ NO HOLIDAYS: Do NOT include discovered_holidays field to prevent JSON errors',
       '⚠️ COMPLETE: Always finish with proper closing brackets: ]}',
-      '⚠️ EXAMPLE ACTIVITY: {"title":"Sample Activity","category":"park","description":"A sample description","suitable_ages":"All ages","duration_hours":2,"address":"123 Main St","lat":41.7853,"lon":2.2749,"booking_url":null,"free":true,"weather_fit":"good","notes":null,"evidence":[]}',
+      '⚠️ EXAMPLE ACTIVITY FROM EVENT: {"title":"Sample Event","category":"show","description":"A sample event description","suitable_ages":"Ages 6+","duration_hours":1.5,"address":"Event Venue, City","booking_url":"https://feverup.com/event-url","free":false,"weather_fit":"good","notes":null,"evidence":[],"source":"Fever"}',
+      '⚠️ EXAMPLE AI-GENERATED: {"title":"Sample Activity","category":"park","description":"A sample description","suitable_ages":"All ages","duration_hours":2,"address":"123 Main St","booking_url":null,"free":true,"weather_fit":"good","notes":null,"evidence":[],"source":null}',
       ''
     );
   } else {
@@ -1478,17 +1491,19 @@ function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActiviti
     );
   }
 
-  // Add real events if available
-  if (hasRealEvents) {
+  // Add pre-filtered Fever events if available
+  if (hasFeverEvents) {
     basePrompt.push(
       '═══════════════════════════════════════════════════════════',
-      `AVAILABLE EVENTS (${realEvents.length} total - SELECT ${activityCount} BEST matches):`,
+      `PRE-FILTERED EVENTS (${feverCount} events - USE ALL OF THEM):`,
       '═══════════════════════════════════════════════════════════',
       '',
-      JSON.stringify(realEvents, null, 2),
+      JSON.stringify(feverEvents, null, 2),
       '',
       '═══════════════════════════════════════════════════════════',
-      'END OF EVENTS LIST - Now select and enrich the best matches',
+      `END OF EVENTS LIST`,
+      `🚨 USE ALL ${feverCount} events above (copy their "source" field!)`,
+      `Then generate ${aiCount} more activities from your knowledge.`,
       '═══════════════════════════════════════════════════════════',
       ''
     );
@@ -3800,14 +3815,75 @@ async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivitie
     console.log('Web search failed, continuing without web insights:', error.message);
   }
 
-  // 🎪 NEW: Fetch real events from Fever for better recommendations
-  let realEvents = null;
+  // 🎪 Fetch and filter real events from Fever for better recommendations
+  let feverEventsForAI = null;
+  let aiGeneratedCount = maxActivities;
+  
   try {
     console.log('🎪 Fetching real events from Fever...');
     const feverEvents = await getFeverEventsWithCache(ctx.location, feverCache);
+    
     if (feverEvents && feverEvents.length > 0) {
-      realEvents = formatEventsForAI(feverEvents, 30); // Limit to 30 events to avoid token limits
-      console.log(`✅ Loaded ${realEvents.length} real events from Fever for AI filtering`);
+      // Format all events first
+      const allFormattedEvents = formatEventsForAI(feverEvents, 100);
+      
+      // Filter events by age-appropriateness and date relevance
+      const kidsAges = ctx.kids_ages || ctx.kidsAges || ctx.ages || [];
+      const targetDate = new Date(ctx.date);
+      
+      const relevantEvents = allFormattedEvents.filter(event => {
+        // Only filter out explicitly adult-only events
+        if (event.suitable_for_kids === false) {
+          return false;
+        }
+        
+        // If event has specific dates, check relevance (but be lenient)
+        if (event.start_date) {
+          try {
+            const eventStart = new Date(event.start_date);
+            const eventEnd = event.end_date ? new Date(event.end_date) : eventStart;
+            
+            // Use wider date window (30 days before, 60 days after) to catch more events
+            const daysBefore = 30;
+            const daysAfter = 60;
+            const windowStart = new Date(targetDate);
+            windowStart.setDate(windowStart.getDate() - daysBefore);
+            const windowEnd = new Date(targetDate);
+            windowEnd.setDate(windowEnd.getDate() + daysAfter);
+            
+            // Only filter out events that are clearly outside the window
+            if (eventEnd < windowStart || eventStart > windowEnd) {
+              return false;
+            }
+          } catch (err) {
+            // If date parsing fails, include the event anyway
+            console.log(`⚠️ Date parsing error for event: ${event.title}, including anyway`);
+          }
+        }
+        
+        // Include events without dates (ongoing attractions/activities)
+        return true;
+      });
+      
+      console.log(`🔍 Filtered ${allFormattedEvents.length} Fever events to ${relevantEvents.length} age-appropriate and date-relevant events`);
+      if (relevantEvents.length === 0 && allFormattedEvents.length > 0) {
+        console.log(`⚠️ All ${allFormattedEvents.length} events were filtered out - this might indicate overly strict filtering`);
+      }
+      
+      // Calculate split: aim for 50/50, but adjust if not enough Fever events
+      const halfCount = Math.floor(maxActivities / 2);
+      const feverCount = Math.min(halfCount, relevantEvents.length);
+      aiGeneratedCount = maxActivities - feverCount;
+      
+      console.log(`📊 Split calculation: maxActivities=${maxActivities}, halfCount=${halfCount}, relevantEvents.length=${relevantEvents.length}, feverCount=${feverCount}, aiGeneratedCount=${aiGeneratedCount}`);
+      
+      if (feverCount > 0) {
+        // Take the best Fever events (up to our target count)
+        feverEventsForAI = relevantEvents.slice(0, feverCount);
+        console.log(`✅ Selected ${feverCount} Fever events + will generate ${aiGeneratedCount} AI activities`);
+      } else {
+        console.log('ℹ️ No relevant Fever events found (feverCount = 0), AI will generate all recommendations from general knowledge');
+      }
     } else {
       console.log('ℹ️ No Fever events found, AI will generate recommendations from general knowledge');
     }
@@ -3820,7 +3896,7 @@ async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivitie
     throw new Error('Request was cancelled');
   }
 
-  const prompt = buildUserMessage(enrichedCtx, allowedCats, webSearchResults, maxActivities, holidayFestivalInfo, realEvents);
+  const prompt = buildUserMessage(enrichedCtx, allowedCats, webSearchResults, maxActivities, holidayFestivalInfo, feverEventsForAI, aiGeneratedCount);
   
   // Determine which AI provider to use
   const provider = apiKeys.ai_provider || 'gemini';
@@ -3952,6 +4028,15 @@ async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivitie
   
   console.log(`✅ Final result: ${json.activities.length} activities generated by AI`);
   console.log('🔍 Sample activity titles:', json.activities.slice(0, 3).map(a => a.title).join(', '));
+  
+  // Debug: Check how many activities have source field
+  const withSource = json.activities.filter(a => a.source).length;
+  const feverActivities = json.activities.filter(a => a.source === 'Fever').length;
+  console.log(`🎪 Activities with source field: ${withSource} total, ${feverActivities} from Fever`);
+  if (feverActivities > 0) {
+    console.log('🎪 Sample Fever activity:', JSON.stringify(json.activities.find(a => a.source === 'Fever'), null, 2));
+  }
+  
   return json;
 }
 
@@ -4026,7 +4111,7 @@ app.post('/api/activities', async (req, res) => {
   try{
     const ctx = req.body?.ctx;
     const allowed = req.body?.allowedCategories || JSON_SCHEMA.activities[0].category;
-    const maxActivities = req.body?.maxActivities || null;
+    const maxActivities = req.body?.maxActivities || apiKeys.max_activities || 20;
     const bypassCache = req.body?.bypassCache || false;
     
     // Check if request was cancelled before we start
@@ -4829,7 +4914,8 @@ function reconstructLlamaActivities(malformedJSON) {
         free: parseBooleanProperty(activitySegment, 'free', true),
         weather_fit: extractPropertyValue(activitySegment, 'weather_fit', ['good', 'ok', 'bad'], 'good'),
         notes: extractPropertyValue(activitySegment, 'notes', [], '') || null,
-        evidence: []
+        evidence: [],
+        source: extractPropertyValue(activitySegment, 'source', [], '') || null
       };
       
       // Validate activity has essential fields

@@ -39,6 +39,7 @@ export type Activity = {
   weather_fit: 'good'|'ok'|'bad';
   notes?: string;
   evidence?: string[];
+  source?: string;
 };
 
 export type LLMResult = { 

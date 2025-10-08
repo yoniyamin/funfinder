@@ -124,6 +124,15 @@ export const ActivitySchema = z.object({
     .optional()
     .default([])
     .transform(evidence => evidence.filter(e => e.length > 0)),
+  
+  source: z.string()
+    .trim()
+    .nullable()
+    .optional()
+    .transform(src => {
+      if (!src || src === "" || src === "null") return undefined;
+      return src;
+    }),
 });
 
 // Web sources schema

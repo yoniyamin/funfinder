@@ -594,7 +594,19 @@ export default function ResultsPage({
                       <div className="text-2xl flex-shrink-0 mt-1">{getCategoryIcon(a.category)}</div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2 pr-8">
-                          <h3 className="font-semibold text-gray-900 text-base leading-tight">{a.title || 'Untitled activity'}</h3>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-semibold text-gray-900 text-base leading-tight">{a.title || 'Untitled activity'}</h3>
+                            {a.source === 'Fever' && (
+                              <div className="mt-1 inline-flex items-center gap-1.5 bg-gradient-to-r from-purple-50 to-pink-50 text-purple-800 px-2.5 py-1 rounded-full text-[11px] font-semibold border border-purple-200 shadow-sm">
+                                <img 
+                                  src="https://feverup.com/logo/fever-logo-black.svg" 
+                                  alt="Fever" 
+                                  className="h-3 w-auto opacity-80"
+                                />
+                                <span>Live Event</span>
+                              </div>
+                            )}
+                          </div>
                           <div className="flex items-center gap-1 flex-shrink-0">
                             {getFreeIcon(a.free)}
                             <span className="text-lg">{getWeatherIcon(a.weather_fit)}</span>

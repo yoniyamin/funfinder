@@ -124,6 +124,15 @@ const ActivitySchema = z.object({
     .optional()
     .default([])
     .transform(evidence => evidence.filter(e => e.length > 0)),
+  
+  source: z.string()
+    .trim()
+    .nullable()
+    .optional()
+    .transform(src => {
+      if (!src || src === "" || src === "null") return undefined;
+      return src;
+    }),
 });
 
 // Web sources schema
@@ -321,6 +330,12 @@ function repairCommonIssues(rawResponse) {
   // Ensure activities array exists
   if (!repaired.activities || !Array.isArray(repaired.activities)) {
     repaired.activities = [];
+  }
+  
+  // Truncate activities if there are too many (max 30)
+  if (repaired.activities.length > 30) {
+    console.warn(`⚠️ Truncating ${repaired.activities.length} activities to 30`);
+    repaired.activities = repaired.activities.slice(0, 30);
   }
   
   // Repair activities with missing required fields
