@@ -1372,17 +1372,24 @@ function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActiviti
     '',
     `TASK: Provide ${totalActivityCount} total activities (${feverCount} from curated events + ${aiCount} generated).`,
     '',
-    `The ${feverCount} events below have been pre-filtered for age-appropriateness and date relevance.`,
-    `You should use ALL of them, then add ${aiCount} more activities from your knowledge.`,
+    `Below are ${feverEvents.length} candidate events from Fever.com that have been pre-scored for age appropriateness.`,
+    `Review these candidates and SELECT THE BEST ${feverCount} that are most suitable for:`,
+    `- Ages: ${agesList}`,
+    `- Weather: ${ctx.weather.temperature_max_c !== null ? ctx.weather.temperature_max_c + '°C, ' + ctx.weather.precipitation_probability_percent + '% rain chance' : 'unknown'}`,
+    `- Duration: ${ctx.duration_hours} hours available`,
     '',
-    'FOR THE PRE-FILTERED EVENTS:',
-    '✓ Use all events provided below',
-    '✓ 🚨 CRITICAL: Copy the "source" field exactly from each event (e.g., source: "Fever")',
-    '✓ 🚨 CRITICAL: Copy the event "url" field to "booking_url" in your response',
+    'SELECTION CRITERIA:',
+    '✓ Choose events that best match the specific age group (not just "all ages")',
+    '✓ Ensure weather suitability (indoor events for rainy days, etc.)',
+    '✓ Diversify - avoid selecting multiple similar events (e.g., not all concerts)',
+    `✓ Select exactly ${feverCount} events from the candidates below`,
+    '',
+    'FOR SELECTED FEVER EVENTS:',
+    '✓ 🚨 CRITICAL: Copy the "source" field exactly (source: "Fever")',
+    '✓ 🚨 CRITICAL: Copy the "booking_url" field from the event',
     '✓ Translate any non-English content to English',
-    '✓ Add age recommendations if missing (e.g., "Ages 3-10")',
-    '✓ Set weather_fit based on indoor/outdoor nature',
-    '✓ Estimate duration_hours if not specified',
+    '✓ Verify age appropriateness and update suitable_ages if needed',
+    '✓ Set accurate weather_fit based on venue type',
     '',
     `FOR AI-GENERATED ACTIVITIES (${aiCount} activities):`,
     `✓ Generate ${aiCount} additional activities from your knowledge of ${ctx.location}`,
@@ -1491,18 +1498,25 @@ function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActiviti
     );
   }
 
-  // Add pre-filtered Fever events if available
+  // Add candidate Fever events if available
   if (hasFeverEvents) {
     basePrompt.push(
       '═══════════════════════════════════════════════════════════',
-      `PRE-FILTERED EVENTS (${feverCount} events - USE ALL OF THEM):`,
+      `FEVER EVENT CANDIDATES (${feverEvents.length} candidates - SELECT BEST ${feverCount}):`,
       '═══════════════════════════════════════════════════════════',
+      '',
+      'These events have been pre-scored for age appropriateness.',
+      `Review them carefully and select the BEST ${feverCount} that are:`,
+      '- Most suitable for the specified ages',
+      '- Appropriate for the weather conditions',
+      '- Diverse in type (avoid selecting multiple similar events)',
       '',
       JSON.stringify(feverEvents, null, 2),
       '',
       '═══════════════════════════════════════════════════════════',
-      `END OF EVENTS LIST`,
-      `🚨 USE ALL ${feverCount} events above (copy their "source" field!)`,
+      `END OF CANDIDATE EVENTS`,
+      `🚨 SELECT THE BEST ${feverCount} events from the ${feverEvents.length} candidates above`,
+      `🚨 Copy their "source" and "booking_url" fields exactly for selected events`,
       `Then generate ${aiCount} more activities from your knowledge.`,
       '═══════════════════════════════════════════════════════════',
       ''
@@ -1523,8 +1537,17 @@ function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActiviti
 
 function buildUserMessageForDisplay(ctx, allowedCats, maxActivities = null, extraInstructions = '', holidayFestivalInfo = null){
   const activityCount = maxActivities || apiKeys.max_activities || 20;
+  const sixthCount = Math.floor(activityCount / 6);
+  const aiCount = activityCount - sixthCount;
+  
   const basePrompt = [
     `You are a local family activities planner. Using the provided context JSON, suggest ${activityCount} kid-friendly activities.`,
+    '',
+    '🎪 NOTE: In the actual search, real Fever.com events will be fetched and included in the prompt.',
+    `The AI will receive approximately ${sixthCount} pre-filtered live events from Fever,`,
+    `and will be asked to generate ${aiCount} additional activities from its knowledge.`,
+    `The Fever events section is not shown in this preview but will be added automatically.`,
+    '',
     'HARD RULES:',
     '- Tailor to the exact city and date.',
     '- Respect the duration window.',
@@ -3831,6 +3854,84 @@ async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivitie
       const kidsAges = ctx.kids_ages || ctx.kidsAges || ctx.ages || [];
       const targetDate = new Date(ctx.date);
       
+      // Helper function to score age appropriateness
+      const scoreAgeMatch = (event) => {
+        if (!event.suitable_ages || kidsAges.length === 0) return 50; // Default score
+        
+        const ageText = event.suitable_ages.toLowerCase();
+        const youngestKid = Math.min(...kidsAges);
+        const oldestKid = Math.max(...kidsAges);
+        const avgKidAge = kidsAges.reduce((a, b) => a + b, 0) / kidsAges.length;
+        
+        // Check if it's "all ages" - give medium score
+        if (ageText.includes('all ages') || ageText.includes('all age') || ageText.includes('any age')) {
+          return 60;
+        }
+        
+        // Extract age ranges from the text (e.g., "6+", "8-12", "10+")
+        const ageMatches = ageText.match(/(\d+)[\s-]*(?:\+|to|-)[\s-]*(\d+)?/g);
+        
+        if (!ageMatches) {
+          // If no specific age range found but not "all ages", assume it's specific
+          return 70;
+        }
+        
+        // Check if any of the kids' ages fall within the event's age range
+        let bestMatch = 0;
+        for (const match of ageMatches) {
+          const numbers = match.match(/\d+/g).map(n => parseInt(n));
+          
+          if (numbers.length === 1) {
+            // "X+" format - score based on how close X is to our kids' ages
+            const minAge = numbers[0];
+            
+            // Only score if kids meet minimum age
+            if (youngestKid >= minAge) {
+              // Calculate age gap between minimum age and youngest kid
+              const ageGap = youngestKid - minAge;
+              
+              if (ageGap === 0) {
+                // Perfect match: minimum age exactly matches youngest kid
+                bestMatch = Math.max(bestMatch, 100);
+              } else if (ageGap <= 2) {
+                // Very close: within 2 years (e.g., "8+" for 9-12 year olds)
+                bestMatch = Math.max(bestMatch, 95);
+              } else if (ageGap <= 4) {
+                // Acceptable: within 4 years (e.g., "6+" for 9-12 year olds)
+                bestMatch = Math.max(bestMatch, 75);
+              } else {
+                // Too young: gap is large (e.g., "3+" for 9-12 year olds)
+                bestMatch = Math.max(bestMatch, 65);
+              }
+            }
+          } else if (numbers.length === 2) {
+            // "X-Y" format - prefer ranges that closely match our kids' age range
+            const [minAge, maxAge] = numbers;
+            
+            // Check if all kids fit within this range
+            const allKidsFit = kidsAges.every(age => age >= minAge && age <= maxAge);
+            
+            if (allKidsFit) {
+              // Perfect match: all kids within the specified range
+              bestMatch = Math.max(bestMatch, 100);
+            } else {
+              // Check if any kids fit
+              const anyKidFits = kidsAges.some(age => age >= minAge && age <= maxAge);
+              
+              if (anyKidFits) {
+                // Partial match: some kids fit
+                bestMatch = Math.max(bestMatch, 85);
+              } else if (avgKidAge >= minAge - 2 && avgKidAge <= maxAge + 2) {
+                // Close match: average kid age is near the range
+                bestMatch = Math.max(bestMatch, 70);
+              }
+            }
+          }
+        }
+        
+        return bestMatch || 50; // Default to 50 if has age info but no match at all
+      };
+      
       const relevantEvents = allFormattedEvents.filter(event => {
         // Only filter out explicitly adult-only events
         if (event.suitable_for_kids === false) {
@@ -3870,17 +3971,39 @@ async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivitie
         console.log(`⚠️ All ${allFormattedEvents.length} events were filtered out - this might indicate overly strict filtering`);
       }
       
-      // Calculate split: aim for 50/50, but adjust if not enough Fever events
-      const halfCount = Math.floor(maxActivities / 2);
-      const feverCount = Math.min(halfCount, relevantEvents.length);
+      // Calculate split: aim for 1/6 from Fever, 5/6 from AI
+      const sixthCount = Math.floor(maxActivities / 6);
+      const feverCount = Math.min(sixthCount, relevantEvents.length);
       aiGeneratedCount = maxActivities - feverCount;
       
-      console.log(`📊 Split calculation: maxActivities=${maxActivities}, halfCount=${halfCount}, relevantEvents.length=${relevantEvents.length}, feverCount=${feverCount}, aiGeneratedCount=${aiGeneratedCount}`);
+      console.log(`📊 Split calculation: maxActivities=${maxActivities}, sixthCount=${sixthCount}, relevantEvents.length=${relevantEvents.length}, feverCount=${feverCount}, aiGeneratedCount=${aiGeneratedCount}`);
       
       if (feverCount > 0) {
-        // Take the best Fever events (up to our target count)
-        feverEventsForAI = relevantEvents.slice(0, feverCount);
-        console.log(`✅ Selected ${feverCount} Fever events + will generate ${aiGeneratedCount} AI activities`);
+        // Score and rank events based on age appropriateness
+        const scoredEvents = relevantEvents.map(event => ({
+          event,
+          ageScore: scoreAgeMatch(event)
+        }));
+        
+        // Sort by age score (higher is better)
+        scoredEvents.sort((a, b) => b.ageScore - a.ageScore);
+        
+        // Send top candidates to AI (2x the needed count, up to 15 max)
+        const candidateCount = Math.min(feverCount * 2, 15);
+        const topCandidates = scoredEvents.slice(0, candidateCount).map(scored => scored.event);
+        
+        // Log candidates being sent to AI
+        console.log(`📊 Sending ${candidateCount} top-scored Fever event candidates to AI (will select best ${feverCount}):`);
+        console.log(`   Kids ages: ${kidsAges.join(', ')}`);
+        scoredEvents.slice(0, candidateCount).forEach((scored, idx) => {
+          const ageInfo = scored.event.suitable_ages || 'All ages';
+          const category = scored.event.category || 'other';
+          console.log(`  ${idx + 1}. [Score: ${scored.ageScore}] ${scored.event.title}`);
+          console.log(`      Ages: ${ageInfo} | Category: ${category}`);
+        });
+        
+        feverEventsForAI = topCandidates;
+        console.log(`✅ Prepared ${candidateCount} Fever candidate events for AI selection (AI will choose best ${feverCount}) + will generate ${aiGeneratedCount} AI activities`);
       } else {
         console.log('ℹ️ No relevant Fever events found (feverCount = 0), AI will generate all recommendations from general knowledge');
       }

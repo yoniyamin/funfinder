@@ -474,6 +474,10 @@ async function enrichEventDetails(events, options = {}) {
         if (details.image_url && !event.image_url) {
           event.image_url = details.image_url;
         }
+
+        if (details.suitable_ages && !event.suitable_ages) {
+          event.suitable_ages = details.suitable_ages;
+        }
       } catch (err) {
         console.log(`⚠️ [Fever] Detail fetch failed for ${event.url}:`, err.message);
       }
@@ -559,6 +563,51 @@ async function fetchEventDetails(url) {
     }
   }
 
+  // Extract age requirement from description section
+  // Look for patterns like "Age requirement: open to all" or "Edad: todas las edades"
+  const descriptionText = $('#plan-description, [data-testid="plan-content-description"]').text();
+  if (descriptionText) {
+    // Try English patterns
+    const ageRequirementMatch = descriptionText.match(/Age requirement:\s*([^\n]+)/i);
+    if (ageRequirementMatch) {
+      const ageText = cleanText(ageRequirementMatch[1]);
+      if (ageText) {
+        details.suitable_ages = ageText;
+      }
+    } else {
+      // Try Spanish patterns
+      const edadMatch = descriptionText.match(/Edad:\s*([^\n]+)/i);
+      if (edadMatch) {
+        const ageText = cleanText(edadMatch[1]);
+        if (ageText) {
+          // Translate common Spanish age terms to English
+          let translatedAge = ageText
+            .replace(/todas las edades/i, 'All ages')
+            .replace(/mayores de (\d+) años/i, 'Ages $1+')
+            .replace(/de (\d+) a (\d+) años/i, 'Ages $1-$2')
+            .replace(/años/i, 'years old');
+          details.suitable_ages = translatedAge;
+        }
+      } else {
+        // Try French patterns
+        const ageMatch = descriptionText.match(/Âge:\s*([^\n]+)|Âge requis:\s*([^\n]+)/i);
+        if (ageMatch) {
+          const ageText = cleanText(ageMatch[1] || ageMatch[2]);
+          if (ageText) {
+            // Translate common French age terms to English
+            let translatedAge = ageText
+              .replace(/tous âges/i, 'All ages')
+              .replace(/ouvert à tous/i, 'All ages')
+              .replace(/à partir de (\d+) ans/i, 'Ages $1+')
+              .replace(/de (\d+) à (\d+) ans/i, 'Ages $1-$2')
+              .replace(/ans/i, 'years old');
+            details.suitable_ages = translatedAge;
+          }
+        }
+      }
+    }
+  }
+
   return details;
 }
 
@@ -604,6 +653,7 @@ export function formatEventsForAI(events, maxEvents = 30) {
     address: event.address || null,
     image_url: event.image_url || null,
     suitable_for_kids: event.suitable_for_kids,
+    suitable_ages: event.suitable_ages || 'All ages', // Default to "All ages" if not specified
     start_date: event.start_date || null,
     end_date: event.end_date || null,
     source: event.source || null

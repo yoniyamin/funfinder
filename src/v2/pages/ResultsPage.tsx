@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import type { Activity, Context } from '../../lib/schema';
 import CacheIndicator, { CacheInfo } from '../components/CacheIndicator';
+import SearchContextBar from '../components/SearchContextBar';
 import { getImageUrl } from '../../config/assets';
 
 interface ResultsPageProps {
@@ -63,14 +64,6 @@ function getWeatherIcon(weather: string): string {
   }
 }
 
-function getDetailedWeatherIcon(temp: number | null, precipitation: number | null): string {
-  if (precipitation !== null && precipitation > 70) return '🌧️';
-  if (precipitation !== null && precipitation > 40) return '⛅';
-  if (temp !== null && temp > 25) return '☀️';
-  if (temp !== null && temp < 10) return '❄️';
-  return '🌤️';
-}
-
 function Chip({ children }: { children: React.ReactNode }) { 
   return <span className="chip">{children}</span>; 
 }
@@ -122,6 +115,7 @@ export default function ResultsPage({
   const [fCat, setFCat] = useState<string>('');
   const [fFree, setFFree] = useState<string>('');
   const [fWeather, setFWeather] = useState<string>('');
+  const [fSource, setFSource] = useState<string>(''); // 'fever', 'ai', or ''
   const [showPrompt, setShowPrompt] = useState<boolean>(false);
   const [prompt, setPrompt] = useState<string>('');
   const [showExclusionManager, setShowExclusionManager] = useState<boolean>(false);
@@ -140,8 +134,10 @@ export default function ResultsPage({
     if (fFree === 'true') list = list.filter(a => a.free === true);
     if (fFree === 'false') list = list.filter(a => a.free === false);
     if (fWeather) list = list.filter(a => a.weather_fit === fWeather);
+    if (fSource === 'fever') list = list.filter(a => a.source === 'Fever');
+    if (fSource === 'ai') list = list.filter(a => !a.source || a.source !== 'Fever');
     return list;
-  }, [activities, fCat, fFree, fWeather]);
+  }, [activities, fCat, fFree, fWeather, fSource]);
 
   const fetchPrompt = async (context: Context) => {
     try {
@@ -189,41 +185,11 @@ export default function ResultsPage({
                 <span className="text-xs text-gray-500">Model: {aiModel}</span>
               )}
               </div>
-              {ctx && (
-              <p className="text-sm text-gray-600">
-                <a
-                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ctx.location)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hover:underline"
-                >
-                  {ctx.location}
-                </a>{' '}
-                • {new Date(ctx.date).toLocaleDateString()}
-              </p>
-            )}
           </div>
         </div>
         
         {/* Quick Navigation */}
         <div className="flex gap-2 mt-3 overflow-x-auto pb-2">
-          <button 
-            onClick={() => {
-              const element = document.getElementById('search-context');
-              if (element) {
-                // Dynamically calculate header height for more accurate positioning
-                const header = document.querySelector('header') || document.querySelector('.sticky');
-                const headerHeight = header ? header.getBoundingClientRect().height + 20 : 140; // 20px extra padding
-                const elementPosition = element.getBoundingClientRect().top;
-                const offsetPosition = elementPosition + window.pageYOffset - headerHeight;
-                window.scrollTo({ top: offsetPosition, behavior: 'smooth' });
-              }
-            }}
-            className="flex items-center gap-1 px-3 py-1 text-xs bg-white/80 hover:bg-white border border-gray-200 rounded-full whitespace-nowrap"
-          >
-            <span>📋</span>
-            Context
-          </button>
           {activities && activities.length > 0 && (
             <button 
               onClick={() => {
@@ -283,190 +249,37 @@ export default function ResultsPage({
       </div>
       )}
 
+      {/* Search Context Bar - Attached below header, hidden in desktop side-by-side mode */}
+      {ctx && !isDesktopSideBySide && (
+        <SearchContextBar 
+          ctx={ctx}
+          extraInstructions={searchParams.extraInstructions}
+          onShowPrompt={() => {
+            setShowPrompt(!showPrompt);
+            if (!showPrompt && !prompt) {
+              fetchPrompt(ctx);
+            }
+          }}
+          showPromptButton={!loading.isLoading}
+          defaultOpen={false}
+        />
+      )}
+
       {/* Content */}
       <main className={`${isDesktopSideBySide ? 'p-4' : 'max-w-5xl mx-auto px-4 py-6 pb-32'} space-y-6`}>
-        {/* Search Context - Hide in desktop side-by-side mode to avoid duplication */}
-        {ctx && !isDesktopSideBySide && (
-          <section id="search-context" className="card p-5 md:p-6 bg-white/95 backdrop-blur-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Search Context</h2>
-              <div className="flex items-center gap-3">
-                {!loading.isLoading && (
-                  <button 
-                    className="btn btn-secondary text-xs" 
-                    onClick={() => {
-                      setShowPrompt(!showPrompt);
-                      if (!showPrompt && !prompt) {
-                        fetchPrompt(ctx);
-                      }
-                    }}
-                  >
-                    {showPrompt ? '🔍 Hide Prompt' : '🔍 View AI Prompt'}
-                  </button>
-                )}
-                <div className="text-sm text-gray-500">
-                  <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ctx.location)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="hover:underline"
-                  >
-                    {ctx.location}
-                  </a>
-                </div>
-              </div>
-            </div>
-            
-            {/* Extra Instructions */}
-            {searchParams.extraInstructions && (
-              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg instructions-context-mobile">
-                <div className="flex items-center gap-2 mb-1">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-yellow-600 flex-shrink-0">
-                    <path d="M14.828 2.828a4 4 0 015.657 0L22 4.343a4 4 0 010 5.657L20.828 11.172 7.172 24.828 1 23l1.828-6.172L16.586 3.414zm0 0L17.657 6.171" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                  <span className="text-sm font-medium text-yellow-800">Special Instructions</span>
-                </div>
-                <p className="text-sm text-yellow-700 break-words">{searchParams.extraInstructions}</p>
-              </div>
-            )}
-            
-            {/* Compact Context Grid */}
-            <div className="space-y-4">
-              {/* Weather Card */}
-              <div className={`p-4 rounded-xl border border-gray-200 text-white relative overflow-hidden ${
-                ctx.weather.temperature_max_c === null && ctx.weather.precipitation_probability_percent === null
-                  ? 'bg-gradient-to-br from-gray-500 via-gray-600 to-gray-700'
-                  : 'bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700'
-              }`}>
-                <div className="absolute top-2 right-2 text-xs opacity-75">
-                  {new Date(ctx.date).toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' })}
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="text-3xl">
-                      {ctx.weather.temperature_max_c === null && ctx.weather.precipitation_probability_percent === null
-                        ? '🌫️' 
-                        : getDetailedWeatherIcon(ctx.weather.temperature_max_c, ctx.weather.precipitation_probability_percent)
-                      }
-                    </div>
-                    <div>
-                      <div className="text-xl font-bold">
-                        {ctx.weather.temperature_max_c ?? '—'}°
-                      </div>
-                      <div className="text-xs opacity-80">
-                        {ctx.weather.temperature_max_c === null && ctx.weather.temperature_min_c === null
-                          ? 'Weather data unavailable'
-                          : `${ctx.weather.temperature_min_c ?? '—'}°~${ctx.weather.temperature_max_c ?? '—'}°`
-                        }
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 text-sm">
-                    <div className="flex items-center gap-1">
-                      <span>💧</span>
-                      <span>{ctx.weather.precipitation_probability_percent ?? '—'}%</span>
-                    </div>
-                    {typeof ctx.weather.wind_speed_max_kmh === 'number' && (
-                      <div className="flex items-center gap-1">
-                        <span>💨</span>
-                        <span>{Math.round(ctx.weather.wind_speed_max_kmh)}km/h</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                {ctx.weather.temperature_max_c === null && ctx.weather.precipitation_probability_percent === null && (
-                  <div className="mt-2 text-xs opacity-80">
-                    Weather forecast unavailable for future dates
-                  </div>
-                )}
-              </div>
-
-              {/* Compact Status Row */}
-              <div className="flex gap-3 text-sm">
-                {/* Holiday Status */}
-                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-gray-200">
-                  <span className="text-lg">{ctx.is_public_holiday ? '🎉' : '📅'}</span>
-                  <span className="text-gray-700">
-                    {ctx.is_public_holiday 
-                      ? (ctx.holidays && ctx.holidays.length > 0 
-                          ? `${ctx.holidays.length} holiday${ctx.holidays.length > 1 ? 's' : ''}`
-                          : 'Public holiday')
-                      : 'No public holiday'}
-                  </span>
-                </div>
-
-                {/* Festival Status */}
-                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-gray-200">
-                  <span className="text-lg">🎪</span>
-                  <span className="text-gray-700">
-                    {ctx.nearby_festivals.length > 0 
-                      ? `${ctx.nearby_festivals.length} festival${ctx.nearby_festivals.length > 1 ? 's' : ''} nearby`
-                      : 'No festivals nearby'
-                    }
-                  </span>
-                </div>
-              </div>
-
-              {/* Holidays Detail (only if there are holidays) */}
-              {ctx.holidays && ctx.holidays.length > 0 && (
-                <div className="space-y-2">
-                  {ctx.holidays.map((holiday, i) => (
-                    <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-yellow-50 border border-yellow-200">
-                      <span className="text-lg">🎉</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-yellow-900 truncate">{holiday.localName}</div>
-                        {holiday.localName !== holiday.name && (
-                          <div className="text-xs text-yellow-700 truncate">{holiday.name}</div>
-                        )}
-                        <div className="text-xs text-yellow-600">
-                          {new Date(holiday.date).toLocaleDateString()}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Festivals Detail (only if there are festivals) */}
-              {ctx.nearby_festivals.length > 0 && (
-                <div className="space-y-2">
-                  {ctx.nearby_festivals.slice(0, 2).map((f, i) => (
-                    <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-white border border-gray-200">
-                      <span className="text-lg">🎪</span>
-                      <div className="flex-1 min-w-0">
-                        {f.url ? (
-                          <a className="text-sm font-medium text-purple-700 hover:text-purple-900 hover:underline block truncate" href={f.url} target="_blank">
-                            {f.name}
-                          </a>
-                        ) : (
-                          <div className="text-sm font-medium text-gray-700 truncate">{f.name}</div>
-                        )}
-                        <div className="flex items-center gap-2 text-xs text-gray-500">
-                          <span>{f.distance_km ?? '—'} km away</span>
-                          {(f.start_date || f.end_date) && (
-                            <span>• {f.start_date ?? '—'}{f.end_date ? ' → ' + f.end_date : ''}</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {ctx.nearby_festivals.length > 2 && (
-                    <div className="text-center text-xs text-purple-600 font-medium">
-                      +{ctx.nearby_festivals.length - 2} more festivals
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </section>
-        )}
 
         {/* AI Prompt */}
         {showPrompt && prompt && !loading.isLoading && (
           <section id="ai-prompt" className="card p-5 md:p-6 bg-white/95 backdrop-blur-sm">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-semibold">AI Prompt</h2>
+              <h2 className="text-lg font-semibold">AI Prompt Preview</h2>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowPrompt(false)}
+                  className="text-xs text-gray-600 hover:text-gray-800 flex items-center gap-1 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors font-medium"
+                >
+                  ✕ Close
+                </button>
                 <button
                   onClick={async () => {
                     try {
@@ -486,7 +299,6 @@ export default function ResultsPage({
                 >
                   {copyStatus === 'copied' ? '✓ Copied' : copyStatus === 'copying' ? '⏳ Copying...' : '📋 Copy'}
                 </button>
-                <span className="text-xs text-gray-500">Tap prompt to copy</span>
               </div>
             </div>
             <div 
@@ -557,13 +369,23 @@ export default function ResultsPage({
                   </select>
                 </div>
                 
+                <div className="flex items-center gap-1">
+                  <span className="text-sm text-gray-600">🎪</span>
+                  <select className="text-xs border border-gray-300 rounded-lg px-2 py-1 bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" value={fSource} onChange={e => setFSource(e.target.value)}>
+                    <option value="">All Sources</option>
+                    <option value="fever">Fever Events Only</option>
+                    <option value="ai">AI Generated Only</option>
+                  </select>
+                </div>
+                
                 {/* Clear filters button */}
-                {(fCat || fFree || fWeather) && (
+                {(fCat || fFree || fWeather || fSource) && (
                   <button
                     onClick={() => {
                       setFCat('');
                       setFFree('');
                       setFWeather('');
+                      setFSource('');
                     }}
                     className="text-xs text-indigo-600 hover:text-indigo-800 underline ml-2"
                   >
@@ -596,16 +418,6 @@ export default function ResultsPage({
                         <div className="flex items-start justify-between gap-2 pr-8">
                           <div className="flex-1 min-w-0">
                             <h3 className="font-semibold text-gray-900 text-base leading-tight">{a.title || 'Untitled activity'}</h3>
-                            {a.source === 'Fever' && (
-                              <div className="mt-1 inline-flex items-center gap-1.5 bg-gradient-to-r from-purple-50 to-pink-50 text-purple-800 px-2.5 py-1 rounded-full text-[11px] font-semibold border border-purple-200 shadow-sm">
-                                <img 
-                                  src="https://feverup.com/logo/fever-logo-black.svg" 
-                                  alt="Fever" 
-                                  className="h-3 w-auto opacity-80"
-                                />
-                                <span>Live Event</span>
-                              </div>
-                            )}
                           </div>
                           <div className="flex items-center gap-1 flex-shrink-0">
                             {getFreeIcon(a.free)}
@@ -630,6 +442,22 @@ export default function ResultsPage({
                       {a.free != null && <Chip>{getFreeIcon(a.free)} {a.free ? 'Free' : 'Paid'}</Chip>}
                       {typeof a.duration_hours === 'number' && <Chip>⏱️ {a.duration_hours}h</Chip>}
                       {a.suitable_ages && <Chip>👶 {a.suitable_ages}</Chip>}
+                      {a.source === 'Fever' && ctx && (
+                        <a
+                          href={`https://feverup.com/en/${encodeURIComponent(ctx.location.split(',')[0].toLowerCase().trim().replace(/\s+/g, '-'))}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 bg-gradient-to-r from-purple-50 to-pink-50 text-purple-800 px-2.5 py-1 rounded-full text-[11px] font-semibold border border-purple-200 shadow-sm hover:shadow-md hover:from-purple-100 hover:to-pink-100 transition-all cursor-pointer"
+                          title="View more events on Fever"
+                        >
+                          <img 
+                            src="https://feverup.com/logo/fever-logo-black.svg" 
+                            alt="Fever" 
+                            className="h-3 w-auto opacity-80"
+                          />
+                          <span>Live Event</span>
+                        </a>
+                      )}
                     </div>
                     
                     <p className="text-sm text-gray-700 leading-relaxed">{a.description || ''}</p>
@@ -675,6 +503,7 @@ export default function ResultsPage({
                     setFCat('');
                     setFFree('');
                     setFWeather('');
+                    setFSource('');
                   }}
                   className="mt-2 text-indigo-600 hover:text-indigo-800 underline text-sm"
                 >
