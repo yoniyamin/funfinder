@@ -133,8 +133,7 @@ export default function SearchContextBar({
             className="flex-shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors"
           >
             {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            <span className="hidden sm:inline">{open ? "Hide" : "Show"}</span>
-            <span className="sm:hidden text-xs">▾</span>
+            
           </button>
         </div>
 
