@@ -104,12 +104,14 @@ export default function SearchPage({
   const [showLocationModal, setShowLocationModal] = useState(false);
   const [locationSuggestions, setLocationSuggestions] = useState<City[]>([]);
   const [locationSearchText, setLocationSearchText] = useState('');
+  const [isLoadingCities, setIsLoadingCities] = useState(false);
   const ageModalRef = useRef<HTMLDivElement>(null);
   const locationDropdownRef = useRef<HTMLDivElement>(null);
   const locationInputRef = useRef<HTMLInputElement>(null);
   const dateModalRef = useRef<HTMLDivElement>(null);
   const historyDropdownRef = useRef<HTMLDivElement>(null);
   const instructionsModalRef = useRef<HTMLDivElement>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleAgeOptionChange = (option: typeof AGE_OPTIONS[0]) => {
     updateSearchParams({ ages: option.ages });
@@ -150,60 +152,76 @@ export default function SearchPage({
     return Array.from(uniqueLocations).slice(0, 10);
   };
 
-  // Load cities from CSV
-  useEffect(() => {
-    const loadCities = async () => {
-      try {
-        const response = await fetch('/world-cities.csv');
-        const csvText = await response.text();
-        const lines = csvText.split('\n');
-        const citiesData: City[] = [];
-        
-        // Skip header row
-        for (let i = 1; i < lines.length; i++) {
-          const line = lines[i].trim();
-          if (line) {
-            const [name, country] = line.split(',');
-            if (name && country) {
-              citiesData.push({ name: name.trim(), country: country.trim() });
-            }
-          }
-        }
-        
-        setCities(citiesData);
-      } catch (error) {
-        console.error('Failed to load cities:', error);
-      }
-    };
+  // Fetch cities from Open-Meteo Geocoding API (replaces CSV)
+  const fetchCitiesFromAPI = async (searchQuery: string) => {
+    if (!searchQuery || searchQuery.length < 2) {
+      setLocationSuggestions([]);
+      return;
+    }
 
-    loadCities();
-  }, []);
+    setIsLoadingCities(true);
+    try {
+      const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
+      url.searchParams.set('name', searchQuery);
+      url.searchParams.set('count', '50');
+      url.searchParams.set('language', 'en');
+      url.searchParams.set('format', 'json');
+
+      const response = await fetch(url.toString());
+      if (!response.ok) {
+        throw new Error('Failed to fetch cities');
+      }
+
+      const data = await response.json();
+      if (data.results && data.results.length > 0) {
+        const citiesData: City[] = data.results.map((result: any) => ({
+          name: result.name,
+          country: result.country || result.admin1 || ''
+        }));
+        setLocationSuggestions(citiesData);
+      } else {
+        setLocationSuggestions([]);
+      }
+    } catch (error) {
+      console.error('Failed to fetch cities from API:', error);
+      setLocationSuggestions([]);
+    } finally {
+      setIsLoadingCities(false);
+    }
+  };
 
   // Open location modal
   const handleLocationModalOpen = () => {
     setLocationSearchText(searchParams.location || '');
     setShowLocationModal(true);
-    if (searchParams.location && searchParams.location.length >= 2) {
-      const filtered = cities.filter(city => 
-        city.name.toLowerCase().includes(searchParams.location.toLowerCase()) ||
-        city.country.toLowerCase().includes(searchParams.location.toLowerCase())
-      ).slice(0, 50);
-      setLocationSuggestions(filtered);
-    }
+    setLocationSuggestions([]);
   };
 
-  // Filter cities in modal
+  // Handle location search with debouncing
   const handleLocationSearch = (value: string) => {
     setLocationSearchText(value);
     
+    // Clear any existing timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
     if (value.length >= 2) {
-      const filtered = cities.filter(city => 
-        city.name.toLowerCase().includes(value.toLowerCase()) ||
-        city.country.toLowerCase().includes(value.toLowerCase())
-      ).slice(0, 50);
-      setLocationSuggestions(filtered);
+      // Debounce API calls by 300ms
+      searchTimeoutRef.current = setTimeout(() => {
+        fetchCitiesFromAPI(value);
+      }, 300);
     } else {
       setLocationSuggestions([]);
+    }
+  };
+
+  // Clear location search
+  const handleClearLocationSearch = () => {
+    setLocationSearchText('');
+    setLocationSuggestions([]);
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
     }
   };
 
@@ -365,12 +383,27 @@ export default function SearchPage({
                       className="location-search-input"
                       autoFocus
                     />
+                    {locationSearchText && (
+                      <button
+                        type="button"
+                        onClick={handleClearLocationSearch}
+                        className="location-search-clear"
+                        title="Clear search"
+                      >
+                        ×
+                      </button>
+                    )}
                   </div>
                 </div>
                 
                 {/* Results */}
                 <div className="location-results">
-                  {locationSuggestions.length > 0 ? (
+                  {isLoadingCities ? (
+                    <div className="location-loading">
+                      <div className="location-loading-spinner"></div>
+                      <span className="text-gray-600 text-sm">Searching cities...</span>
+                    </div>
+                  ) : locationSuggestions.length > 0 ? (
                     locationSuggestions.map((city, index) => (
                       <button
                         key={`${city.name}-${city.country}-${index}`}
@@ -1276,12 +1309,27 @@ export default function SearchPage({
                         className="location-search-input"
                         autoFocus
                       />
+                      {locationSearchText && (
+                        <button
+                          type="button"
+                          onClick={handleClearLocationSearch}
+                          className="location-search-clear"
+                          title="Clear search"
+                        >
+                          ×
+                        </button>
+                      )}
                     </div>
                   </div>
                   
                   {/* Results */}
                   <div className="location-results">
-                    {locationSuggestions.length > 0 ? (
+                    {isLoadingCities ? (
+                      <div className="location-loading">
+                        <div className="location-loading-spinner"></div>
+                        <span className="text-gray-600 text-sm">Searching cities...</span>
+                      </div>
+                    ) : locationSuggestions.length > 0 ? (
                       locationSuggestions.map((city, index) => (
                         <button
                           key={`${city.name}-${city.country}-${index}`}
