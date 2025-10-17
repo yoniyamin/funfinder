@@ -949,7 +949,7 @@ export default function App() {
   console.log('🔥 V2 App rendering, current page:', state.currentPage);
   
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 app-safe-area">
+    <div className={`min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 ${state.currentPage === 'search' ? 'app-safe-area' : ''}`}>
       {/* PWA Install Prompt */}
       <InstallPrompt />
       
@@ -957,7 +957,7 @@ export default function App() {
       {isDesktop && renderDesktopTopNav()}
       
       {/* Main Content */}
-      <main className={isDesktop ? '' : (state.currentPage === 'search' ? 'pb-24 safe-area-content' : 'safe-area-content')}>
+      <main className={isDesktop ? '' : (state.currentPage === 'search' ? 'pb-24' : '')}>
         {isDesktop ? (
           // Desktop Layout: Side-by-side when results are available
           <div className="desktop-layout">

@@ -1,6 +1,6 @@
 {
   "name": "FunFinder - Event & Activity Finder",
-  "short_name": "FunFindAI",
+  "short_name": "FunFinder",
   "description": "Discover fun events, activities, festivals and things to do anywhere in the world",
   "start_url": "/",
   "display": "standalone",

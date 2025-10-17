@@ -1062,6 +1062,11 @@ export default function SearchPage({
     );
   }
 
+  // Detect if running in standalone mode (installed PWA)
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches 
+    || (window.navigator as any).standalone 
+    || document.referrer.includes('android-app://');
+
   // Mobile Layout (Original)
   return (
     <div className="glass-search-page">
@@ -1073,7 +1078,7 @@ export default function SearchPage({
           className="glass-bg-image glass-bg-image-desktop"
         />
         <img
-          src={getImageUrl('BG5')}
+          src={getImageUrl(isStandalone ? 'BG5_FS' : 'BG5')}
           alt="Nature background with kids playing"
           className="glass-bg-image glass-bg-image-mobile"
         />

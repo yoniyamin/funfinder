@@ -7,6 +7,7 @@ on:
       - 'public/*.jpeg'
       - 'public/*.jpg'
       - 'public/*.png'
+      - 'public/*.svg'
       - 'docs/**'
   workflow_dispatch: {}
 
@@ -36,6 +37,7 @@ jobs:
           cp public/*.jpeg docs/assets/ 2>/dev/null || echo "No JPEG files found"
           cp public/*.jpg docs/assets/ 2>/dev/null || echo "No JPG files found"  
           cp public/*.png docs/assets/ 2>/dev/null || echo "No PNG files found"
+          cp public/*.svg docs/assets/ 2>/dev/null || echo "No SVG files found"
           echo "Assets in source directory:"
           ls -la public/
           echo "Assets copied to docs/assets:"

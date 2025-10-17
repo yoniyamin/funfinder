@@ -21,9 +21,31 @@ const useDesktopLayout = () => {
 
 export default function LoadingScreen() {
   const isDesktop = useDesktopLayout();
+  
+  // Detect if running in standalone mode (installed PWA)
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches 
+    || (window.navigator as any).standalone 
+    || document.referrer.includes('android-app://');
 
+  // Simple blue background in standalone mode, full image in browser
+  if (isStandalone) {
+    return (
+      <div className="simple-loading-screen">
+        <div className="loading-screen-animation">
+          <div className="loading-spinner">
+            <div className="spinner-ring" />
+            <div className="spinner-ring" />
+            <div className="spinner-ring" />
+            <div className="loading-progress-center">Loading...</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Regular loading screen with image for browser mode
   return (
-    <div className="glass-search-page">
+    <div className="glass-search-page loading-screen-no-padding">
       <div className="glass-bg-container">
         <img
           src={getImageUrl(isDesktop ? 'FUNFINDER' : 'BGPC')}
@@ -37,8 +59,6 @@ export default function LoadingScreen() {
         />
       </div>
       
-  
-
       {/* Loading Animation */}
       <div className="loading-screen-animation">
         <div className="loading-spinner">

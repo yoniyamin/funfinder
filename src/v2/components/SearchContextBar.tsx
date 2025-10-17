@@ -48,7 +48,7 @@ export default function SearchContextBar({
   const hasWeather = ctx.weather.temperature_max_c !== null || ctx.weather.precipitation_probability_percent !== null;
 
   return (
-    <div className="bg-white/95 backdrop-blur-sm border-b border-gray-200">
+    <div className="bg-white/95 backdrop-blur-sm border-b border-gray-200 search-context-bar">
       <div className="max-w-5xl mx-auto px-4">
         {/* Compact Header */}
         <div className="flex items-center justify-between gap-2 py-2">

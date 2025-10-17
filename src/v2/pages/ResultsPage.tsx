@@ -163,12 +163,12 @@ export default function ResultsPage({
 
   return (
     <div 
-      className={`min-h-screen bg-cover bg-center ${isDesktopSideBySide ? 'desktop-results-bg' : 'bg-fixed'}`}
+      className={`min-h-screen bg-cover bg-center results-page-container ${isDesktopSideBySide ? 'desktop-results-bg' : 'bg-fixed'}`}
       style={{ backgroundImage: isDesktopSideBySide ? `url(${getImageUrl('BG6')})` : `url(${getImageUrl('BG6')})` }}
     >
       {/* Header - Hidden in desktop side-by-side mode */}
       {!isDesktopSideBySide && (
-      <div className="bg-white/95 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-40 px-4 py-4">
+      <div className="bg-white/95 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-40 px-4 py-2 results-page-header">
         <div className="flex items-center gap-4">
           <button
             onClick={backToSearch}

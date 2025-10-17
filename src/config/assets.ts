@@ -18,6 +18,7 @@ export const getAssetUrl = (filename: string): string => {
 // Specific image exports for easy importing
 export const IMAGES = {
   BG5: 'bg5.jpeg',
+  BG5_FS: 'bg5_fs.jpeg',
   BG6: 'bg6.jpeg', 
   BG7: 'bg7.jpeg',
   BGPC: 'bgpc.jpeg',
