@@ -570,6 +570,7 @@ class MongoDataManager {
         date: doc.date,
         duration: doc.duration,
         kidsAges: doc.kidsAges,
+        extraInstructions: doc.extraInstructions || '',
         timestamp: doc.timestamp,
         searchCount: doc.searchCount || 1
       }));
@@ -607,7 +608,7 @@ class MongoDataManager {
   async addToSearchHistory(query) {
     await this.ensureConnection();
     
-    const { location, date, duration_hours, ages } = query;
+    const { location, date, duration_hours, ages, extra_instructions } = query;
     const searchKey = `${location}-${date}-${duration_hours || ''}-${ages?.join(',') || ''}`;
     
     try {
@@ -625,6 +626,7 @@ class MongoDataManager {
         date,
         duration: duration_hours || null,
         kidsAges: ages || [],
+        extraInstructions: extra_instructions || '',
         timestamp: new Date().toISOString(),
         searchCount: 1
       };

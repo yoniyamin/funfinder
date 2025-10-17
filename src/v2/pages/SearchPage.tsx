@@ -9,6 +9,7 @@ interface SearchHistoryEntry {
   date: string;
   duration: number;
   kidsAges: number[];
+  extraInstructions?: string;
   timestamp: string;
   searchCount: number;
 }
@@ -105,6 +106,7 @@ export default function SearchPage({
   const [locationSuggestions, setLocationSuggestions] = useState<City[]>([]);
   const [locationSearchText, setLocationSearchText] = useState('');
   const [isLoadingCities, setIsLoadingCities] = useState(false);
+  const [showInstructionsPreview, setShowInstructionsPreview] = useState(false);
   const ageModalRef = useRef<HTMLDivElement>(null);
   const locationDropdownRef = useRef<HTMLDivElement>(null);
   const locationInputRef = useRef<HTMLInputElement>(null);
@@ -112,6 +114,7 @@ export default function SearchPage({
   const historyDropdownRef = useRef<HTMLDivElement>(null);
   const instructionsModalRef = useRef<HTMLDivElement>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const instructionsPreviewRef = useRef<HTMLDivElement>(null);
 
   const handleAgeOptionChange = (option: typeof AGE_OPTIONS[0]) => {
     updateSearchParams({ ages: option.ages });
@@ -260,6 +263,9 @@ export default function SearchPage({
       if (instructionsModalRef.current && !instructionsModalRef.current.contains(event.target as Node)) {
         setShowInstructionsModal(false);
       }
+      if (instructionsPreviewRef.current && !instructionsPreviewRef.current.contains(event.target as Node)) {
+        setShowInstructionsPreview(false);
+      }
     };
 
     const handleResize = () => {
@@ -269,6 +275,7 @@ export default function SearchPage({
       setShowAgeModal(false);
       setShowHistory(false);
       setShowInstructionsModal(false);
+      setShowInstructionsPreview(false);
     };
 
     document.addEventListener('mousedown', handleClickOutside);
@@ -571,57 +578,60 @@ export default function SearchPage({
               <div className="modal-body">
                 {/* Quick Tags */}
                 <div className="instructions-tags">
-                  <h4 className="instructions-tags-title">Quick Tags</h4>
-                  <div className="instructions-tags-scroll">
-                    {[
-                      '♿ Wheelchair accessible',
-                      '🚇 Near metro/public transport',
-                      '🌳 Outdoor activities preferred',
-                      '🏢 Indoor activities preferred',
-                      '💰 Budget-friendly options',
-                      '🎨 Creative/educational focus',
-                      '🏃‍♂️ High energy activities',
-                      '😴 Calm/quiet activities',
-                      '🍔 Food available on-site',
-                      '🅿️ Parking available'
-                    ].map((tag, index) => (
-                      <button
-                        key={index}
-                        type="button"
-                        onClick={() => {
-                          const tagText = tag.substring(2); // Remove emoji
-                          if (extraInstructions.includes(tagText)) {
-                            // Remove the tag
-                            setExtraInstructions(extraInstructions.replace(tagText, '').replace(/,\s*,/g, ',').replace(/^,\s*/, '').replace(/,\s*$/, ''));
-                          } else {
-                            // Add the tag
-                            setExtraInstructions(extraInstructions + (extraInstructions ? ', ' + tagText : tagText));
-                          }
-                        }}
-                        className={`instructions-tag-scroll ${extraInstructions.includes(tag.substring(2)) ? 'active' : ''}`}
-                      >
-                        {tag}
-                      </button>
-                    ))}
+                  <div className="instructions-tags-scroll-container">
+                    <div className="instructions-tags-scroll">
+                      {[
+                        '♿ Wheelchair accessible',
+                        '🚇 Near metro/public transport',
+                        '🌳 Outdoor activities preferred',
+                        '🏢 Indoor activities preferred',
+                        '💰 Budget-friendly options',
+                        '🎨 Creative/educational focus',
+                        '🏃‍♂️ High energy activities',
+                        '😴 Calm/quiet activities',
+                        '🍔 Food available on-site',
+                        '🅿️ Parking available'
+                      ].map((tag, index) => (
+                        <button
+                          key={index}
+                          type="button"
+                          onClick={() => {
+                            const tagText = tag.substring(2); // Remove emoji
+                            if (extraInstructions.includes(tagText)) {
+                              // Remove the tag
+                              setExtraInstructions(extraInstructions.replace(tagText, '').replace(/,\s*,/g, ',').replace(/^,\s*/, '').replace(/,\s*$/, ''));
+                            } else {
+                              // Add the tag
+                              setExtraInstructions(extraInstructions + (extraInstructions ? ', ' + tagText : tagText));
+                            }
+                          }}
+                          className={`instructions-tag-scroll ${extraInstructions.includes(tag.substring(2)) ? 'active' : ''}`}
+                        >
+                          {tag}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="tags-scroll-indicator">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" className="opacity-50">
+                        <path d="M19 12l-7 7m0 0l-7-7m7 7V4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </div>
                   </div>
                 </div>
                 
                 {/* Instructions Input */}
                 <div className="instructions-input">
-                  <label className="instructions-label">
-                    Instructions
-                  </label>
                   <textarea
                     value={extraInstructions}
                     onChange={(e) => setExtraInstructions(e.target.value)}
-                    placeholder="Click tags above or type your requirements..."
+                    placeholder="Instructions - Click tags above or type your requirements..."
                     className="instructions-input-field"
                     rows={3}
                   />
                 </div>
                 
                 {/* Action Buttons */}
-                <div className="instructions-actions">
+                <div className="instructions-actions-row">
                   <button
                     type="button"
                     onClick={() => {
@@ -1075,14 +1085,20 @@ export default function SearchPage({
         
         {/* Instructions Preview - Top of Screen */}
         {searchParams.extraInstructions && !loading.isLoading && (
-          <div className="instructions-top-preview">
-            <div className="flex items-center gap-2 mb-1">
+          <div 
+            ref={instructionsPreviewRef}
+            className={`instructions-top-preview ${showInstructionsPreview ? 'expanded' : 'collapsed'}`}
+            onClick={() => setShowInstructionsPreview(!showInstructionsPreview)}
+          >
+            <div className="flex items-center gap-2">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-yellow-600 flex-shrink-0">
                 <path d="M14.828 2.828a4 4 0 015.657 0L22 4.343a4 4 0 010 5.657L20.828 11.172 7.172 24.828 1 23l1.828-6.172L16.586 3.414zm0 0L17.657 6.171" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
               <span className="text-sm font-medium text-yellow-800">Special Instructions</span>
             </div>
-            <p className="text-sm text-yellow-700 break-words">{searchParams.extraInstructions}</p>
+            {showInstructionsPreview && (
+              <p className="text-sm text-yellow-700 break-words mt-2 instructions-text-animated">{searchParams.extraInstructions}</p>
+            )}
           </div>
         )}
         
@@ -1106,38 +1122,59 @@ export default function SearchPage({
             {/* Glassmorphism Search Card */}
             <div className="glass-card">
           <div className="glass-stack">
-            {/* Location */}
-            <div className="glass-row">
-              <div className="glass-row-icon">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="#475569"/>
-                </svg>
+            {/* Location and Date - Side by Side */}
+            <div className="glass-row-double">
+              {/* Location */}
+              <div className="glass-row glass-row-half">
+                <div className="glass-row-icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="#475569"/>
+                  </svg>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleLocationModalOpen}
+                  className="glass-input glass-button"
+                >
+                  <span className={searchParams.location ? '' : 'glass-placeholder'}>
+                    {searchParams.location || 'Location'}
+                  </span>
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={handleLocationModalOpen}
-                className="glass-input glass-button"
-              >
-                <span className={searchParams.location ? '' : 'glass-placeholder'}>
-                  {searchParams.location || 'Location'}
-                </span>
-              </button>
+
+              {/* Date */}
+              <div className="glass-row glass-row-half">
+                <div className="glass-row-icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z" fill="#3182ce"/>
+                  </svg>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowDateModal(true)}
+                  className="glass-input glass-button"
+                >
+                  <span className={searchParams.date ? '' : 'glass-placeholder'}>
+                    {searchParams.date ? new Date(searchParams.date).toLocaleDateString() : 'Date'}
+                  </span>
+                </button>
+              </div>
             </div>
 
-            {/* Date */}
+            {/* Kids Ages */}
             <div className="glass-row">
               <div className="glass-row-icon">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                  <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z" fill="#3182ce"/>
+                  <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="#38a169"/>
                 </svg>
               </div>
               <button
                 type="button"
-                onClick={() => setShowDateModal(true)}
+                onClick={() => setShowAgeModal(true)}
                 className="glass-input glass-button"
               >
-                <span className={searchParams.date ? '' : 'glass-placeholder'}>
-                  {searchParams.date ? new Date(searchParams.date).toLocaleDateString() : 'Date'}
+                <span className={searchParams.ages.length > 0 ? '' : 'glass-placeholder'}>
+                  {searchParams.ages.length > 0 ? getCurrentAgeLabel() : 'Kids ages'}
                 </span>
               </button>
             </div>
@@ -1172,24 +1209,6 @@ export default function SearchPage({
                   <span>10+h</span>
                 </div>
               </div>
-            </div>
-
-            {/* Kids Ages */}
-            <div className="glass-row">
-              <div className="glass-row-icon">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                  <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="#38a169"/>
-                </svg>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowAgeModal(true)}
-                className="glass-input glass-button"
-              >
-                <span className={searchParams.ages.length > 0 ? '' : 'glass-placeholder'}>
-                  {searchParams.ages.length > 0 ? getCurrentAgeLabel() : 'Kids ages'}
-                </span>
-              </button>
             </div>
 
           </div>
@@ -1227,6 +1246,14 @@ export default function SearchPage({
                 
                 {showHistory && (
                   <div className="glass-history-dropdown-top">
+                    {searchHistory.length > 3 && (
+                      <div className="history-scroll-indicator">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="animate-bounce">
+                          <path d="M19 14l-7 7m0 0l-7-7m7 7V3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                        <span className="text-xs text-gray-500">Scroll for more</span>
+                      </div>
+                    )}
                     {searchHistory.map((entry) => (
                       <div key={entry.id} className="glass-history-item">
                         <button
@@ -1241,6 +1268,11 @@ export default function SearchPage({
                           <div className="glass-history-details">
                             {entry.date} • {entry.duration}h • Ages: {entry.kidsAges.join(', ')}
                           </div>
+                          {entry.extraInstructions && entry.extraInstructions.trim() && (
+                            <div className="glass-history-instructions" title={entry.extraInstructions}>
+                              💬 {entry.extraInstructions.length > 40 ? entry.extraInstructions.substring(0, 40) + '...' : entry.extraInstructions}
+                            </div>
+                          )}
                           <div className="glass-history-date">
                             {new Date(entry.timestamp).toLocaleDateString()}
                           </div>
@@ -1497,57 +1529,60 @@ export default function SearchPage({
                 <div className="modal-body">
                   {/* Quick Tags */}
                   <div className="instructions-tags">
-                    <h4 className="instructions-tags-title">Quick Tags</h4>
-                    <div className="instructions-tags-scroll">
-                      {[
-                        '♿ Wheelchair accessible',
-                        '🚇 Near metro/public transport',
-                        '🌳 Outdoor activities preferred',
-                        '🏢 Indoor activities preferred',
-                        '💰 Budget-friendly options',
-                        '🎨 Creative/educational focus',
-                        '🏃‍♂️ High energy activities',
-                        '😴 Calm/quiet activities',
-                        '🍔 Food available on-site',
-                        '🅿️ Parking available'
-                      ].map((tag, index) => (
-                        <button
-                          key={index}
-                          type="button"
-                          onClick={() => {
-                            const tagText = tag.substring(2); // Remove emoji
-                            if (extraInstructions.includes(tagText)) {
-                              // Remove the tag
-                              setExtraInstructions(extraInstructions.replace(tagText, '').replace(/,\s*,/g, ',').replace(/^,\s*/, '').replace(/,\s*$/, ''));
-                            } else {
-                              // Add the tag
-                              setExtraInstructions(extraInstructions + (extraInstructions ? ', ' + tagText : tagText));
-                            }
-                          }}
-                          className={`instructions-tag-scroll ${extraInstructions.includes(tag.substring(2)) ? 'active' : ''}`}
-                        >
-                          {tag}
-            </button>
-                      ))}
+                    <div className="instructions-tags-scroll-container">
+                      <div className="instructions-tags-scroll">
+                        {[
+                          '♿ Wheelchair accessible',
+                          '🚇 Near metro/public transport',
+                          '🌳 Outdoor activities preferred',
+                          '🏢 Indoor activities preferred',
+                          '💰 Budget-friendly options',
+                          '🎨 Creative/educational focus',
+                          '🏃‍♂️ High energy activities',
+                          '😴 Calm/quiet activities',
+                          '🍔 Food available on-site',
+                          '🅿️ Parking available'
+                        ].map((tag, index) => (
+                          <button
+                            key={index}
+                            type="button"
+                            onClick={() => {
+                              const tagText = tag.substring(2); // Remove emoji
+                              if (extraInstructions.includes(tagText)) {
+                                // Remove the tag
+                                setExtraInstructions(extraInstructions.replace(tagText, '').replace(/,\s*,/g, ',').replace(/^,\s*/, '').replace(/,\s*$/, ''));
+                              } else {
+                                // Add the tag
+                                setExtraInstructions(extraInstructions + (extraInstructions ? ', ' + tagText : tagText));
+                              }
+                            }}
+                            className={`instructions-tag-scroll ${extraInstructions.includes(tag.substring(2)) ? 'active' : ''}`}
+                          >
+                            {tag}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="tags-scroll-indicator">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" className="opacity-50">
+                          <path d="M19 12l-7 7m0 0l-7-7m7 7V4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </div>
                     </div>
                   </div>
                   
                   {/* Instructions Input */}
                   <div className="instructions-input">
-                    <label className="instructions-label">
-                      Instructions
-                    </label>
                     <textarea
                       value={extraInstructions}
                       onChange={(e) => setExtraInstructions(e.target.value)}
-                      placeholder="Click tags above or type your requirements..."
+                      placeholder="Instructions - Click tags above or type your requirements..."
                       className="instructions-input-field"
                       rows={3}
                     />
                   </div>
                   
                   {/* Action Buttons */}
-                  <div className="instructions-actions">
+                  <div className="instructions-actions-row">
                     <button
                       type="button"
                       onClick={() => {

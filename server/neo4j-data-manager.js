@@ -556,6 +556,7 @@ export class Neo4jDataManager {
           date: props.date,
           duration: props.duration,
           kidsAges: props.kidsAges || [],
+          extraInstructions: props.extraInstructions || '',
           timestamp: props.timestamp,
           searchCount: props.searchCount || 1
         };
@@ -586,6 +587,7 @@ export class Neo4jDataManager {
               date: $date,
               duration: $duration,
               kidsAges: $kidsAges,
+              extraInstructions: $extraInstructions,
               timestamp: $timestamp,
               searchCount: $searchCount
             })
@@ -595,6 +597,7 @@ export class Neo4jDataManager {
             date: entry.date,
             duration: entry.duration,
             kidsAges: entry.kidsAges || [],
+            extraInstructions: entry.extraInstructions || '',
             timestamp: entry.timestamp,
             searchCount: entry.searchCount || 1
           });
@@ -611,7 +614,7 @@ export class Neo4jDataManager {
   async addToSearchHistory(query) {
     await this.ensureConnection();
     
-    const { location, date, duration_hours, ages } = query;
+    const { location, date, duration_hours, ages, extra_instructions } = query;
     const session = this.driver.session({ database: this.database });
     
     try {
@@ -635,6 +638,7 @@ export class Neo4jDataManager {
         date,
         duration: duration_hours || null,
         kidsAges: ages || [],
+        extraInstructions: extra_instructions || '',
         timestamp: new Date().toISOString(),
         searchCount: 1
       };
@@ -646,6 +650,7 @@ export class Neo4jDataManager {
           date: $date,
           duration: $duration,
           kidsAges: $kidsAges,
+          extraInstructions: $extraInstructions,
           timestamp: $timestamp,
           searchCount: $searchCount
         })

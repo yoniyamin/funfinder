@@ -33,6 +33,7 @@ interface SearchHistoryEntry {
   date: string;
   duration: number;
   kidsAges: number[];
+  extraInstructions?: string;
   timestamp: string;
   searchCount: number;
 }
@@ -329,7 +330,7 @@ export default function App() {
         date: entry.date || '',
         duration: entry.duration || '',
         ages: Array.isArray(entry.kidsAges) ? entry.kidsAges : [],
-        extraInstructions: ''
+        extraInstructions: entry.extraInstructions || ''
       });
     } catch (error) {
       console.error('Error loading from history:', error);
