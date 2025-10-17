@@ -77,7 +77,7 @@ export default function InstallPrompt() {
   }
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-96 z-50 animate-slide-up">
+    <div className="fixed bottom-28 left-4 right-4 md:bottom-4 md:left-auto md:right-4 md:w-96 z-50 animate-slide-up">
       <div className="bg-gradient-to-r from-purple-600 to-violet-600 rounded-2xl shadow-2xl p-4 text-white">
         <div className="flex items-start gap-3">
           <div className="bg-white/20 rounded-full p-2 mt-1">
