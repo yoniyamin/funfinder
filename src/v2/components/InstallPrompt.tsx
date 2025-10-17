@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Download, X } from 'lucide-react';
+import { Download, X, Share } from 'lucide-react';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -9,6 +9,7 @@ interface BeforeInstallPromptEvent extends Event {
 export default function InstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
 
   useEffect(() => {
     // Check if already in standalone mode (app is installed)
@@ -20,6 +21,10 @@ export default function InstallPrompt() {
       return; // Don't show prompt if already installed
     }
 
+    // Detect iOS
+    const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    setIsIOS(iOS);
+
     // Check localStorage to see if user dismissed
     const dismissed = localStorage.getItem('pwa-install-dismissed');
     const dismissedTime = dismissed ? parseInt(dismissed, 10) : 0;
@@ -28,23 +33,30 @@ export default function InstallPrompt() {
 
     // Only show if not dismissed, or dismissed more than 30 days ago
     if (!dismissed || (now - dismissedTime) > thirtyDays) {
-      // Listen for the beforeinstallprompt event
-      const handler = (e: Event) => {
-        e.preventDefault();
-        const promptEvent = e as BeforeInstallPromptEvent;
-        setDeferredPrompt(promptEvent);
-        
-        // Show prompt after a short delay (3 seconds) so it's not jarring
+      // For iOS, show custom prompt immediately (no beforeinstallprompt event)
+      if (iOS) {
         setTimeout(() => {
           setShowPrompt(true);
         }, 3000);
-      };
+      } else {
+        // For Android/Chrome, listen for the beforeinstallprompt event
+        const handler = (e: Event) => {
+          e.preventDefault();
+          const promptEvent = e as BeforeInstallPromptEvent;
+          setDeferredPrompt(promptEvent);
+          
+          // Show prompt after a short delay (3 seconds) so it's not jarring
+          setTimeout(() => {
+            setShowPrompt(true);
+          }, 3000);
+        };
 
-      window.addEventListener('beforeinstallprompt', handler);
+        window.addEventListener('beforeinstallprompt', handler);
 
-      return () => {
-        window.removeEventListener('beforeinstallprompt', handler);
-      };
+        return () => {
+          window.removeEventListener('beforeinstallprompt', handler);
+        };
+      }
     }
   }, []);
 
@@ -72,7 +84,12 @@ export default function InstallPrompt() {
     setShowPrompt(false);
   };
 
-  if (!showPrompt || !deferredPrompt) {
+  if (!showPrompt) {
+    return null;
+  }
+
+  // iOS doesn't have deferredPrompt but we still want to show the banner
+  if (!deferredPrompt && !isIOS) {
     return null;
   }
 
@@ -81,27 +98,43 @@ export default function InstallPrompt() {
       <div className="bg-gradient-to-r from-purple-600 to-violet-600 rounded-2xl shadow-2xl p-4 text-white">
         <div className="flex items-start gap-3">
           <div className="bg-white/20 rounded-full p-2 mt-1">
-            <Download className="w-5 h-5" />
+            {isIOS ? <Share className="w-5 h-5" /> : <Download className="w-5 h-5" />}
           </div>
           <div className="flex-1">
             <h3 className="font-bold text-lg mb-1">Install FunFindAI</h3>
-            <p className="text-sm text-white/90 mb-3">
-              Get the full-screen experience! Add to your home screen for quick access and no browser bars.
-            </p>
-            <div className="flex gap-2">
-              <button
-                onClick={handleInstallClick}
-                className="bg-white text-purple-600 px-4 py-2 rounded-lg font-semibold text-sm hover:bg-purple-50 transition-colors"
-              >
-                Install App
-              </button>
-              <button
-                onClick={handleDismiss}
-                className="bg-white/20 text-white px-4 py-2 rounded-lg font-semibold text-sm hover:bg-white/30 transition-colors"
-              >
-                Maybe Later
-              </button>
-            </div>
+            {isIOS ? (
+              <>
+                <p className="text-sm text-white/90 mb-3">
+                  Install this app: tap <Share className="w-4 h-4 inline mx-1" /> then "Add to Home Screen"
+                </p>
+                <button
+                  onClick={handleDismiss}
+                  className="bg-white text-purple-600 px-4 py-2 rounded-lg font-semibold text-sm hover:bg-purple-50 transition-colors"
+                >
+                  Got it!
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-white/90 mb-3">
+                  Get the full-screen experience! Add to your home screen for quick access and no browser bars.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleInstallClick}
+                    className="bg-white text-purple-600 px-4 py-2 rounded-lg font-semibold text-sm hover:bg-purple-50 transition-colors"
+                  >
+                    Install App
+                  </button>
+                  <button
+                    onClick={handleDismiss}
+                    className="bg-white/20 text-white px-4 py-2 rounded-lg font-semibold text-sm hover:bg-white/30 transition-colors"
+                  >
+                    Maybe Later
+                  </button>
+                </div>
+              </>
+            )}
           </div>
           <button
             onClick={handleDismiss}

@@ -4603,7 +4603,7 @@ app.get('/api/status', (req, res) => {
   console.log('📊 Status endpoint called');
   res.status(200).json({
     status: 'running',
-    message: 'FunFindAI API is running',
+    message: 'FunFinder API is running',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development'
   });
@@ -4650,7 +4650,7 @@ app.get('/', (req, res, next) => {
   }
   console.log('🏠 Root endpoint called (development)');
   res.json({
-    name: 'FunFindAI API',
+    name: 'FunFinder API',
     version: '0.1.1',
     status: 'running',
     endpoints: {

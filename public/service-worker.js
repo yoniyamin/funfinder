@@ -1,5 +1,5 @@
 // Simple service worker for PWA installability
-const CACHE_NAME = 'funfindai-v1';
+const CACHE_NAME = 'funfinder-v1';
 const urlsToCache = [
   '/',
   '/index.html',

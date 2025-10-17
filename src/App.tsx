@@ -517,7 +517,7 @@ export default function App(){
           <div className="relative h-[65vh] md:h-[450px] w-full mobile-bg-container">
             <img 
               src="/bg2.jpeg" 
-              alt="FunFindAI" 
+              alt="FunFinder" 
               className="w-full h-full object-cover rounded-3xl md:rounded-3xl sm:rounded-none mobile-bg-image"
               style={{objectPosition: '60% center'}}
             />
