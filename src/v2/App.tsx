@@ -3,10 +3,12 @@ import SearchPage from './pages/SearchPage';
 import ResultsPage from './pages/ResultsPage';
 import BottomNavBar from './components/BottomNavBar';
 import Settings from '../components/Settings';
+import InstallPrompt from './components/InstallPrompt';
 import type { CacheInfo } from './components/CacheIndicator';
 import { toISODate, geocode, fetchHolidays, fetchHolidaysWithFallback, fetchWeatherDaily, fetchFestivalsWikidata, fetchHolidaysWithGemini } from '../lib/api';
 import type { Activity, Context, LLMResult } from '../lib/schema';
 import { validateAIResponse, getValidationErrorSummary, ValidationError } from '../lib/validation-helpers';
+import type { ValidatedLLMResult } from '../lib/validation';
 import { getImageUrl, IMAGES } from '../config/assets';
 
 // Hook to detect screen size
@@ -65,6 +67,7 @@ interface AppState {
   searchHistory: SearchHistoryEntry[];
   exclusionList: {[location: string]: string[]};
   showSettings: boolean;
+  showExclusionManager: boolean;
 }
 
 // Utility functions for search duration tracking
@@ -622,7 +625,7 @@ export default function App() {
         }
         
         // Client-side validation of the AI response
-        let validatedResult = data.data;
+        let validatedResult: ValidatedLLMResult | LLMResult = data.data;
         try {
           validatedResult = validateAIResponse(data.data, 'V2 Client-side API response');
           console.log(`✅ V2 Client-side validation successful: ${validatedResult.activities.length} activities validated`);
@@ -647,7 +650,7 @@ export default function App() {
         
         setLoading({ isLoading: true, progress: 95, status: 'Processing results…' });
         setSearchResults({
-          activities: validatedResult.activities,
+          activities: validatedResult.activities as any as Activity[],
           webSources: validatedResult.web_sources || null,
           ctx: context,
           cacheInfo: (validatedResult as any).cacheInfo,
@@ -829,7 +832,7 @@ export default function App() {
       }
       
       // Client-side validation for fresh search
-      let validatedFreshResult = data.data;
+      let validatedFreshResult: ValidatedLLMResult | LLMResult = data.data;
       try {
         validatedFreshResult = validateAIResponse(data.data, 'V2 Fresh search API response');
         console.log(`✅ V2 Fresh search validation successful: ${validatedFreshResult.activities.length} activities validated`);
@@ -847,7 +850,7 @@ export default function App() {
       
       // Update with fresh results
       setSearchResults({
-        activities: validatedFreshResult.activities,
+        activities: validatedFreshResult.activities as any as Activity[],
         webSources: validatedFreshResult.web_sources || null,
         ctx: context,
         cacheInfo: (validatedFreshResult as any).cacheInfo,
@@ -947,6 +950,9 @@ export default function App() {
   
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
+      {/* PWA Install Prompt */}
+      <InstallPrompt />
+      
       {/* Desktop Top Navigation */}
       {isDesktop && renderDesktopTopNav()}
       

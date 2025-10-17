@@ -3032,6 +3032,22 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
   }
 }
 
+/* PWA Install Prompt Animation */
+@keyframes slideUpFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slideUpFadeIn 0.5s ease-out;
+}
+
 .cancel-search-btn {
   display: flex;
   align-items: center;
