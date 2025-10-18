@@ -420,7 +420,7 @@ export default function ResultsPage({
                           }
                         }
                       }}
-                      className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white text-xs px-2.5 py-1.5 rounded-full transition-all duration-200 flex items-center gap-1 opacity-70 hover:opacity-100 hover:scale-105 shadow-sm hover:shadow-md"
+                      className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white text-xs p-2 rounded-full transition-all duration-200 flex items-center gap-1 opacity-70 hover:opacity-100 hover:scale-105 shadow-sm hover:shadow-md"
                       title="Don't show this activity in future searches for this location"
                     >
                       <svg 
@@ -433,7 +433,6 @@ export default function ResultsPage({
                         <line x1="15" y1="9" x2="9" y2="15" strokeWidth="2" strokeLinecap="round"></line>
                         <line x1="9" y1="9" x2="15" y2="15" strokeWidth="2" strokeLinecap="round"></line>
                       </svg>
-                      <span className="text-[10px] font-medium">Hide</span>
                     </button>
 
                     <div className="flex items-start gap-3 mb-3">

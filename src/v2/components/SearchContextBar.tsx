@@ -51,7 +51,10 @@ export default function SearchContextBar({
     <div className="bg-white/95 backdrop-blur-sm border-b border-gray-200 search-context-bar">
       <div className="max-w-5xl mx-auto px-4">
         {/* Compact Header */}
-        <div className="flex items-center justify-between gap-2 py-2">
+        <div 
+          className="flex items-center justify-between gap-2 py-2 cursor-pointer hover:bg-gray-50/50 transition-colors rounded-lg px-2 -mx-2"
+          onClick={() => setOpen((v) => !v)}
+        >
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
             <span className="inline-flex items-center gap-1.5 text-gray-700">
               <MapPin size={14} className="text-gray-500" />
@@ -60,6 +63,7 @@ export default function SearchContextBar({
                 target="_blank"
                 rel="noopener noreferrer"
                 className="hover:underline font-medium"
+                onClick={(e) => e.stopPropagation()}
               >
                 {ctx.location}
               </a>
@@ -129,7 +133,10 @@ export default function SearchContextBar({
           <button
             type="button"
             aria-expanded={open}
-            onClick={() => setOpen((v) => !v)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpen((v) => !v);
+            }}
             className="flex-shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors"
           >
             {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
