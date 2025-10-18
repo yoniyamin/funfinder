@@ -39,3 +39,4 @@ server/.master-key
 .gitignore
 .master-key
 
+public/bg5.xcf

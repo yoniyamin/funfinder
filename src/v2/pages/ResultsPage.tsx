@@ -132,6 +132,13 @@ export default function ResultsPage({
 
   const filtered = useMemo(() => {
     let list = (activities || []).slice();
+    
+    // Filter out excluded activities
+    if (ctx?.location && exclusionList[ctx.location]) {
+      const excluded = exclusionList[ctx.location];
+      list = list.filter(a => !excluded.includes(a.title || ''));
+    }
+    
     if (fCat) list = list.filter(a => a.category === fCat);
     if (fFree === 'true') list = list.filter(a => a.free === true);
     if (fFree === 'false') list = list.filter(a => a.free === false);
@@ -139,7 +146,7 @@ export default function ResultsPage({
     if (fSource === 'fever') list = list.filter(a => a.source === 'Fever');
     if (fSource === 'ai') list = list.filter(a => !a.source || a.source !== 'Fever');
     return list;
-  }, [activities, fCat, fFree, fWeather, fSource]);
+  }, [activities, fCat, fFree, fWeather, fSource, exclusionList, ctx]);
 
   const fetchPrompt = async (context: Context) => {
     try {
@@ -404,14 +411,29 @@ export default function ResultsPage({
                     {/* Exclude button */}
                     <button
                       onClick={async () => {
-                        if (ctx && await addToExclusionList(ctx.location, a.title || 'Untitled activity')) {
-                          // Activity will be removed from results in parent component
+                        const activityTitle = a.title || 'Untitled activity';
+                        const locationName = ctx?.location || 'this location';
+                        
+                        if (window.confirm(`Hide "${activityTitle}" from future searches in ${locationName}?\n\nYou can manage exclusions from the settings menu.`)) {
+                          if (ctx && await addToExclusionList(ctx.location, activityTitle)) {
+                            // Activity will be filtered out automatically
+                          }
                         }
                       }}
-                      className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white text-xs px-2 py-1 rounded-full transition-colors flex items-center gap-1 opacity-80 hover:opacity-100"
-                      title="Don't suggest this attraction again for this location"
+                      className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white text-xs px-2.5 py-1.5 rounded-full transition-all duration-200 flex items-center gap-1 opacity-70 hover:opacity-100 hover:scale-105 shadow-sm hover:shadow-md"
+                      title="Don't show this activity in future searches for this location"
                     >
-                      🚫
+                      <svg 
+                        className="w-3.5 h-3.5" 
+                        fill="none" 
+                        stroke="currentColor" 
+                        viewBox="0 0 24 24"
+                      >
+                        <circle cx="12" cy="12" r="10" strokeWidth="2"></circle>
+                        <line x1="15" y1="9" x2="9" y2="15" strokeWidth="2" strokeLinecap="round"></line>
+                        <line x1="9" y1="9" x2="15" y2="15" strokeWidth="2" strokeLinecap="round"></line>
+                      </svg>
+                      <span className="text-[10px] font-medium">Hide</span>
                     </button>
 
                     <div className="flex items-start gap-3 mb-3">

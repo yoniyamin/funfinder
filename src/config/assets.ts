@@ -3,7 +3,7 @@
 
 const isDevelopment = import.meta.env.DEV;
 const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-const GITHUB_PAGES_BASE = import.meta.env.VITE_ASSET_BASE_URL || 'https://yourusername.github.io/yourrepo/assets';
+const GITHUB_PAGES_BASE = import.meta.env.VITE_ASSET_BASE_URL || 'https://yoniyamin.github.io/funfinder/assets';
 
 export const getAssetUrl = (filename: string): string => {
   // Use local assets for development OR when running locally (even production builds)
