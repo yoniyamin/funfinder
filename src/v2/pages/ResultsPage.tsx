@@ -65,9 +65,25 @@ function getWeatherIcon(weather: string): string {
   }
 }
 
-function Chip({ children }: { children: React.ReactNode }) { 
-  return <span className="chip">{children}</span>; 
+function Chip({ children }: { children: React.ReactNode }) {
+  return <span className="chip">{children}</span>;
 }
+
+const ExcludeIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.6}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    {...props}
+  >
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M8.3 8.3l7.4 7.4" />
+  </svg>
+);
 
 function LoadingSkeleton() {
   return (
@@ -132,6 +148,28 @@ export default function ResultsPage({
 
   const filtered = useMemo(() => {
     let list = (activities || []).slice();
+    const location = ctx?.location;
+
+    let locationExclusions: string[] = [];
+    if (location) {
+      locationExclusions = exclusionList[location] || [];
+      if (locationExclusions.length === 0) {
+        const match = Object.entries(exclusionList).find(([loc]) => loc.toLowerCase() === location.toLowerCase());
+        if (match) {
+          locationExclusions = match[1];
+        }
+      }
+    }
+
+    if (locationExclusions.length > 0) {
+      const normalized = locationExclusions.map(entry => entry.toLowerCase());
+      list = list.filter(activity => {
+        const title = (activity.title || '').toLowerCase();
+        if (!title) return true;
+        return !normalized.some(excluded => title.includes(excluded) || excluded.includes(title));
+      });
+    }
+
     if (fCat) list = list.filter(a => a.category === fCat);
     if (fFree === 'true') list = list.filter(a => a.free === true);
     if (fFree === 'false') list = list.filter(a => a.free === false);
@@ -139,7 +177,7 @@ export default function ResultsPage({
     if (fSource === 'fever') list = list.filter(a => a.source === 'Fever');
     if (fSource === 'ai') list = list.filter(a => !a.source || a.source !== 'Fever');
     return list;
-  }, [activities, fCat, fFree, fWeather, fSource]);
+  }, [activities, ctx?.location, exclusionList, fCat, fFree, fWeather, fSource]);
 
   const fetchPrompt = async (context: Context) => {
     try {
@@ -408,16 +446,17 @@ export default function ResultsPage({
                           // Activity will be removed from results in parent component
                         }
                       }}
-                      className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white text-xs px-2 py-1 rounded-full transition-colors flex items-center gap-1 opacity-80 hover:opacity-100"
-                      title="Don't suggest this attraction again for this location"
+                      className="absolute top-2 right-2 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium text-gray-500 transition-colors hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40"
+                      title="Exclude this activity from future suggestions for this location"
                     >
-                      🚫
+                      <ExcludeIcon className="h-4 w-4" />
+                      <span>Don't show again</span>
                     </button>
 
                     <div className="flex items-start gap-3 mb-3">
                       <div className="text-2xl flex-shrink-0 mt-1">{getCategoryIcon(a.category)}</div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2 pr-8">
+                        <div className="flex items-start justify-between gap-2 pr-16">
                           <div className="flex-1 min-w-0">
                             <h3 className="font-semibold text-gray-900 text-base leading-tight">{a.title || 'Untitled activity'}</h3>
                           </div>
