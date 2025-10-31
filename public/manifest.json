@@ -4,6 +4,7 @@
   "description": "Discover fun events, activities, festivals and things to do anywhere in the world",
   "start_url": "/",
   "display": "standalone",
+  "display_override": ["standalone", "fullscreen"],
   "background_color": "#90a6c3",
   "theme_color": "#8b5cf6",
   "orientation": "portrait-primary",

@@ -8,6 +8,12 @@ export type Context = {
     temperature_max_c: number | null;
     precipitation_probability_percent: number | null;
     wind_speed_max_kmh: number | null;
+    hourly?: Array<{
+      time: string;
+      tempC: number;
+      rainChance: number;
+      weatherCode?: number;
+    }>;
   };
   is_public_holiday: boolean;
   nearby_festivals: Array<{

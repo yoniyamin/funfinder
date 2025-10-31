@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import SearchPage from './pages/SearchPage';
-import ResultsPage from './pages/ResultsPage';
+import SearchPage from './pages/SearchPage'; // Legacy
+import SearchPageV3 from './pages/SearchPageV3'; // New redesign
+import ResultsPage from './pages/ResultsPageV2'; // New minimal design
 import BottomNavBar from './components/BottomNavBar';
 import Settings from '../components/Settings';
 import InstallPrompt from './components/InstallPrompt';
 import type { CacheInfo } from './components/CacheIndicator';
-import { toISODate, geocode, fetchHolidays, fetchHolidaysWithFallback, fetchWeatherDaily, fetchFestivalsWikidata, fetchHolidaysWithGemini } from '../lib/api';
+import { toISODate, geocode, fetchHolidays, fetchHolidaysWithFallback, fetchWeatherDaily, fetchWeatherHourly, fetchFestivalsWikidata, fetchHolidaysWithGemini } from '../lib/api';
 import type { Activity, Context, LLMResult } from '../lib/schema';
 import { validateAIResponse, getValidationErrorSummary, ValidationError } from '../lib/validation-helpers';
 import type { ValidatedLLMResult } from '../lib/validation';
@@ -121,13 +122,20 @@ export default function App() {
   console.log('🔥 V2 App component mounting...');
   
   const isDesktop = useDesktopLayout();
+  // Initialize default date to tomorrow
+  const getTomorrowDate = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toISOString().split('T')[0];
+  };
+
   const [state, setState] = useState<AppState>({
     currentPage: 'search',
     showSplash: false, // Will be set to true for mobile in useEffect
     searchParams: {
       location: '',
-      date: '',
-      duration: 1,
+      date: getTomorrowDate(), // Default to tomorrow
+      duration: 2, // Default to 2 hours
       ages: [],
       extraInstructions: ''
     },
@@ -167,18 +175,16 @@ export default function App() {
     loadExclusionList();
   }, []);
 
-  // Handle splash screen - only show on mobile
-  useEffect(() => {
-    if (!isDesktop) {
-      // Show splash screen on mobile/tablet
-      setState(prev => ({ ...prev, showSplash: true }));
-      const timer = setTimeout(() => {
-        setState(prev => ({ ...prev, showSplash: false }));
-      }, 3000); // 3 seconds for animation
-      return () => clearTimeout(timer);
-    }
-    // Desktop: showSplash remains false (initialized state)
-  }, [isDesktop]);
+  // Splash screen removed per user feedback
+  // useEffect(() => {
+  //   if (!isDesktop) {
+  //     setState(prev => ({ ...prev, showSplash: true }));
+  //     const timer = setTimeout(() => {
+  //       setState(prev => ({ ...prev, showSplash: false }));
+  //     }, 3000);
+  //     return () => clearTimeout(timer);
+  //   }
+  // }, [isDesktop]);
 
   // Cleanup function to prevent memory leaks and request cancellation
   useEffect(() => {
@@ -400,10 +406,7 @@ export default function App() {
         alert('Please enter a valid duration');
         return;
       }
-      if (ages.length === 0) {
-        alert('Please select at least one age group');
-        return;
-      }
+      // Ages are now optional - removed validation
 
       // Don't use AbortController for now - it's causing StrictMode issues
       // Clear any existing AbortController first
@@ -507,6 +510,15 @@ export default function App() {
       // Holiday and festival information is now handled server-side in the activity search
       console.log('🎭 Holiday and festival context will be gathered server-side during activity search');
 
+      // Fetch hourly weather (no caching - too dynamic)
+      let hourlyWeather: Array<{ time: string; tempC: number; rainChance: number; weatherCode?: number }> = [];
+      try {
+        hourlyWeather = await fetchWeatherHourly(lat, lon, date);
+        console.log(`⏰ Fetched ${hourlyWeather.length} hourly weather data points`);
+      } catch (error) {
+        console.warn('Hourly weather data not available:', error);
+      }
+
       const context: Context = {
         location: `${name}, ${country}`,
         date,
@@ -516,7 +528,8 @@ export default function App() {
           temperature_min_c: w.tmin,
           temperature_max_c: w.tmax,
           precipitation_probability_percent: w.pprob,
-          wind_speed_max_kmh: w.wind
+          wind_speed_max_kmh: w.wind,
+          hourly: hourlyWeather
         },
         is_public_holiday: isHoliday,
         nearby_festivals: [], // Will be populated server-side with holiday/festival context
@@ -965,7 +978,7 @@ export default function App() {
               // Side-by-side layout
               <div className="flex" style={{ height: 'calc(100vh - 80px)' }}>
                 <div className="w-2/5 border-r border-gray-200 overflow-y-auto">
-                  <SearchPage
+                  <SearchPageV3
                     searchParams={state.searchParams}
                     updateSearchParams={updateSearchParams}
                     searchHistory={state.searchHistory}
@@ -979,6 +992,8 @@ export default function App() {
                     onSearch={handleSearch}
                     isDesktopSidebar={true}
                     searchContext={state.searchResults.ctx}
+                    exclusionList={state.exclusionList}
+                    removeFromExclusionList={removeFromExclusionList}
                   />
                 </div>
                 <div className="w-3/5 overflow-y-auto">
@@ -997,7 +1012,7 @@ export default function App() {
               </div>
             ) : (
               // Full-width search page
-              <SearchPage
+              <SearchPageV3
                 searchParams={state.searchParams}
                 updateSearchParams={updateSearchParams}
                 searchHistory={state.searchHistory}
@@ -1010,6 +1025,8 @@ export default function App() {
                 reloadSearchHistory={reloadSearchHistory}
                 onSearch={handleSearch}
                 isDesktop={true}
+                exclusionList={state.exclusionList}
+                removeFromExclusionList={removeFromExclusionList}
               />
             )}
           </div>
@@ -1017,7 +1034,7 @@ export default function App() {
           // Mobile Layout: Original behavior
           <>
             {state.currentPage === 'search' && (
-              <SearchPage
+              <SearchPageV3
                 searchParams={state.searchParams}
                 updateSearchParams={updateSearchParams}
                 searchHistory={state.searchHistory}
@@ -1029,6 +1046,8 @@ export default function App() {
                 loadFromHistory={loadFromHistory}
                 reloadSearchHistory={reloadSearchHistory}
                 onSearch={handleSearch}
+                exclusionList={state.exclusionList}
+                removeFromExclusionList={removeFromExclusionList}
               />
             )}
             
@@ -1048,22 +1067,7 @@ export default function App() {
         )}
       </main>
 
-      {/* Bottom Navigation - Only show on mobile search page */}
-      {!isDesktop && state.currentPage === 'search' && (
-        <BottomNavBar
-          currentPage={state.currentPage}
-          setCurrentPage={setCurrentPage}
-          loading={state.loading}
-          hasResults={state.searchResults.activities !== null}
-          onSettingsOpen={() => setState(prev => ({ ...prev, showSettings: true }))}
-          exclusionList={state.exclusionList}
-          removeFromExclusionList={removeFromExclusionList}
-          onSearch={handleSearch}
-          setLoading={setLoading}
-          onCancelSearch={handleCancelSearch}
-          searchParams={state.searchParams}
-        />
-      )}
+      {/* Bottom Navigation - Removed for cleaner V3 design */}
 
       {/* Settings Modal */}
       <Settings 

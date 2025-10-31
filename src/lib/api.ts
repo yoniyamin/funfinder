@@ -98,6 +98,70 @@ export async function fetchWeatherDaily(lat:number, lon:number, dateISO:string, 
   }
 }
 
+export async function fetchWeatherHourly(lat:number, lon:number, dateISO:string, signal?: AbortSignal){
+  const startTime = performance.now();
+  const url = new URL('https://api.open-meteo.com/v1/forecast');
+  url.searchParams.set('latitude', String(lat));
+  url.searchParams.set('longitude', String(lon));
+  url.searchParams.set('hourly', 'temperature_2m,precipitation_probability,weather_code');
+  url.searchParams.set('timezone', 'auto');
+  url.searchParams.set('start_date', dateISO);
+  url.searchParams.set('end_date', dateISO);
+  
+  console.log(`⏰ [${new Date().toISOString()}] Fetching hourly weather: ${lat}, ${lon} on ${dateISO}`);
+  
+  try {
+    const r = await fetch(url, { signal });
+    const duration = performance.now() - startTime;
+    
+    if(!r.ok) {
+      console.error(`❌ [${new Date().toISOString()}] Hourly weather fetch failed (${duration.toFixed(2)}ms): ${r.status} ${r.statusText}`);
+      throw new Error(`Hourly weather fetch failed: ${r.status} ${r.statusText}`);
+    }
+    
+    const d = await r.json();
+    const hourly = d.hourly;
+    
+    if (!hourly || !hourly.time || !Array.isArray(hourly.time)) {
+      console.error(`❌ [${new Date().toISOString()}] Invalid hourly weather data structure`);
+      return [];
+    }
+    
+    const hours: Array<{ time: string; tempC: number; rainChance: number; weatherCode?: number }> = [];
+    const now = new Date();
+    const currentHour = now.getHours();
+    
+    // Filter hours from now until 9pm (21:00)
+    for (let i = 0; i < hourly.time.length; i++) {
+      const timeStr = hourly.time[i]; // e.g. "2025-10-30T14:00"
+      const hour = parseInt(timeStr.split('T')[1].split(':')[0], 10);
+      
+      // Only include hours from current hour until 21:00 (9pm)
+      if (hour >= currentHour && hour <= 21) {
+        const temp = hourly.temperature_2m?.[i];
+        const rain = hourly.precipitation_probability?.[i];
+        const code = hourly.weather_code?.[i];
+        
+        if (temp !== null && temp !== undefined && rain !== null && rain !== undefined) {
+          hours.push({
+            time: `${hour.toString().padStart(2, '0')}:00`,
+            tempC: Math.round(temp),
+            rainChance: Math.round(rain),
+            weatherCode: code
+          });
+        }
+      }
+    }
+    
+    console.log(`✅ [${new Date().toISOString()}] Hourly weather fetch completed (${duration.toFixed(2)}ms): ${hours.length} hours (until 9pm)`);
+    return hours;
+  } catch (error) {
+    const duration = performance.now() - startTime;
+    console.error(`❌ [${new Date().toISOString()}] Hourly weather fetch error (${duration.toFixed(2)}ms):`, error);
+    return []; // Return empty array on error, don't throw
+  }
+}
+
 export async function fetchHolidays(code:string, year:string, signal?: AbortSignal){
   const startTime = performance.now();
   const url = `https://date.nager.at/api/v3/PublicHolidays/${year}/${code}`;

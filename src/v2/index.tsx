@@ -20,52 +20,22 @@ try {
   console.log('✅ Root element found, creating React root...');
   const root = ReactDOM.createRoot(rootElement);
 
-  console.log('✅ React root created, rendering loading screen...');
+  console.log('✅ React root created, rendering main app directly...');
 
-  // Skip initial loading screen on desktop, show it only briefly on mobile
-  const checkIfDesktop = () => {
-    return window.innerWidth >= 1024;
-  };
-
-  if (checkIfDesktop()) {
-    // Desktop: Load main app immediately without loading screen
-    console.log('🖥️ Desktop detected - loading main app directly...');
-    try {
-      root.render(<App />);
-      console.log('✅ Main App rendered successfully!');
-    } catch (appError) {
-      console.error('❌ Failed to render main App:', appError);
-      const errorMessage = appError instanceof Error ? appError.message : String(appError);
-      root.render(
-        <div style={{ padding: '20px', color: 'red', fontFamily: 'monospace' }}>
-          <h1>❌ Main App Failed</h1>
-          <p>React works, but main App failed to load</p>
-          <p>Error: {errorMessage}</p>
-        </div>
-      );
-    }
-  } else {
-    // Mobile: Show loading screen briefly then switch to main app
-    console.log('📱 Mobile detected - showing loading screen first...');
-    root.render(<LoadingScreen />);
-
-    setTimeout(() => {
-      console.log('🔄 Switching to main App...');
-      try {
-        root.render(<App />);
-        console.log('✅ Main App rendered successfully!');
-      } catch (appError) {
-        console.error('❌ Failed to render main App:', appError);
-        const errorMessage = appError instanceof Error ? appError.message : String(appError);
-        root.render(
-          <div style={{ padding: '20px', color: 'red', fontFamily: 'monospace' }}>
-            <h1>❌ Main App Failed</h1>
-            <p>React works, but main App failed to load</p>
-            <p>Error: {errorMessage}</p>
-          </div>
-        );
-      }
-    }, 1000);
+  // Load main app immediately without loading screen (removed per user request)
+  try {
+    root.render(<App />);
+    console.log('✅ Main App rendered successfully!');
+  } catch (appError) {
+    console.error('❌ Failed to render main App:', appError);
+    const errorMessage = appError instanceof Error ? appError.message : String(appError);
+    root.render(
+      <div style={{ padding: '20px', color: 'red', fontFamily: 'monospace' }}>
+        <h1>❌ Main App Failed</h1>
+        <p>React works, but main App failed to load</p>
+        <p>Error: {errorMessage}</p>
+      </div>
+    );
   }
 
   console.log('✅ V2 App render complete!');

@@ -19,6 +19,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^5.1.0",
+    "flubber": "^0.4.2",
     "framer-motion": "^12.23.22",
     "html2canvas": "^1.4.1",
     "lucide-react": "^0.545.0",

@@ -397,6 +397,16 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
   overflow: hidden;
 }
 
+.glass-bg-gradient {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+  background: linear-gradient(135deg, #4A6FA5 0%, #6B8BC3 30%, #E8A87C 70%, #F4BF96 100%);
+}
+
 .glass-bg-container {
   position: fixed;
   top: 0;
@@ -433,11 +443,94 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
 
 /* Overlay removed as requested */
 
+/* Top Navigation Bar */
+.search-top-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.search-logo {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  line-height: 1;
+}
+
+.logo-text {
+  font-family: 'Baloo 2', sans-serif;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: white;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.search-top-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.search-nav-icon-container {
+  position: relative;
+}
+
+.search-nav-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.search-nav-icon:hover {
+  background: rgba(255, 255, 255, 0.35);
+  transform: scale(1.05);
+}
+
+.search-nav-icon:active {
+  transform: scale(0.95);
+}
+
+.search-history-dropdown {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  width: 320px;
+  max-width: 85vw;
+  max-height: 400px;
+  overflow-y: auto;
+  background: white;
+  border-radius: 1rem;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+}
+
 .glass-content {
   position: relative;
   z-index: 10;
-  padding: 35vh 4vw 40vh; /* Further increased top padding to clear title completely */
-  padding-top: calc(35vh + env(safe-area-inset-top, 0px)); /* Add safe area to top padding */
+  padding: 8rem 4vw 3rem; /* Adjusted padding for top nav */
+  padding-top: calc(8rem + env(safe-area-inset-top, 0px)); /* Add safe area to top padding */
   height: 100vh;
   overflow-y: auto;
   display: flex;
@@ -1030,6 +1123,46 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
   transform: translateY(0);
 }
 
+/* Enhanced full-width search button */
+.glass-cta-enhanced {
+  padding: 18px 24px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.35);
+  color: #fff; 
+  font-weight: 800; 
+  font-size: 1.25rem;
+  letter-spacing: 0.3px;
+  text-align: center;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  background:
+    radial-gradient(120% 140% at 20% 20%, rgba(255,255,255,.35), transparent 45%),
+    linear-gradient(135deg, #8b5cf6 0%, #7c3aed 50%, #6d28d9 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.55),
+    0 12px 24px rgba(139, 92, 246, 0.4);
+}
+
+.glass-cta-enhanced:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.55),
+    0 16px 32px rgba(139, 92, 246, 0.5);
+}
+
+.glass-cta-enhanced:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.glass-cta-enhanced:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
 /* ===== Docked navbar ===== */
 .mobile-dock {
   position: fixed; 
@@ -1223,14 +1356,14 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
   max-height: calc(100vh - 4rem);
 }
 
-/* Mobile modal improvements */
+/* Mobile modal improvements - position below top nav */
 @media (max-width: 1023px) {
   .modal-container {
     width: calc(100vw - 1rem);
-    max-height: calc(100vh - 2rem);
-    top: 1rem;
+    max-height: calc(100vh - 8rem - env(safe-area-inset-top, 0px));
+    top: calc(5.5rem + env(safe-area-inset-top, 0px));
     transform: translateX(-50%);
-    bottom: 1rem;
+    bottom: auto;
     height: auto;
   }
 }
@@ -2070,6 +2203,63 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
   to {
     opacity: 1;
   }
+}
+
+/* Settings Modal */
+.settings-section {
+  margin-bottom: 1.5rem;
+}
+
+.settings-section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.settings-section-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.settings-btn {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  font-family: 'Baloo 2', sans-serif;
+  font-weight: 600;
+  font-size: 1rem;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.settings-btn-clear {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.settings-btn-clear:hover {
+  background: #e5e7eb;
+}
+
+.settings-btn-save {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.settings-btn-save:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
 .glass-action-container {

@@ -71,8 +71,6 @@ export default function BottomNavBar({
   onCancelSearch,
   searchParams
 }: BottomNavBarProps) {
-  const [showExclusionManager, setShowExclusionManager] = useState(false);
-
   const canNavigateToResults = hasResults && !loading.isLoading;
 
   // Check if search form is ready
@@ -84,24 +82,9 @@ export default function BottomNavBar({
     searchParams.duration > 0 &&
     searchParams.ages.length > 0;
 
-  // Button configuration for search page only
+  // Button configuration for search page only - Only Search button
   const getButtons = (): NavButton[] => {
     return [
-      {
-        id: 'exclusions',
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="15" y1="9" x2="9" y2="15"></line>
-            <line x1="9" y1="9" x2="15" y2="15"></line>
-          </svg>
-        ),
-        label: 'Exclusions',
-        color: 'text-white',
-        action: () => setShowExclusionManager(true),
-        disabled: false,
-        isSecondary: true
-      },
       {
         id: 'search',
         icon: loading.isLoading ? (
@@ -110,28 +93,19 @@ export default function BottomNavBar({
             <line x1="15" y1="9" x2="9" y2="15"></line>
             <line x1="9" y1="9" x2="15" y2="15"></line>
           </svg>
-        ) : null,
-        label: loading.isLoading ? 'Cancel' : 'Search',
+        ) : (
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="8" strokeWidth="2"></circle>
+            <path d="m21 21-4.35-4.35" strokeWidth="2" strokeLinecap="round"></path>
+          </svg>
+        ),
+        label: loading.isLoading ? 'Cancel' : 'Search Activities',
         color: 'text-white',
         action: loading.isLoading 
           ? () => onCancelSearch && onCancelSearch()
           : () => canSearch && onSearch && onSearch(),
         disabled: loading.isLoading ? false : !canSearch,
         isPrimary: true
-      },
-      {
-        id: 'settings',
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <circle cx="12" cy="12" r="3"></circle>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1 1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-          </svg>
-        ),
-        label: 'Settings',
-        color: 'text-white',
-        action: onSettingsOpen,
-        disabled: false,
-        isSecondary: true
       }
     ];
   };
@@ -147,129 +121,31 @@ export default function BottomNavBar({
           <ProgressBar progress={loading.progress} status={loading.status} />
         )}
         
-        {/* Button Row */}
-        <div className="flex justify-center items-center gap-3 py-3 px-2">
+        {/* Button Row - Full Width Search Button */}
+        <div className="flex justify-center items-center py-3 px-4">
             {buttons.map((button) => {
             if (button.isPrimary === true) {
-              // Primary search button with glassmorphism gradient
+              // Primary search button - full width and larger
               return (
                 <button
                   key={button.id}
                   onClick={button.action}
                   disabled={button.disabled}
-                  className={`glass-cta flex-1 ${
+                  className={`glass-cta-enhanced w-full ${
                     button.disabled ? 'opacity-50 cursor-not-allowed' : ''
                   }`}
                 >
-                  <div className="flex items-center justify-center w-full h-full">
-                    {button.icon || (
-                      <span className="font-bold text-white text-2xl">{button.label}</span>
-                    )}
-                  </div>
-                </button>
-              );
-            } else {
-              // Secondary buttons
-              return (
-                <button
-                  key={button.id}
-                  onClick={button.action}
-                  disabled={button.disabled}
-                  className={`dock-btn flex flex-col items-center justify-center py-2 px-4 relative group transition-all duration-200 ${
-                    button.disabled ? 'opacity-50 cursor-not-allowed' : ''
-                  }`}
-                >
-                  {/* Icon */}
-                  <div className={`mb-1 ${button.color}`}>
+                  <div className="flex items-center justify-center gap-3">
                     {button.icon}
+                    <span className="font-bold text-white text-xl">{button.label}</span>
                   </div>
-                  
-                  {/* Label */}
-                  <span className={`${button.color} font-medium text-xs`}>
-                    {button.label}
-                  </span>
-                  
-                  {/* Active indicator for search page */}
-                  {(button.id === 'search' && currentPage === 'search') && (
-                    <div className="absolute -top-1 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-indigo-600 rounded-full"></div>
-                  )}
                 </button>
               );
             }
+            return null;
           })}
           </div>
         </div>
-
-      {/* Exclusion Manager Modal */}
-      {showExclusionManager && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-gray-900">Manage Excluded Activities</h2>
-                <button
-                  onClick={() => setShowExclusionManager(false)}
-                  className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
-                >
-                  ×
-                </button>
-              </div>
-              <p className="text-sm text-gray-600 mt-2">
-                Remove activities you don't want to see in future recommendations. Exclusions are saved per location.
-              </p>
-            </div>
-
-            <div className="p-6">
-              {Object.keys(exclusionList).length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <span className="text-4xl block mb-4">🎯</span>
-                  <p>No exclusions yet!</p>
-                  <p className="text-sm">Use the "Don't suggest this again" button on activities to add exclusions.</p>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {Object.entries(exclusionList).map(([location, attractions]) => (
-                    <div key={location} className="border border-gray-200 rounded-lg p-4">
-                      <h3 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
-                        <span>📍</span>
-                        {location}
-                        <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-full text-xs">
-                          {attractions.length} excluded
-                        </span>
-                      </h3>
-                      <div className="space-y-2">
-                        {attractions.map((attraction, index) => (
-                          <div key={index} className="flex items-center justify-between bg-red-50 border border-red-200 rounded-lg p-3">
-                            <span className="text-sm text-gray-700">{attraction}</span>
-                            <button
-                              onClick={() => removeFromExclusionList(location, attraction)}
-                              className="text-red-600 hover:text-red-800 text-sm font-medium"
-                              title="Remove from exclusions"
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4">
-              <div className="flex justify-end">
-                <button
-                  onClick={() => setShowExclusionManager(false)}
-                  className="btn btn-primary"
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

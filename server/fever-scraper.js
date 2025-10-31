@@ -651,7 +651,7 @@ export function formatEventsForAI(events, maxEvents = 30) {
     url: event.url,
     location: event.location || null,
     address: event.address || null,
-    image_url: event.image_url || null,
+    imageUrl: event.image_url || null, // Map to camelCase for consistency with schema
     suitable_for_kids: event.suitable_for_kids,
     suitable_ages: event.suitable_ages || 'All ages', // Default to "All ages" if not specified
     start_date: event.start_date || null,

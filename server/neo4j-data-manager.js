@@ -1096,6 +1096,150 @@ export class Neo4jDataManager {
     }
   }
 
+  /**
+   * Get popular activities by location for carousel display
+   * Fetches from the most recent search cache and randomly selects activities
+   * @param {string} location - Location to get activities for
+   * @param {number} limit - Maximum number of activities to return (default 10)
+   * @returns {Promise<Array>} Random selection of activities from most recent cache
+   */
+  async getPopularActivitiesByLocation(location, limit = 10) {
+    await this.ensureConnection();
+    const session = this.driver.session({ database: this.database });
+    
+    try {
+      console.log(`🔍 Getting popular activities for: "${location}" (limit: ${limit})`);
+      
+      // Now try to get the cached results (stored in 'results' property as JSON string)
+      const recentCacheResult = await session.run(`
+        MATCH (s:SearchCacheEnhanced)
+        WHERE s.location CONTAINS $location
+        AND s.results IS NOT NULL
+        RETURN s.results as results, 
+               s.lastAccessed as lastAccessed,
+               s.location as location,
+               s.date as date
+        ORDER BY s.lastAccessed DESC
+        LIMIT 1
+      `, { location });
+      
+      if (recentCacheResult.records.length === 0) {
+        console.log(`⚠️ No cached search results found for location: "${location}"`);
+        return [];
+      }
+      
+      // Extract and parse results from the most recent cache
+      const record = recentCacheResult.records[0];
+      const resultsString = record.get('results');
+      const cacheLocation = record.get('location');
+      const cacheDate = record.get('date');
+      const lastAccessed = record.get('lastAccessed');
+      
+      console.log(`✅ Found cache for ${cacheLocation} (date: ${cacheDate}, accessed: ${lastAccessed})`);
+      
+      // Parse the JSON string to get the actual results object
+      let resultsObj;
+      try {
+        resultsObj = JSON.parse(resultsString);
+      } catch (error) {
+        console.error(`❌ Failed to parse results JSON:`, error);
+        return [];
+      }
+      
+      const activities = resultsObj.activities || [];
+      console.log(`📦 Cache contains ${activities.length} activities`);
+      
+      if (activities.length === 0) {
+        console.log(`⚠️ Cache exists but contains no activities`);
+        return [];
+      }
+      
+      // Shuffle activities array to get random selection
+      const shuffled = [...activities].sort(() => Math.random() - 0.5);
+      
+      // Take only the requested limit
+      const selectedActivities = shuffled.slice(0, Math.min(limit, shuffled.length));
+      
+      // Map emoji based on category
+      const categoryEmojiMap = {
+        'outdoor': '🏞️',
+        'museum': '🏛️',
+        'creative': '🎨',
+        'water': '🌊',
+        'indoor': '🎪',
+        'park': '🌳',
+        'playground': '🛝',
+        'show': '🎭',
+        'festival': '🎉',
+        'seasonal': '🎃',
+        'hike': '🥾',
+        'other': '🎯'
+      };
+      
+      // Format activities for frontend with image URLs
+      const formattedActivities = selectedActivities.map((activity, idx) => {
+        const category = activity.category?.toLowerCase() || 'other';
+        const emoji = categoryEmojiMap[category] || '🎯';
+        
+        // Try to extract image URL from activity
+        let imageUrl = null;
+        
+        // Check if activity has an image field (from AI results or web scraping)
+        if (activity.image && typeof activity.image === 'string' && activity.image.startsWith('http')) {
+          imageUrl = activity.image;
+        } else if (activity.imageUrl) {
+          imageUrl = activity.imageUrl;
+        } else if (activity.photo) {
+          imageUrl = activity.photo;
+        }
+        
+        // If no real image, generate placeholder using Unsplash API with category keywords
+        if (!imageUrl) {
+          const categoryKeywords = {
+            'outdoor': 'outdoor-activities-kids',
+            'museum': 'museum-kids',
+            'creative': 'art-craft-kids',
+            'water': 'water-activities-kids',
+            'indoor': 'indoor-playground',
+            'park': 'park-playground',
+            'playground': 'playground-children',
+            'show': 'theater-performance-kids',
+            'festival': 'festival-family',
+            'seasonal': 'seasonal-activities',
+            'hike': 'hiking-family',
+            'other': 'kids-activities'
+          };
+          
+          const keyword = categoryKeywords[category] || 'kids-activities';
+          // Use Unsplash Source API for random images matching the category
+          imageUrl = `https://source.unsplash.com/400x300/?${keyword}`;
+        }
+        
+        return {
+          id: idx + 1,
+          title: activity.name || activity.title || 'Unknown Activity',
+          category: activity.category || 'Other',
+          description: activity.description || activity.desc || '',
+          emoji: emoji, // Keep emoji for fallback
+          imageUrl: imageUrl, // Real image URL
+          // Include additional useful info if available
+          ...(activity.address && { address: activity.address }),
+          ...(activity.link && { link: activity.link })
+        };
+      });
+      
+      console.log(`✅ Returning ${formattedActivities.length} random activities from most recent cache`);
+      return formattedActivities;
+      
+    } catch (error) {
+      console.error('❌ Error getting popular activities:', error.message);
+      console.error('Stack trace:', error.stack);
+      return [];
+    } finally {
+      session.close();
+    }
+  }
+
   async close() {
     if (this.driver) {
       await this.driver.close();

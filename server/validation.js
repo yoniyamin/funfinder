@@ -36,7 +36,7 @@ const ContextSchema = z.object({
   location: z.string().trim().min(1, "Location cannot be empty"),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format"),
   duration_hours: z.number().min(0.5).max(24).catch(2), // Default to 2 hours if invalid
-  ages: z.array(z.number().min(0).max(120)).min(1, "At least one age must be provided"),
+  ages: z.array(z.coerce.number().min(0).max(120)).default([]), // Allow empty array (no kids), coerce strings to numbers
   weather: WeatherSchema,
   is_public_holiday: z.boolean().catch(false),
   nearby_festivals: z.array(FestivalSchema).default([]),
@@ -95,6 +95,16 @@ const ActivitySchema = z.object({
   
   booking_url: z.string()
     .url("Invalid booking URL")
+    .nullable()
+    .optional()
+    .catch(undefined)
+    .transform(url => {
+      if (!url || url === "" || url === "null") return undefined;
+      return url;
+    }),
+  
+  imageUrl: z.string()
+    .url("Invalid image URL")
     .nullable()
     .optional()
     .catch(undefined)

@@ -1339,6 +1339,7 @@ const JSON_SCHEMA = {
     lat: 'number|optional',
     lon: 'number|optional',
     booking_url: 'string|optional',
+    imageUrl: 'string|optional - URL to an image/photo of the activity, event, or venue',
     free: 'boolean|optional',
     weather_fit: 'good|ok|bad',
     notes: 'string|optional',
@@ -1389,6 +1390,7 @@ function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActiviti
     'FOR SELECTED FEVER EVENTS:',
     '✓ 🚨 CRITICAL: Copy the "source" field exactly (source: "Fever")',
     '✓ 🚨 CRITICAL: Copy the "booking_url" field from the event',
+    '✓ 🚨 CRITICAL: If the event has an image, copy the "imageUrl" field from the event',
     '✓ Translate any non-English content to English',
     '✓ Verify age appropriateness and update suitable_ages if needed',
     '✓ Set accurate weather_fit based on venue type',
@@ -1399,7 +1401,17 @@ function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActiviti
     `✓ Match duration window: ${ctx.duration_hours} hours`,
     '✓ Consider weather conditions',
     '✓ Set source to null for activities you generate',
-    '✓ Include booking URLs when possible',
+    '✓ 🌐 CRITICAL BOOKING URL REQUIREMENT:',
+    '  - For museums, aquariums, zoos, galleries, theaters, venues, and organized attractions: ALWAYS include their official website in the booking_url field',
+    '  - This applies to BOTH free AND paid attractions - free museums still need their website URL',
+    '  - Only use null for booking_url for outdoor landmarks, parks, or public spaces without an official website',
+    '  - Examples: Museums → official website, Aquariums → official website, Parks → null (unless they have ticketing)',
+    '✓ 🎯 IMPORTANT IMAGE REQUIREMENT:',
+    '  - For EVERY activity, try to include a real image URL in the "imageUrl" field',
+    '  - Search your knowledge for official photos/images from the venue or attraction',
+    '  - Examples: museum official website images, venue photos, attraction images',
+    '  - If you know a website has images, provide the direct image URL',
+    '  - Images significantly improve user experience - prioritize finding them!',
     '',
     'HARD RULES:',
     '✓ ALL content must be in English',
@@ -1416,7 +1428,20 @@ function buildUserMessage(ctx, allowedCats, webSearchResults = null, maxActiviti
     '- Consider weather; set weather_fit to good/ok/bad.',
     '- Prefer options relevant to public holidays or nearby festivals when applicable.',
     '- Consider if attractions might be closed or have special hours on public holidays.',
-    '- IMPORTANT: When possible, include official website links or booking URLs in the booking_url field for attractions, venues, or activities.',
+    '- 🌐 CRITICAL BOOKING URL REQUIREMENT:',
+    '  - For museums, aquariums, zoos, galleries, theaters, venues, and organized attractions: ALWAYS include their official website in the booking_url field',
+    '  - This applies to BOTH free AND paid attractions - free museums still need their website URL',
+    '  - Only use null for booking_url for outdoor landmarks, parks, or public spaces without an official website',
+    '  - Examples: Museums → official website, Aquariums → official website, Parks → null (unless they have ticketing)',
+    '',
+    '🎯 CRITICAL IMAGE REQUIREMENT:',
+    '- For EVERY activity you generate, you MUST try to include a real, working image URL in the "imageUrl" field',
+    '- Search your knowledge base for official photos from museums, venues, attractions, or landmarks',
+    '- Provide direct URLs to images (e.g., from official websites, Wikipedia, tourism boards)',
+    '- Example format: "imageUrl": "https://example.com/museum-photo.jpg"',
+    '- Images are displayed in the "Popular in [City]" carousel - they are ESSENTIAL for user experience',
+    '- If you genuinely cannot find an image URL, you may leave it null, but TRY HARD to find one',
+    '',
     '- ALL content (titles, descriptions) must be in English.',
     '- Set source to null for all activities.',
     ''
@@ -1557,7 +1582,8 @@ function buildUserMessageForDisplay(ctx, allowedCats, maxActivities = null, extr
     '- Consider weather; set weather_fit to good/ok/bad.',
     '- Prefer options relevant to public holidays or nearby festivals when applicable.',
     '- Consider if attractions might be closed or have special hours on public holidays.',
-    '- IMPORTANT: When possible, include official website links or booking URLs in the booking_url field for attractions, venues, or activities.',
+    '- 🌐 CRITICAL: For museums, aquariums, zoos, galleries, theaters, and venues - ALWAYS include their official website in booking_url (applies to FREE and paid attractions)',
+    '- Only use null for booking_url for outdoor landmarks/parks without websites',
     '- IMPORTANT: Also research and include any public holidays, festivals, or special celebrations happening on or around this date in this location.',
     '- Add discovered holidays/festivals to the "discovered_holidays" array in your response.',
     '- Return ONLY a single JSON object matching the schema; NO markdown or commentary.',
@@ -4191,6 +4217,63 @@ async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivitie
   return json;
 }
 
+// Enrich activities with images from Unsplash if they don't have images
+async function enrichActivitiesWithImages(activities, location) {
+  if (!activities || activities.length === 0) return activities;
+  
+  console.log(`🖼️ Enriching activities with images for ${location}...`);
+  
+  // Category to search query mapping for better image results
+  const categoryImageQueries = {
+    'outdoor': 'outdoor activity park',
+    'indoor': 'indoor entertainment venue',
+    'museum': 'museum art gallery',
+    'park': 'park playground children',
+    'playground': 'playground kids play',
+    'water': 'water park swimming pool',
+    'hike': 'hiking trail nature',
+    'creative': 'art creative workshop kids',
+    'festival': 'festival celebration event',
+    'show': 'theater performance show',
+    'seasonal': 'seasonal activity family',
+    'other': 'family activity entertainment'
+  };
+  
+  const enrichedActivities = await Promise.all(
+    activities.map(async (activity) => {
+      // Skip if already has an image
+      if (activity.imageUrl) {
+        return activity;
+      }
+      
+      try {
+        // Build search query based on category and location
+        const category = activity.category || 'other';
+        const baseQuery = categoryImageQueries[category] || categoryImageQueries['other'];
+        const searchQuery = `${baseQuery} ${location}`.trim();
+        
+        // Use Unsplash API (free tier, no key needed for basic usage)
+        const url = `https://source.unsplash.com/400x300/?${encodeURIComponent(searchQuery)}`;
+        
+        // Add image URL to activity
+        return {
+          ...activity,
+          imageUrl: url
+        };
+      } catch (error) {
+        // If image fetch fails, just return activity without image
+        console.log(`⚠️ Failed to fetch image for "${activity.title}":`, error.message);
+        return activity;
+      }
+    })
+  );
+  
+  const enrichedCount = enrichedActivities.filter(a => a.imageUrl).length;
+  console.log(`✅ Enriched ${enrichedCount}/${activities.length} activities with images`);
+  
+  return enrichedActivities;
+}
+
 function getModelIdentifier() {
   const provider = apiKeys.ai_provider || 'gemini';
   if (apiKeys.cache_include_model && provider === 'openrouter') {
@@ -4414,6 +4497,19 @@ app.post('/api/activities', async (req, res) => {
             cachedResults.ai_model = cachedResults.ai_provider;
           }
 
+          // Enrich cached activities with images if they're missing (for older cached data)
+          if (cachedResults.activities && cachedResults.activities.length > 0) {
+            try {
+              const activitiesWithoutImages = cachedResults.activities.filter(a => !a.imageUrl).length;
+              if (activitiesWithoutImages > 0) {
+                console.log(`🖼️ ${activitiesWithoutImages} cached activities missing images, enriching...`);
+                cachedResults.activities = await enrichActivitiesWithImages(cachedResults.activities, ctx.location);
+              }
+            } catch (enrichError) {
+              console.log('⚠️ Failed to enrich cached activities with images (non-blocking):', enrichError.message);
+            }
+          }
+
           json = cachedResults;
         }
       } catch (cacheError) {
@@ -4436,6 +4532,15 @@ app.post('/api/activities', async (req, res) => {
       json.ai_model = getActiveModelName();
 
       filterOutFestivalActivities(json);
+
+      // Enrich activities with images if they don't have them
+      if (json.activities && json.activities.length > 0) {
+        try {
+          json.activities = await enrichActivitiesWithImages(json.activities, ctx.location);
+        } catch (enrichError) {
+          console.log('⚠️ Failed to enrich activities with images (non-blocking):', enrichError.message);
+        }
+      }
 
       // Cache the results (only if using Neo4j and not fallback responses)
       if (isNeo4jConnected && dataManager instanceof Neo4jDataManager && json) {
@@ -4534,6 +4639,24 @@ app.delete('/api/search-history/:id', async (req, res) => {
   } catch (error) {
     console.error('Error deleting search history entry:', error);
     res.status(500).json({ ok: false, error: 'Failed to delete search history entry' });
+  }
+});
+
+// Cached Activities endpoint (for carousel)
+app.get('/api/cached-activities', async (req, res) => {
+  try {
+    const { location, limit = 10 } = req.query;
+    
+    if (!location) {
+      return res.status(400).json({ ok: false, error: 'Location parameter is required' });
+    }
+    
+    const activities = await dataManager.getPopularActivitiesByLocation(location, parseInt(limit));
+    console.log(`🎪 Returning ${activities.length} cached activities for: ${location}`);
+    res.json({ ok: true, activities });
+  } catch (error) {
+    console.error('❌ Error getting cached activities:', error.message);
+    res.json({ ok: false, activities: [], error: 'Failed to get cached activities' });
   }
 });
 

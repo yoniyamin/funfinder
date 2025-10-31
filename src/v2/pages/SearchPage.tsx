@@ -99,6 +99,7 @@ export default function SearchPage({
   const [showAgeModal, setShowAgeModal] = useState(false);
   const [showDateModal, setShowDateModal] = useState(false);
   const [showInstructionsModal, setShowInstructionsModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [extraInstructions, setExtraInstructions] = useState(searchParams.extraInstructions || '');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [cities, setCities] = useState<City[]>([]);
@@ -113,6 +114,7 @@ export default function SearchPage({
   const dateModalRef = useRef<HTMLDivElement>(null);
   const historyDropdownRef = useRef<HTMLDivElement>(null);
   const instructionsModalRef = useRef<HTMLDivElement>(null);
+  const settingsModalRef = useRef<HTMLDivElement>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const instructionsPreviewRef = useRef<HTMLDivElement>(null);
 
@@ -263,6 +265,9 @@ export default function SearchPage({
       if (instructionsModalRef.current && !instructionsModalRef.current.contains(event.target as Node)) {
         setShowInstructionsModal(false);
       }
+      if (settingsModalRef.current && !settingsModalRef.current.contains(event.target as Node)) {
+        setShowSettingsModal(false);
+      }
       if (instructionsPreviewRef.current && !instructionsPreviewRef.current.contains(event.target as Node)) {
         setShowInstructionsPreview(false);
       }
@@ -275,6 +280,7 @@ export default function SearchPage({
       setShowAgeModal(false);
       setShowHistory(false);
       setShowInstructionsModal(false);
+      setShowSettingsModal(false);
       setShowInstructionsPreview(false);
     };
 
@@ -285,7 +291,7 @@ export default function SearchPage({
       document.removeEventListener('mousedown', handleClickOutside);
       window.removeEventListener('resize', handleResize);
     };
-  }, [showLocationModal, showDateModal, showAgeModal, showHistory, showInstructionsModal]);
+  }, [showLocationModal, showDateModal, showAgeModal, showHistory, showInstructionsModal, showSettingsModal]);
 
   // Calendar helper functions
   const getDaysInMonth = (date: Date) => {
@@ -1070,20 +1076,96 @@ export default function SearchPage({
   // Mobile Layout (Original)
   return (
     <div className="glass-search-page">
-      {/* Background Image */}
-      <div className="glass-bg-container">
-        <img
-          src={getImageUrl('BGPC')}
-          alt="Nature background with kids playing"
-          className="glass-bg-image glass-bg-image-desktop"
-        />
-        <img
-          src={getImageUrl(isStandalone ? 'BG5_FS' : 'BG5')}
-          alt="Nature background with kids playing"
-          className="glass-bg-image glass-bg-image-mobile"
-        />
-        <div className="glass-bg-overlay"></div>
-      </div>
+      {/* Gradient Background */}
+      <div className="glass-bg-gradient"></div>
+      
+      {/* Top Navigation Bar */}
+      {!loading.isLoading && (
+        <div className="search-top-nav">
+          <div className="search-logo">
+            <span className="logo-text">Fun</span>
+            <span className="logo-text">Finder</span>
+          </div>
+          <div className="search-top-actions">
+            {/* History Icon */}
+            {searchHistory.length > 0 && (
+              <div className="search-nav-icon-container" ref={historyDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowHistory(!showHistory)}
+                  className="search-nav-icon"
+                  title="History"
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+                
+                {showHistory && (
+                  <div className="search-history-dropdown">
+                    {searchHistory.length > 3 && (
+                      <div className="history-scroll-indicator">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="animate-bounce">
+                          <path d="M19 14l-7 7m0 0l-7-7m7 7V3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                        <span className="text-xs text-gray-500">Scroll for more</span>
+                      </div>
+                    )}
+                    {searchHistory.map((entry) => (
+                      <div key={entry.id} className="glass-history-item">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            loadFromHistory(entry);
+                            setShowHistory(false);
+                          }}
+                          className="glass-history-button"
+                        >
+                          <div className="glass-history-title">{entry.location}</div>
+                          <div className="glass-history-details">
+                            {entry.date} • {entry.duration}h • Ages: {entry.kidsAges.join(', ')}
+                          </div>
+                          {entry.extraInstructions && entry.extraInstructions.trim() && (
+                            <div className="glass-history-instructions" title={entry.extraInstructions}>
+                              💬 {entry.extraInstructions.length > 40 ? entry.extraInstructions.substring(0, 40) + '...' : entry.extraInstructions}
+                            </div>
+                          )}
+                          <div className="glass-history-date">
+                            {new Date(entry.timestamp).toLocaleDateString()}
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteHistoryEntry(entry.id);
+                          }}
+                          className="glass-history-delete"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Settings Icon */}
+            <button
+              type="button"
+              onClick={() => setShowSettingsModal(true)}
+              className="search-nav-icon"
+              title="Settings"
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Content Container */}
       <div className="glass-content">
@@ -1217,103 +1299,7 @@ export default function SearchPage({
             </div>
 
           </div>
-          
-          {/* Top Actions - Reset, History, Instructions */}
-          <div className="glass-card-actions">
-            {/* Reset Button */}
-            <button
-              type="button"
-              onClick={handleResetForm}
-              className="glass-action-btn-with-label"
-              title="Reset form"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <path d="M1 4v6h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-              <span className="action-label">Reset</span>
-            </button>
-
-            {/* Recent Searches */}
-            {searchHistory.length > 0 && (
-              <div className="glass-action-container" ref={historyDropdownRef}>
-                <button
-                  type="button"
-                  onClick={() => setShowHistory(!showHistory)}
-                  className="glass-action-btn-with-label history-btn"
-                  title="Recent searches"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                    <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                  <span className="action-label">History</span>
-                </button>
-                
-                {showHistory && (
-                  <div className="glass-history-dropdown-top">
-                    {searchHistory.length > 3 && (
-                      <div className="history-scroll-indicator">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="animate-bounce">
-                          <path d="M19 14l-7 7m0 0l-7-7m7 7V3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                        <span className="text-xs text-gray-500">Scroll for more</span>
-                      </div>
-                    )}
-                    {searchHistory.map((entry) => (
-                      <div key={entry.id} className="glass-history-item">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            loadFromHistory(entry);
-                            setShowHistory(false);
-                          }}
-                          className="glass-history-button"
-                        >
-                          <div className="glass-history-title">{entry.location}</div>
-                          <div className="glass-history-details">
-                            {entry.date} • {entry.duration}h • Ages: {entry.kidsAges.join(', ')}
-                          </div>
-                          {entry.extraInstructions && entry.extraInstructions.trim() && (
-                            <div className="glass-history-instructions" title={entry.extraInstructions}>
-                              💬 {entry.extraInstructions.length > 40 ? entry.extraInstructions.substring(0, 40) + '...' : entry.extraInstructions}
-                            </div>
-                          )}
-                          <div className="glass-history-date">
-                            {new Date(entry.timestamp).toLocaleDateString()}
-                          </div>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteHistoryEntry(entry.id);
-                          }}
-                          className="glass-history-delete"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Instructions */}
-            <button
-              type="button"
-              onClick={() => setShowInstructionsModal(true)}
-              className={`glass-action-btn-with-label ${extraInstructions ? 'has-instructions' : ''}`}
-              title={extraInstructions ? 'Instructions saved - click to edit' : 'Add other instructions'}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <path d="M14.828 2.828a4 4 0 015.657 0L22 4.343a4 4 0 010 5.657L20.828 11.172 7.172 24.828 1 23l1.828-6.172L16.586 3.414zm0 0L17.657 6.171" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-              <span className="action-label">Instructions</span>
-            </button>
-          </div>
         </div>
-
 
         {/* Location Modal */}
         {showLocationModal && (
@@ -1644,18 +1630,123 @@ export default function SearchPage({
                         className="age-option-item"
                       >
                         <div className="age-option-icon">
-                          {option.value === 'toddlers' && '👶'}
-                          {option.value === 'preschoolers' && '🧒'}
-                          {option.value === 'early-elementary' && '👦'}
-                          {option.value === 'pre-teens' && '👧'}
-                          {option.value === 'teenagers' && '👨‍🎓'}
+                          <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+                            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="#6366f1"/>
+                          </svg>
                         </div>
                         <div className="age-option-info">
                           <span className="age-option-label">{option.label}</span>
-                          
                         </div>
                       </button>
                     ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Settings Modal */}
+        {showSettingsModal && (
+          <>
+            <div className="modal-backdrop" />
+            <div className="modal-container" ref={settingsModalRef}>
+              <div className="modal-content">
+                <div className="modal-header">
+                  <h3 className="modal-title">Settings</h3>
+                  <button
+                    type="button"
+                    onClick={() => setShowSettingsModal(false)}
+                    className="modal-close"
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="modal-body">
+                  {/* Instructions Section */}
+                  <div className="settings-section">
+                    <div className="settings-section-header">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-purple-600">
+                        <path d="M14.828 2.828a4 4 0 015.657 0L22 4.343a4 4 0 010 5.657L20.828 11.172 7.172 24.828 1 23l1.828-6.172L16.586 3.414zm0 0L17.657 6.171" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                      <h4 className="settings-section-title">Special Instructions</h4>
+                    </div>
+                    
+                    {/* Quick Tags */}
+                    <div className="instructions-tags">
+                      <div className="instructions-tags-scroll-container">
+                        <div className="instructions-tags-scroll">
+                          {[
+                            { icon: '♿', text: 'Wheelchair accessible' },
+                            { icon: '🚇', text: 'Near metro/public transport' },
+                            { icon: '🌳', text: 'Outdoor activities preferred' },
+                            { icon: '🏢', text: 'Indoor activities preferred' },
+                            { icon: '💰', text: 'Budget-friendly options' },
+                            { icon: '🎨', text: 'Creative/educational focus' },
+                            { icon: '🏃', text: 'High energy activities' },
+                            { icon: '😴', text: 'Calm/quiet activities' },
+                            { icon: '🍔', text: 'Food available on-site' },
+                            { icon: '🅿️', text: 'Parking available' }
+                          ].map((tag, index) => (
+                            <button
+                              key={index}
+                              type="button"
+                              onClick={() => {
+                                const tagText = tag.text;
+                                if (extraInstructions.includes(tagText)) {
+                                  setExtraInstructions(extraInstructions.replace(tagText, '').replace(/,\s*,/g, ',').replace(/^,\s*/, '').replace(/,\s*$/, ''));
+                                } else {
+                                  setExtraInstructions(extraInstructions + (extraInstructions ? ', ' + tagText : tagText));
+                                }
+                              }}
+                              className={`instructions-tag-scroll ${extraInstructions.includes(tag.text) ? 'active' : ''}`}
+                            >
+                              {tag.icon} {tag.text}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="tags-scroll-indicator">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" className="opacity-50">
+                            <path d="M19 12l-7 7m0 0l-7-7m7 7V4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Instructions Input */}
+                    <div className="instructions-input">
+                      <textarea
+                        value={extraInstructions}
+                        onChange={(e) => setExtraInstructions(e.target.value)}
+                        placeholder="Type custom instructions or select tags above..."
+                        className="instructions-input-field"
+                        rows={3}
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Action Buttons */}
+                  <div className="settings-actions">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExtraInstructions('');
+                        updateSearchParams({ extraInstructions: '' });
+                      }}
+                      className="settings-btn settings-btn-clear"
+                    >
+                      Clear Instructions
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateSearchParams({ extraInstructions: extraInstructions });
+                        setShowSettingsModal(false);
+                      }}
+                      className="settings-btn settings-btn-save"
+                    >
+                      Save & Close
+                    </button>
                   </div>
                 </div>
               </div>
