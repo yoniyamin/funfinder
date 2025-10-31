@@ -167,7 +167,7 @@ export default function SearchPageV3({
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isFeaturesExpanded, setIsFeaturesExpanded] = useState(false); // Collapsible features
   const [dynamicMessage, setDynamicMessage] = useState(0);
-  
+
   const settingsMenuRef = useRef<HTMLDivElement>(null);
 
   const locationInputRef = useRef<HTMLInputElement>(null);
@@ -175,6 +175,34 @@ export default function SearchPageV3({
   const [isDetectingLocation, setIsDetectingLocation] = useState(false);
   const lastProgressRef = useRef(0);
   const progressStuckTimeRef = useRef(0);
+
+  const reverseGeocodeCoordinates = async (latitude: number, longitude: number): Promise<string | null> => {
+    try {
+      const url = new URL('https://geocoding-api.open-meteo.com/v1/reverse');
+      url.searchParams.set('latitude', latitude.toString());
+      url.searchParams.set('longitude', longitude.toString());
+      url.searchParams.set('count', '1');
+      url.searchParams.set('language', 'en');
+
+      const response = await fetch(url.toString());
+      if (!response.ok) {
+        console.error('Reverse geocoding failed:', response.status, response.statusText);
+        return null;
+      }
+
+      const data = await response.json();
+      const result = data.results?.[0];
+      if (!result) {
+        console.warn('Reverse geocoding returned no results for coordinates:', { latitude, longitude });
+        return null;
+      }
+
+      return `${result.name}, ${result.country}`;
+    } catch (error) {
+      console.error('Failed to reverse geocode location:', error);
+      return null;
+    }
+  };
 
   // Add kid age
   const addKidAge = () => {
@@ -206,26 +234,27 @@ export default function SearchPageV3({
       return;
     }
 
+    const hasSecureContext = typeof window !== 'undefined'
+      ? (window.isSecureContext || window.location.protocol === 'https:' || window.location.hostname === 'localhost')
+      : false;
+
+    if (!hasSecureContext) {
+      alert('Location detection requires a secure (HTTPS) connection. Please switch to HTTPS or enter your city manually.');
+      return;
+    }
+
     setIsDetectingLocation(true);
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const { latitude, longitude } = position.coords;
-        try {
-          // Reverse geocode using Open-Meteo
-          const url = `https://geocoding-api.open-meteo.com/v1/search?latitude=${latitude}&longitude=${longitude}&count=1`;
-          const response = await fetch(url);
-          const data = await response.json();
-          if (data.results?.[0]) {
-            const location = `${data.results[0].name}, ${data.results[0].country}`;
-            updateSearchParams({ location });
-            localStorage.setItem('lastDetectedLocation', location);
-          }
-        } catch (error) {
-          console.error('Failed to reverse geocode location:', error);
-          alert('Failed to detect location. Please try again.');
-        } finally {
-          setIsDetectingLocation(false);
+        const location = await reverseGeocodeCoordinates(latitude, longitude);
+        if (location) {
+          updateSearchParams({ location });
+          localStorage.setItem('lastDetectedLocation', location);
+        } else {
+          alert('We could not determine your location. Please enter it manually.');
         }
+        setIsDetectingLocation(false);
       },
       (error) => {
         console.warn('Geolocation permission denied or unavailable:', error);
@@ -291,21 +320,22 @@ export default function SearchPageV3({
       if (cachedLocation) {
         updateSearchParams({ location: cachedLocation });
       } else if ('geolocation' in navigator) {
+        const hasSecureContext = typeof window !== 'undefined'
+          ? (window.isSecureContext || window.location.protocol === 'https:' || window.location.hostname === 'localhost')
+          : false;
+
+        if (!hasSecureContext) {
+          console.warn('Geolocation requires a secure (HTTPS) context. Skipping automatic detection.');
+          return;
+        }
+
         navigator.geolocation.getCurrentPosition(
           async (position) => {
             const { latitude, longitude } = position.coords;
-            try {
-              // Reverse geocode using Open-Meteo
-              const url = `https://geocoding-api.open-meteo.com/v1/search?latitude=${latitude}&longitude=${longitude}&count=1`;
-              const response = await fetch(url);
-              const data = await response.json();
-              if (data.results?.[0]) {
-                const location = `${data.results[0].name}, ${data.results[0].country}`;
-                updateSearchParams({ location });
-                localStorage.setItem('lastDetectedLocation', location);
-              }
-            } catch (error) {
-              console.error('Failed to reverse geocode location:', error);
+            const location = await reverseGeocodeCoordinates(latitude, longitude);
+            if (location) {
+              updateSearchParams({ location });
+              localStorage.setItem('lastDetectedLocation', location);
             }
           },
           (error) => {
@@ -823,23 +853,25 @@ export default function SearchPageV3({
                   {searchParams.location || 'City or neighborhood'}
                 </button>
                 {/* GPS Button */}
-                <motion.button
-                  type="button"
-                  onClick={detectCurrentLocation}
-                  disabled={isDetectingLocation}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-gradient-to-br from-pink-400 to-rose-500 text-white rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Use current location"
-                >
-                  {isDetectingLocation ? (
-                    <Loader className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 2v4m0 12v4M2 12h4m12 0h4m-6.07-6.07l2.83-2.83m-11.52 0l2.83 2.83m8.69 8.69l2.83 2.83m-11.52 0l2.83-2.83M12 8a4 4 0 100 8 4 4 0 000-8z" />
-                    </svg>
-                  )}
-                </motion.button>
+                <div className="absolute inset-y-0 right-2 flex items-center">
+                  <motion.button
+                    type="button"
+                    onClick={detectCurrentLocation}
+                    disabled={isDetectingLocation}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="p-2 bg-gradient-to-br from-pink-400 to-rose-500 text-white rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Use current location"
+                  >
+                    {isDetectingLocation ? (
+                      <Loader className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 2v4m0 12v4M2 12h4m12 0h4m-6.07-6.07l2.83-2.83m-11.52 0l2.83 2.83m8.69 8.69l2.83 2.83m-11.52 0l2.83-2.83M12 8a4 4 0 100 8 4 4 0 000-8z" />
+                      </svg>
+                    )}
+                  </motion.button>
+                </div>
               </div>
             </div>
 
