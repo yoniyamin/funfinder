@@ -180,6 +180,34 @@ export default function SearchPageV3({
   const lastProgressRef = useRef(0);
   const progressStuckTimeRef = useRef(0);
 
+  const reverseGeocodeCoordinates = async (latitude: number, longitude: number): Promise<string | null> => {
+    try {
+      const url = new URL('https://geocoding-api.open-meteo.com/v1/reverse');
+      url.searchParams.set('latitude', latitude.toString());
+      url.searchParams.set('longitude', longitude.toString());
+      url.searchParams.set('count', '1');
+      url.searchParams.set('language', 'en');
+
+      const response = await fetch(url.toString());
+      if (!response.ok) {
+        console.error('Reverse geocoding failed:', response.status, response.statusText);
+        return null;
+      }
+
+      const data = await response.json();
+      const result = data.results?.[0];
+      if (!result) {
+        console.warn('Reverse geocoding returned no results for coordinates:', { latitude, longitude });
+        return null;
+      }
+
+      return `${result.name}, ${result.country}`;
+    } catch (error) {
+      console.error('Failed to reverse geocode location:', error);
+      return null;
+    }
+  };
+
   // Add kid age
   const addKidAge = () => {
     const age = parseInt(newKidAge);
@@ -210,26 +238,27 @@ export default function SearchPageV3({
       return;
     }
 
+    const hasSecureContext = typeof window !== 'undefined'
+      ? (window.isSecureContext || window.location.protocol === 'https:' || window.location.hostname === 'localhost')
+      : false;
+
+    if (!hasSecureContext) {
+      alert('Location detection requires a secure (HTTPS) connection. Please switch to HTTPS or enter your city manually.');
+      return;
+    }
+
     setIsDetectingLocation(true);
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const { latitude, longitude } = position.coords;
-        try {
-          // Reverse geocode using Open-Meteo
-          const url = `https://geocoding-api.open-meteo.com/v1/search?latitude=${latitude}&longitude=${longitude}&count=1`;
-          const response = await fetch(url);
-          const data = await response.json();
-          if (data.results?.[0]) {
-            const location = `${data.results[0].name}, ${data.results[0].country}`;
-            updateSearchParams({ location });
-            localStorage.setItem('lastDetectedLocation', location);
-          }
-        } catch (error) {
-          console.error('Failed to reverse geocode location:', error);
-          alert('Failed to detect location. Please try again.');
-        } finally {
-          setIsDetectingLocation(false);
+        const location = await reverseGeocodeCoordinates(latitude, longitude);
+        if (location) {
+          updateSearchParams({ location });
+          localStorage.setItem('lastDetectedLocation', location);
+        } else {
+          alert('We could not determine your location. Please enter it manually.');
         }
+        setIsDetectingLocation(false);
       },
       (error) => {
         console.warn('Geolocation permission denied or unavailable:', error);
@@ -295,21 +324,22 @@ export default function SearchPageV3({
       if (cachedLocation) {
         updateSearchParams({ location: cachedLocation });
       } else if ('geolocation' in navigator) {
+        const hasSecureContext = typeof window !== 'undefined'
+          ? (window.isSecureContext || window.location.protocol === 'https:' || window.location.hostname === 'localhost')
+          : false;
+
+        if (!hasSecureContext) {
+          console.warn('Geolocation requires a secure (HTTPS) context. Skipping automatic detection.');
+          return;
+        }
+
         navigator.geolocation.getCurrentPosition(
           async (position) => {
             const { latitude, longitude } = position.coords;
-            try {
-              // Reverse geocode using Open-Meteo
-              const url = `https://geocoding-api.open-meteo.com/v1/search?latitude=${latitude}&longitude=${longitude}&count=1`;
-              const response = await fetch(url);
-              const data = await response.json();
-              if (data.results?.[0]) {
-                const location = `${data.results[0].name}, ${data.results[0].country}`;
-                updateSearchParams({ location });
-                localStorage.setItem('lastDetectedLocation', location);
-              }
-            } catch (error) {
-              console.error('Failed to reverse geocode location:', error);
+            const location = await reverseGeocodeCoordinates(latitude, longitude);
+            if (location) {
+              updateSearchParams({ location });
+              localStorage.setItem('lastDetectedLocation', location);
             }
           },
           (error) => {
