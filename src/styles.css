@@ -47,7 +47,7 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
 .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition; }
 .btn-primary { @apply text-white bg-gradient-fun hover:scale-105 transform transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100; }
 .btn-secondary { @apply bg-gray-100 text-gray-800 hover:bg-gray-200; }
-.chip { @apply inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold bg-gradient-to-r from-purple-100 to-pink-100 text-purple-800 border border-purple-200; }
+.chip { @apply inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold bg-gradient-to-r from-teal-50 to-emerald-50 border border-teal-200; }
 
 /* Ensure gradient animations work properly */
 @keyframes gradient-x {
@@ -206,12 +206,12 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
 
 /* Gradient background for fun theme */
 .bg-gradient-fun {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #2E8B92 0%, #56B88F 100%);
 }
 
 /* Enhanced gradient border effect */
 .bg-gradient-border {
-  background: linear-gradient(45deg, #f093fb 0%, #f5576c 25%, #4facfe 50%, #00f2fe 75%, #f093fb 100%);
+  background: linear-gradient(45deg, #2E8B92 0%, #56B88F 25%, #F2A15F 50%, #F26B8A 75%, #2E8B92 100%);
   background-size: 400% 400%;
   animation: gradient-shift 4s ease infinite;
 }
@@ -285,15 +285,15 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
 
 /* Nature theme colors */
 .v2-nature-green {
-  background: linear-gradient(135deg, #a8e6cf 0%, #7fcdcd 100%);
+  background: linear-gradient(135deg, #56B88F 0%, #2E8B92 100%);
 }
 
 .v2-nature-blue {
-  background: linear-gradient(135deg, #81deea 0%, #4fc3f7 100%);
+  background: linear-gradient(135deg, #2E8B92 0%, #56B88F 100%);
 }
 
 .v2-nature-orange {
-  background: linear-gradient(135deg, #ffab91 0%, #ff8a65 100%);
+  background: linear-gradient(135deg, #F2A15F 0%, #F26B8A 100%);
 }
 
 /* Search button special effects */
@@ -319,10 +319,10 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
 
 @keyframes pulse-glow {
   from {
-    box-shadow: 0 0 20px rgba(139, 92, 246, 0.4);
+    box-shadow: 0 0 20px rgba(46, 139, 146, 0.4);
   }
   to {
-    box-shadow: 0 0 20px rgba(139, 92, 246, 0.8), 0 0 30px rgba(139, 92, 246, 0.6);
+    box-shadow: 0 0 20px rgba(46, 139, 146, 0.8), 0 0 30px rgba(46, 139, 146, 0.6);
   }
 }
 
@@ -335,7 +335,7 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
 
 /* Better focus states for accessibility */
 .v2-focus:focus {
-  outline: 2px solid #6366f1;
+  outline: 2px solid #2E8B92;
   outline-offset: 2px;
 }
 
@@ -1106,17 +1106,17 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
 
   background:
     radial-gradient(120% 140% at 20% 20%, rgba(255,255,255,.35), transparent 45%),
-    linear-gradient(135deg, #4fc3f7 0%, #7fcdcd 35%, #ffab91 75%, #ff8a65 100%);
+    linear-gradient(135deg, #2E8B92 0%, #56B88F 35%, #F2A15F 75%, #F26B8A 100%);
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,0.55),
-    0 12px 24px rgba(0,0,0,0.25);
+    0 12px 24px rgba(46, 139, 146, 0.25);
 }
 
 .glass-cta:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,0.55),
-    0 16px 32px rgba(0,0,0,0.3);
+    0 16px 32px rgba(46, 139, 146, 0.3);
 }
 
 .glass-cta:active:not(:disabled) {
@@ -1140,17 +1140,17 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
   transition: all 0.3s ease;
   background:
     radial-gradient(120% 140% at 20% 20%, rgba(255,255,255,.35), transparent 45%),
-    linear-gradient(135deg, #8b5cf6 0%, #7c3aed 50%, #6d28d9 100%);
+    linear-gradient(135deg, #2E8B92 0%, #56B88F 50%, #2E8B92 100%);
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,0.55),
-    0 12px 24px rgba(139, 92, 246, 0.4);
+    0 12px 24px rgba(46, 139, 146, 0.4);
 }
 
 .glass-cta-enhanced:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,0.55),
-    0 16px 32px rgba(139, 92, 246, 0.5);
+    0 16px 32px rgba(46, 139, 146, 0.5);
 }
 
 .glass-cta-enhanced:active:not(:disabled) {
@@ -1511,15 +1511,15 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
 }
 
 .calendar-day-today {
-  background: #e0e7ff;
-  border-color: #6366f1;
-  color: #6366f1;
+  background: #e0f2f1;
+  border-color: #2E8B92;
+  color: #2E8B92;
   font-weight: 700;
 }
 
 .calendar-day-selected {
-  background: #6366f1;
-  border-color: #6366f1;
+  background: #2E8B92;
+  border-color: #2E8B92;
   color: white;
   font-weight: 700;
 }
@@ -2060,8 +2060,8 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
 .location-loading-spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid rgba(99, 102, 241, 0.1);
-  border-top-color: #6366f1;
+  border: 3px solid rgba(46, 139, 146, 0.1);
+  border-top-color: #2E8B92;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -2252,14 +2252,14 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
 }
 
 .settings-btn-save {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #2E8B92 0%, #56B88F 100%);
   color: white;
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 2px 8px rgba(46, 139, 146, 0.3);
 }
 
 .settings-btn-save:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 4px 12px rgba(46, 139, 146, 0.4);
 }
 
 .glass-action-container {
@@ -2649,7 +2649,7 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
   width: 100%;
   height: 100%;
   border: 2px solid transparent;
-  border-top: 2px solid #8b5cf6;
+  border-top: 2px solid #2E8B92;
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -2738,7 +2738,7 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
 .desktop-main-title {
   font-size: 3.5rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
+  background: linear-gradient(135deg, #2E8B92 0%, #56B88F 50%, #F2A15F 100%);
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
@@ -2839,20 +2839,20 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
 }
 
 .desktop-input-button:hover {
-  border-color: #8b5cf6;
+  border-color: #2E8B92;
   background: rgba(255, 255, 255, 1);
 }
 
 .desktop-input-button.has-value {
   color: #111827;
-  border-color: #10b981;
+  border-color: #56B88F;
 }
 
 .desktop-slider {
   -webkit-appearance: none;
   appearance: none;
   height: 8px;
-  background: linear-gradient(90deg, #e5e7eb 0%, #8b5cf6 100%);
+  background: linear-gradient(90deg, #e5e7eb 0%, #2E8B92 100%);
   border-radius: 8px;
   outline: none;
   margin: 8px 0;
@@ -2864,9 +2864,9 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
   height: 24px;
   width: 24px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+  background: linear-gradient(135deg, #2E8B92 0%, #56B88F 100%);
   border: 2px solid white;
-  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+  box-shadow: 0 2px 8px rgba(46, 139, 146, 0.3);
   cursor: pointer;
 }
 
@@ -2874,9 +2874,9 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
   height: 24px;
   width: 24px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+  background: linear-gradient(135deg, #2E8B92 0%, #56B88F 100%);
   border: 2px solid white;
-  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+  box-shadow: 0 2px 8px rgba(46, 139, 146, 0.3);
   cursor: pointer;
   border: none;
 }
@@ -2926,7 +2926,7 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
   align-items: center;
   gap: 12px;
   padding: 12px 24px;
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
+  background: linear-gradient(135deg, #2E8B92 0%, #56B88F 50%, #2E8B92 100%);
   color: white;
   border: none;
   border-radius: 12px;
@@ -2939,7 +2939,7 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
 
 .desktop-search-button:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(139, 92, 246, 0.4);
+  box-shadow: 0 8px 25px rgba(46, 139, 146, 0.4);
 }
 
 .desktop-search-button:disabled {
@@ -2989,7 +2989,7 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
 }
 
 .desktop-history-button:hover {
-  background: rgba(139, 92, 246, 0.05);
+  background: rgba(46, 139, 146, 0.05);
 }
 
 /* Desktop Layout Specific */
@@ -3021,7 +3021,7 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetic
   width: 100%;
   height: 100%;
   border: 2px solid transparent;
-  border-top: 2px solid #8b5cf6;
+  border-top: 2px solid #2E8B92;
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }

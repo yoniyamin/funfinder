@@ -40,7 +40,7 @@ import {
   Landmark, TreePine, Baby, Mountain, Waves, Palette, 
   Theater, Snowflake, UtensilsCrossed, Music, Camera,
   Castle, Building2, Gamepad2, Umbrella, Flame,
-  ThermometerSun, Shirt, ShieldCheck
+  ThermometerSun, Shirt, ShieldCheck, Heart
 } from 'lucide-react';
 import { WeatherCarousel } from '../components/WeatherCarousel';
 import { getWeatherTips, getWeatherSummary } from '../../lib/weatherHelpers';
@@ -126,13 +126,78 @@ function ActivityCard({
   onToggleFlip
 }: ActivityCardProps) {
   const [sharingActivity, setSharingActivity] = useState(false);
+  const [isFavorited, setIsFavorited] = useState(false);
+  const [showHeartAnimation, setShowHeartAnimation] = useState(false);
   const CategoryIcon = getCategoryIcon(activity.category);
   const WeatherIcon = getWeatherIcon(activity.weather_fit);
   const cardRef = useRef<HTMLDivElement>(null);
 
-  console.log(`🃏 ActivityCard ${index} rendered - isExpanded: ${isExpanded}, isFlipped: ${isFlipped}, hasAddress: ${!!activity.address}`);
-
   const hasPrimaryAction = Boolean(activity.booking_url);
+
+  // Check if activity is already favorited on mount
+  useEffect(() => {
+    const checkFavoriteStatus = async () => {
+      try {
+        const response = await fetch('/api/favorites');
+        if (response.ok) {
+          const data = await response.json();
+          const favorites = data.favorites || [];
+          // Check if this activity title exists in favorites
+          const isAlreadyFavorited = favorites.some(
+            (fav: any) => fav.title === activity.title && fav.location === context?.location
+          );
+          setIsFavorited(isAlreadyFavorited);
+        }
+      } catch (error) {
+        console.error('Error checking favorite status:', error);
+      }
+    };
+    
+    checkFavoriteStatus();
+  }, [activity.title, context?.location]);
+
+  // Handle adding to favorites
+  const handleFavorite = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    // Optimistic UI update
+    const wasFavorited = isFavorited;
+    setIsFavorited(!isFavorited);
+    
+    // Trigger animation only when favoriting (not unfavoriting)
+    if (!wasFavorited) {
+      setShowHeartAnimation(true);
+      setTimeout(() => setShowHeartAnimation(false), 1000);
+    }
+
+    try {
+      if (!wasFavorited) {
+        // Add to favorites
+        const response = await fetch('/api/favorites', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            activity,
+            location: context?.location || 'Unknown'
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to save favorite');
+        }
+
+        console.log('✅ Activity saved to favorites');
+      } else {
+        // Remove from favorites - would need activityId
+        // For now, just toggle the UI state
+        console.log('ℹ️ Unfavoriting not yet implemented');
+      }
+    } catch (error) {
+      console.error('Error saving favorite:', error);
+      // Revert on error
+      setIsFavorited(wasFavorited);
+    }
+  };
   
   const handleLocationClick = (e: React.MouseEvent) => {
     console.log('🖱️ Location button clicked!', { index, address: activity.address, isFlipped });
@@ -241,6 +306,7 @@ function ActivityCard({
           </div>
 
           <div className="card-actions-collapsed" onClick={(e) => e.stopPropagation()}>
+            {/* Primary Button - Takes majority of space */}
             {activity.booking_url ? (
               <a
                 href={activity.booking_url}
@@ -248,6 +314,7 @@ function ActivityCard({
                 rel="noopener noreferrer"
                 className="booking-button-primary collapsed-btn"
                 onClick={(e) => e.stopPropagation()}
+                style={{ flex: 1 }}
               >
                 <Calendar className="w-4 h-4" />
                 Book
@@ -261,26 +328,89 @@ function ActivityCard({
                   e.stopPropagation();
                   onToggleExpand();
                 }}
-                style={{ textDecoration: 'none' }}
+                style={{ textDecoration: 'none', flex: 1 }}
               >
                 <Eye className="w-4 h-4" />
                 View Details
               </button>
             )}
-            {isSharingSupported() && (
+            
+            {/* Secondary Buttons - Fixed width, side by side */}
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              {/* Favorite Button */}
               <button
-                onClick={handleShare}
-                disabled={sharingActivity}
-                className="share-button-icon-only"
-                title="Share this activity"
+                onClick={handleFavorite}
+                className="share-button-icon-only relative"
+                title={isFavorited ? "Remove from favorites" : "Add to favorites"}
+                style={{
+                  position: 'relative',
+                  overflow: 'visible'
+                }}
               >
-                {sharingActivity ? (
-                  <div className="animate-spin">⏳</div>
-                ) : (
-                  <Share2 className="w-4 h-4" />
+                {showHeartAnimation && (
+                  <>
+                    {/* Heart particles animation */}
+                    {[...Array(5)].map((_, i) => (
+                      <motion.div
+                        key={i}
+                        className="absolute"
+                        style={{
+                          left: '50%',
+                          top: '50%',
+                          transform: 'translate(-50%, -50%)'
+                        }}
+                        initial={{ scale: 0, x: 0, y: 0, opacity: 1 }}
+                        animate={{
+                          scale: [0, 1, 0.5],
+                          x: Math.cos((i / 5) * Math.PI * 2) * 30,
+                          y: Math.sin((i / 5) * Math.PI * 2) * 30,
+                          opacity: [1, 1, 0]
+                        }}
+                        transition={{
+                          duration: 0.8,
+                          ease: 'easeOut'
+                        }}
+                      >
+                        <Heart
+                          className="w-3 h-3"
+                          fill="#F26B8A"
+                          stroke="#F26B8A"
+                        />
+                      </motion.div>
+                    ))}
+                  </>
                 )}
+                <motion.div
+                  animate={showHeartAnimation ? {
+                    scale: [1, 1.4, 1],
+                  } : {}}
+                  transition={{ duration: 0.4 }}
+                >
+                  <Heart
+                    className="w-4 h-4"
+                    fill={isFavorited ? "#F26B8A" : "none"}
+                    stroke={isFavorited ? "#F26B8A" : "currentColor"}
+                    style={{ color: isFavorited ? "#F26B8A" : undefined }}
+                  />
+                </motion.div>
               </button>
-            )}
+              
+              {/* Share Button */}
+              {isSharingSupported() && (
+                <button
+                  onClick={handleShare}
+                  disabled={sharingActivity}
+                  className="share-button-icon-only"
+                  title="Share this activity"
+                >
+                  {sharingActivity ? (
+                    <div className="animate-spin">⏳</div>
+                  ) : (
+                    <Share2 className="w-4 h-4" />
+                  )}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       ) : (
@@ -430,6 +560,63 @@ function ActivityCard({
                   View on Map
                 </button>
               ) : null}
+              {/* Favorite Button */}
+              <button
+                onClick={handleFavorite}
+                className="share-button-icon-only relative"
+                title={isFavorited ? "Remove from favorites" : "Add to favorites"}
+                style={{
+                  position: 'relative',
+                  overflow: 'visible'
+                }}
+              >
+                {showHeartAnimation && (
+                  <>
+                    {/* Heart particles animation */}
+                    {[...Array(5)].map((_, i) => (
+                      <motion.div
+                        key={i}
+                        className="absolute"
+                        style={{
+                          left: '50%',
+                          top: '50%',
+                          transform: 'translate(-50%, -50%)'
+                        }}
+                        initial={{ scale: 0, x: 0, y: 0, opacity: 1 }}
+                        animate={{
+                          scale: [0, 1, 0.5],
+                          x: Math.cos((i / 5) * Math.PI * 2) * 30,
+                          y: Math.sin((i / 5) * Math.PI * 2) * 30,
+                          opacity: [1, 1, 0]
+                        }}
+                        transition={{
+                          duration: 0.8,
+                          ease: 'easeOut'
+                        }}
+                      >
+                        <Heart
+                          className="w-3 h-3"
+                          fill="#F26B8A"
+                          stroke="#F26B8A"
+                        />
+                      </motion.div>
+                    ))}
+                  </>
+                )}
+                <motion.div
+                  animate={showHeartAnimation ? {
+                    scale: [1, 1.4, 1],
+                  } : {}}
+                  transition={{ duration: 0.4 }}
+                >
+                  <Heart
+                    className="w-5 h-5"
+                    fill={isFavorited ? "#F26B8A" : "none"}
+                    stroke={isFavorited ? "#F26B8A" : "currentColor"}
+                    style={{ color: isFavorited ? "#F26B8A" : undefined }}
+                  />
+                </motion.div>
+              </button>
               {isSharingSupported() && (
                 <button
                   onClick={handleShare}
@@ -528,6 +715,7 @@ export default function ResultsPageV2({
   const [randomMessage] = useState(() => getRandomMessage(0)); // Choose once on mount
   const [showHourlyWeather, setShowHourlyWeather] = useState(false); // Collapsed by default
   const [showWeatherTips, setShowWeatherTips] = useState(false); // Collapsed by default
+  const [showAllEvents, setShowAllEvents] = useState(false); // For expanding festivals/holidays
   const [currentTipIndex, setCurrentTipIndex] = useState(0); // Move to top level
   
   // Filters
@@ -966,20 +1154,77 @@ export default function ResultsPageV2({
       {/* Scrollable Content Section - Holidays and Count scroll away naturally */}
       {!isDesktopSideBySide && (ctx || (activities && !loading.isLoading)) && (
         <div style={{ 
-          background: 'linear-gradient(180deg, #F9FAFB 0%, #FFFFFF 100%)',
-          borderBottom: '1px solid #E5E7EB'
+          background: 'linear-gradient(180deg, rgba(224, 242, 241, 0.3) 0%, rgba(255, 255, 255, 0.95) 50%, #FFFFFF 100%)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          borderBottom: '1px solid rgba(46, 139, 146, 0.1)',
+          boxShadow: '0 2px 8px rgba(46, 139, 146, 0.05)'
         }}>
           {/* Holidays & Festivals - At the TOP */}
           {ctx && ((ctx.is_public_holiday && ctx.holidays && ctx.holidays.length > 0) || 
             (ctx.nearby_festivals && ctx.nearby_festivals.length > 0)) && (
             <div className="events-compact-section" style={{ padding: '8px 12px 6px 12px' }}>
               {ctx.is_public_holiday && ctx.holidays && ctx.holidays.length > 0 && (
-                <div className="event-compact-item holiday-item">
+                <div 
+                  className="event-compact-item holiday-item"
+                  onClick={() => ctx.holidays && ctx.holidays.length > 1 && setShowAllEvents(!showAllEvents)}
+                  style={{ 
+                    cursor: ctx.holidays && ctx.holidays.length > 1 ? 'pointer' : 'default',
+                    transition: 'all 0.2s'
+                  }}
+                >
                   <PartyPopper className="w-4 h-4" />
                   <span>{ctx.holidays[0].localName || ctx.holidays[0].name}</span>
-                  {ctx.holidays.length > 1 && <span className="event-count">+{ctx.holidays.length - 1}</span>}
+                  {ctx.holidays.length > 1 && (
+                    <span className="event-count" style={{
+                      background: 'linear-gradient(135deg, #2E8B92 0%, #56B88F 100%)',
+                      color: 'white'
+                    }}>
+                      +{ctx.holidays.length - 1}
+                    </span>
+                  )}
                 </div>
               )}
+              
+              {/* Expanded holidays list */}
+              <AnimatePresence>
+                {showAllEvents && ctx.holidays && ctx.holidays.length > 1 && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    style={{ 
+                      marginTop: '8px',
+                      paddingLeft: '28px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                      overflow: 'hidden'
+                    }}
+                  >
+                    {ctx.holidays.slice(1).map((holiday, idx) => (
+                      <motion.div
+                        key={idx}
+                        initial={{ x: -10, opacity: 0 }}
+                        animate={{ x: 0, opacity: 1 }}
+                        transition={{ delay: idx * 0.05 }}
+                        style={{
+                          fontSize: '12px',
+                          color: '#6B7280',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}
+                      >
+                        <span style={{ fontSize: '10px' }}>•</span>
+                        <span>{holiday.localName || holiday.name}</span>
+                      </motion.div>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              
               {ctx.nearby_festivals && ctx.nearby_festivals.length > 0 && (
                 <div className="event-compact-item festival-item">
                   <Music className="w-4 h-4" />
@@ -992,7 +1237,7 @@ export default function ResultsPageV2({
           {/* Activity Count Message - Below holidays */}
           {activities && !loading.isLoading && (
             <div style={{
-              padding: '6px 12px 10px 12px',
+              padding: '8px 12px 12px 12px',
               textAlign: 'center'
             }}>
               <div style={{
@@ -1001,12 +1246,17 @@ export default function ResultsPageV2({
                 gap: '6px',
                 fontSize: '14px',
                 fontWeight: 600,
-                color: '#374151'
+                color: '#1E2A32',
+                padding: '8px 16px',
+                background: 'rgba(255, 255, 255, 0.8)',
+                borderRadius: '12px',
+                boxShadow: '0 2px 8px rgba(46, 139, 146, 0.08)'
               }}>
                 <span style={{
-                  fontSize: '18px',
-                  fontWeight: 700,
-                  color: '#EC4899'
+                  fontSize: '20px',
+                  fontWeight: 800,
+                  color: '#2E8B92',
+                  fontFamily: 'Baloo 2, sans-serif'
                 }}>{filtered.length}</span>
                 <span>{randomMessage}</span>
               </div>

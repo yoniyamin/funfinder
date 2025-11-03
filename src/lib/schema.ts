@@ -59,3 +59,34 @@ export type LLMResult = {
   ai_provider?: string;
   ai_model?: string;
 };
+
+// Favorites and Trip Lists
+export type SavedActivity = Activity & {
+  activityId: string; // UUID for the saved activity
+  savedAt: string; // ISO timestamp
+  location: string; // Location where this was found
+  listIds?: string[]; // Lists this activity belongs to
+};
+
+export type TripList = {
+  listId: string; // UUID
+  name: string; // List name
+  location?: string; // Optional location association
+  createdAt: string; // ISO timestamp
+  updatedAt: string; // ISO timestamp
+  activityIds: string[]; // Ordered array of activity IDs
+};
+
+export type ShareableListData = {
+  listName: string;
+  location?: string;
+  activityCount: number;
+  activities: Array<{
+    title: string;
+    category: string;
+    duration_hours: number;
+    address?: string;
+    booking_url?: string;
+    free?: boolean;
+  }>;
+};

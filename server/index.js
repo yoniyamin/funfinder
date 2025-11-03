@@ -4721,6 +4721,188 @@ app.delete('/api/exclusion-list/:location/:attraction', async (req, res) => {
   }
 });
 
+// Favorites API endpoints
+app.get('/api/favorites', async (req, res) => {
+  try {
+    console.log('📋 Loading favorite activities');
+    const favorites = await dataManager.getFavoriteActivities();
+    res.json({ ok: true, favorites });
+  } catch (error) {
+    console.error('Error loading favorites:', error);
+    res.status(500).json({ ok: false, error: 'Failed to load favorites' });
+  }
+});
+
+app.post('/api/favorites', async (req, res) => {
+  try {
+    const { activity, location } = req.body;
+    
+    if (!activity || !activity.title) {
+      return res.status(400).json({ ok: false, error: 'Activity data is required' });
+    }
+    
+    if (!location) {
+      return res.status(400).json({ ok: false, error: 'Location is required' });
+    }
+    
+    console.log('💾 Saving activity to favorites:', activity.title);
+    const savedActivity = await dataManager.saveFavoriteActivity(activity, location);
+    res.json({ ok: true, activity: savedActivity });
+  } catch (error) {
+    console.error('Error saving favorite:', error);
+    res.status(500).json({ ok: false, error: 'Failed to save favorite' });
+  }
+});
+
+app.delete('/api/favorites/:activityId', async (req, res) => {
+  try {
+    const { activityId } = req.params;
+    
+    console.log('🗑️ Removing activity from favorites:', activityId);
+    const removed = await dataManager.removeFavoriteActivity(activityId);
+    
+    if (removed) {
+      res.json({ ok: true, message: 'Activity removed from favorites' });
+    } else {
+      res.status(404).json({ ok: false, error: 'Activity not found in favorites' });
+    }
+  } catch (error) {
+    console.error('Error removing favorite:', error);
+    res.status(500).json({ ok: false, error: 'Failed to remove favorite' });
+  }
+});
+
+// Trip Lists API endpoints
+app.get('/api/trip-lists', async (req, res) => {
+  try {
+    console.log('📋 Loading trip lists');
+    const lists = await dataManager.getTripLists();
+    res.json({ ok: true, lists });
+  } catch (error) {
+    console.error('Error loading trip lists:', error);
+    res.status(500).json({ ok: false, error: 'Failed to load trip lists' });
+  }
+});
+
+app.post('/api/trip-lists', async (req, res) => {
+  try {
+    const { name, location } = req.body;
+    
+    if (!name || !name.trim()) {
+      return res.status(400).json({ ok: false, error: 'List name is required' });
+    }
+    
+    console.log('📝 Creating trip list:', name);
+    const list = await dataManager.createTripList(name.trim(), location || null);
+    res.json({ ok: true, list });
+  } catch (error) {
+    console.error('Error creating trip list:', error);
+    res.status(500).json({ ok: false, error: 'Failed to create trip list' });
+  }
+});
+
+app.put('/api/trip-lists/:listId', async (req, res) => {
+  try {
+    const { listId } = req.params;
+    const updates = req.body;
+    
+    console.log('✏️ Updating trip list:', listId);
+    const updatedList = await dataManager.updateTripList(listId, updates);
+    res.json({ ok: true, list: updatedList });
+  } catch (error) {
+    console.error('Error updating trip list:', error);
+    if (error.message === 'Trip list not found') {
+      res.status(404).json({ ok: false, error: 'Trip list not found' });
+    } else {
+      res.status(500).json({ ok: false, error: 'Failed to update trip list' });
+    }
+  }
+});
+
+app.delete('/api/trip-lists/:listId', async (req, res) => {
+  try {
+    const { listId } = req.params;
+    
+    console.log('🗑️ Deleting trip list:', listId);
+    const deleted = await dataManager.deleteTripList(listId);
+    
+    if (deleted) {
+      res.json({ ok: true, message: 'Trip list deleted' });
+    } else {
+      res.status(404).json({ ok: false, error: 'Trip list not found' });
+    }
+  } catch (error) {
+    console.error('Error deleting trip list:', error);
+    res.status(500).json({ ok: false, error: 'Failed to delete trip list' });
+  }
+});
+
+app.post('/api/trip-lists/:listId/activities', async (req, res) => {
+  try {
+    const { listId } = req.params;
+    const { activityId } = req.body;
+    
+    if (!activityId) {
+      return res.status(400).json({ ok: false, error: 'Activity ID is required' });
+    }
+    
+    console.log('➕ Adding activity to list:', { listId, activityId });
+    const added = await dataManager.addActivityToList(listId, activityId);
+    
+    if (added) {
+      console.log('✅ Activity successfully added via API');
+      res.json({ ok: true, message: 'Activity added to list' });
+    } else {
+      console.log('❌ Activity failed to add via API');
+      res.status(500).json({ ok: false, error: 'Failed to add activity to list' });
+    }
+  } catch (error) {
+    console.error('❌ Error in API endpoint:', error);
+    res.status(500).json({ ok: false, error: 'Failed to add activity to list' });
+  }
+});
+
+app.delete('/api/trip-lists/:listId/activities/:activityId', async (req, res) => {
+  try {
+    const { listId, activityId } = req.params;
+    
+    console.log('➖ Removing activity from list:', listId);
+    const removed = await dataManager.removeActivityFromList(listId, activityId);
+    
+    if (removed) {
+      res.json({ ok: true, message: 'Activity removed from list' });
+    } else {
+      res.status(404).json({ ok: false, error: 'Activity not found in list' });
+    }
+  } catch (error) {
+    console.error('Error removing activity from list:', error);
+    res.status(500).json({ ok: false, error: 'Failed to remove activity from list' });
+  }
+});
+
+app.put('/api/trip-lists/:listId/reorder', async (req, res) => {
+  try {
+    const { listId } = req.params;
+    const { activityIds } = req.body;
+    
+    if (!Array.isArray(activityIds)) {
+      return res.status(400).json({ ok: false, error: 'activityIds must be an array' });
+    }
+    
+    console.log('🔄 Reordering activities in list:', listId);
+    const reordered = await dataManager.reorderListActivities(listId, activityIds);
+    
+    if (reordered) {
+      res.json({ ok: true, message: 'Activities reordered' });
+    } else {
+      res.status(500).json({ ok: false, error: 'Failed to reorder activities' });
+    }
+  } catch (error) {
+    console.error('Error reordering activities:', error);
+    res.status(500).json({ ok: false, error: 'Failed to reorder activities' });
+  }
+});
+
 // Simple root endpoint for debugging
 app.get('/api/status', (req, res) => {
   console.log('📊 Status endpoint called');

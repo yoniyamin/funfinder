@@ -1,16 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toISODate, geocode, fetchHolidays, fetchWeatherDaily, fetchFestivalsWikidata, fetchHolidaysWithGemini } from '../../lib/api';
-import type { Context, LLMResult } from '../../lib/schema';
+import type { Context, LLMResult, SavedActivity, TripList } from '../../lib/schema';
 import { getImageUrl } from '../../config/assets';
 import { AnimatedModal } from '../components/AnimatedModal';
 import { ExclusionManager } from '../components/ExclusionManager';
+import { MyTripsModal } from '../components/MyTripsModal';
 import LucideLoader from '../components/LucideLoader';
 import Settings from '../../components/Settings';
 import { 
   MapPin, Calendar, Users, Clock, Search, History, Settings as SettingsIcon, 
   X, Plus, Sparkles, Loader, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
-  Trees, Building2, Palette, Home, Star, Ban, Sliders
+  Trees, Building2, Palette, Home, Star, Ban, Sliders, Heart
 } from 'lucide-react';
 
 // Dynamic loading messages that rotate when status seems stuck
@@ -105,29 +106,29 @@ const SAMPLE_ACTIVITIES: Activity[] = [
   { id: 10, title: 'Cooking Class', image: '👨‍🍳', emoji: '👨‍🍳', category: 'Creative' },
 ];
 
-// Feature tags for quick filters - colorful with gradients
-const FEATURE_TAGS = [
-  // Accessibility
-  { id: 'wheelchair', label: 'Wheelchair', instruction: 'wheelchair accessible', color: 'bg-gradient-to-r from-blue-400 to-blue-600 text-white border-blue-400' },
-  { id: 'metro', label: 'Near Metro', instruction: 'near metro station or public transport', color: 'bg-gradient-to-r from-purple-400 to-purple-600 text-white border-purple-400' },
-  { id: 'parking', label: 'Parking', instruction: 'parking available', color: 'bg-gradient-to-r from-indigo-400 to-indigo-600 text-white border-indigo-400' },
-  
-  // Amenities
-  { id: 'food', label: 'Food', instruction: 'food available on-site or nearby', color: 'bg-gradient-to-r from-red-400 to-rose-600 text-white border-red-400' },
-  { id: 'restrooms', label: 'Restrooms', instruction: 'clean restrooms available', color: 'bg-gradient-to-r from-gray-400 to-gray-600 text-white border-gray-400' },
-  { id: 'shade', label: 'Shade', instruction: 'shaded areas available', color: 'bg-gradient-to-r from-green-400 to-emerald-600 text-white border-green-400' },
-  
-  // Activity Type
-  { id: 'outdoor', label: 'Outdoor', instruction: 'outdoor activities preferred', color: 'bg-gradient-to-r from-teal-400 to-cyan-600 text-white border-teal-400' },
-  { id: 'indoor', label: 'Indoor', instruction: 'indoor activities preferred', color: 'bg-gradient-to-r from-orange-400 to-amber-600 text-white border-orange-400' },
-  { id: 'educational', label: 'Educational', instruction: 'educational or learning focus', color: 'bg-gradient-to-r from-violet-400 to-purple-600 text-white border-violet-400' },
-  { id: 'creative', label: 'Creative', instruction: 'arts and crafts activities', color: 'bg-gradient-to-r from-pink-400 to-rose-600 text-white border-pink-400' },
-  
-  // Constraints
-  { id: 'free', label: 'Free/Cheap', instruction: 'free or budget-friendly', color: 'bg-gradient-to-r from-yellow-400 to-amber-500 text-white border-yellow-400' },
-  { id: 'quiet', label: 'Quiet', instruction: 'calm and quiet environment', color: 'bg-gradient-to-r from-slate-400 to-slate-600 text-white border-slate-400' },
-  { id: 'active', label: 'Active', instruction: 'high energy and physical activities', color: 'bg-gradient-to-r from-cyan-400 to-blue-600 text-white border-cyan-400' },
-];
+  // Feature tags for quick filters - colorful with gradients using Sunny Mint palette
+  const FEATURE_TAGS = [
+    // Accessibility
+    { id: 'wheelchair', label: 'Wheelchair', instruction: 'wheelchair accessible', color: 'text-white border-[#2E8B92]', style: { background: 'linear-gradient(135deg, #2E8B92 0%, #56B88F 100%)' } },
+    { id: 'metro', label: 'Near Metro', instruction: 'near metro station or public transport', color: 'text-white border-[#2E8B92]', style: { background: 'linear-gradient(135deg, #2E8B92 0%, #25767C 100%)' } },
+    { id: 'parking', label: 'Parking', instruction: 'parking available', color: 'text-white border-[#56B88F]', style: { background: 'linear-gradient(135deg, #56B88F 0%, #2E8B92 100%)' } },
+    
+    // Amenities
+    { id: 'food', label: 'Food', instruction: 'food available on-site or nearby', color: 'text-white border-[#F2A15F]', style: { background: 'linear-gradient(135deg, #F2A15F 0%, #F26B8A 100%)' } },
+    { id: 'restrooms', label: 'Restrooms', instruction: 'clean restrooms available', color: 'text-white border-gray-400', style: { background: 'linear-gradient(135deg, #9CA3AF 0%, #6B7280 100%)' } },
+    { id: 'shade', label: 'Shade', instruction: 'shaded areas available', color: 'text-white border-[#56B88F]', style: { background: 'linear-gradient(135deg, #56B88F 0%, #2E8B92 100%)' } },
+    
+    // Activity Type
+    { id: 'outdoor', label: 'Outdoor', instruction: 'outdoor activities preferred', color: 'text-white border-[#2E8B92]', style: { background: 'linear-gradient(135deg, #2E8B92 0%, #56B88F 100%)' } },
+    { id: 'indoor', label: 'Indoor', instruction: 'indoor activities preferred', color: 'text-white border-[#F2A15F]', style: { background: 'linear-gradient(135deg, #F2A15F 0%, #F2C14E 100%)' } },
+    { id: 'educational', label: 'Educational', instruction: 'educational or learning focus', color: 'text-white border-[#2E8B92]', style: { background: 'linear-gradient(135deg, #2E8B92 0%, #25767C 100%)' } },
+    { id: 'creative', label: 'Creative', instruction: 'arts and crafts activities', color: 'text-white border-[#F26B8A]', style: { background: 'linear-gradient(135deg, #F26B8A 0%, #F2A15F 100%)' } },
+    
+    // Constraints
+    { id: 'free', label: 'Free/Cheap', instruction: 'free or budget-friendly', color: 'text-white border-[#F2C14E]', style: { background: 'linear-gradient(135deg, #F2C14E 0%, #F2A15F 100%)' } },
+    { id: 'quiet', label: 'Quiet', instruction: 'calm and quiet environment', color: 'text-white border-gray-400', style: { background: 'linear-gradient(135deg, #94A3B8 0%, #64748B 100%)' } },
+    { id: 'active', label: 'Active', instruction: 'high energy and physical activities', color: 'text-white border-[#56B88F]', style: { background: 'linear-gradient(135deg, #56B88F 0%, #2E8B92 100%)' } },
+  ];
 
 export default function SearchPageV3({
   searchParams,
@@ -152,6 +153,7 @@ export default function SearchPageV3({
   const [showSettings, setShowSettings] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [showExclusionManager, setShowExclusionManager] = useState(false);
+  const [showMyTrips, setShowMyTrips] = useState(false);
   const [showAgeModal, setShowAgeModal] = useState(false);
   const [showDateModal, setShowDateModal] = useState(false);
   const [showInstructionsModal, setShowInstructionsModal] = useState(false);
@@ -167,6 +169,8 @@ export default function SearchPageV3({
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isFeaturesExpanded, setIsFeaturesExpanded] = useState(false); // Collapsible features
   const [dynamicMessage, setDynamicMessage] = useState(0);
+  const [favorites, setFavorites] = useState<SavedActivity[]>([]);
+  const [tripLists, setTripLists] = useState<TripList[]>([]);
   
   const settingsMenuRef = useRef<HTMLDivElement>(null);
 
@@ -548,11 +552,77 @@ export default function SearchPageV3({
     return searchParams.ages.length;
   };
 
+  // Load favorites and trip lists
+  const loadFavoritesAndLists = async () => {
+    try {
+      const [favoritesRes, listsRes] = await Promise.all([
+        fetch('/api/favorites'),
+        fetch('/api/trip-lists')
+      ]);
+
+      if (favoritesRes.ok) {
+        const favData = await favoritesRes.json();
+        setFavorites(favData.favorites || []);
+      }
+
+      if (listsRes.ok) {
+        const listsData = await listsRes.json();
+        setTripLists(listsData.lists || []);
+      }
+    } catch (error) {
+      console.error('Error loading favorites/lists:', error);
+    }
+  };
+
+  // Trip list handlers
+  const handleCreateList = async (name: string, location?: string) => {
+    const response = await fetch('/api/trip-lists', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, location })
+    });
+
+    if (!response.ok) throw new Error('Failed to create list');
+  };
+
+  const handleDeleteList = async (listId: string) => {
+    await fetch(`/api/trip-lists/${listId}`, { method: 'DELETE' });
+  };
+
+  const handleRemoveFavorite = async (activityId: string) => {
+    await fetch(`/api/favorites/${activityId}`, { method: 'DELETE' });
+  };
+
+  const handleAddActivityToList = async (listId: string, activityId: string) => {
+    await fetch(`/api/trip-lists/${listId}/activities`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ activityId })
+    });
+  };
+
+  const handleRemoveActivityFromList = async (listId: string, activityId: string) => {
+    await fetch(`/api/trip-lists/${listId}/activities/${activityId}`, { method: 'DELETE' });
+  };
+
+  const handleReorderList = async (listId: string, activityIds: string[]) => {
+    await fetch(`/api/trip-lists/${listId}/reorder`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ activityIds })
+    });
+  };
+
+  // Load favorites on mount
+  useEffect(() => {
+    loadFavoritesAndLists();
+  }, []);
+
   return (
-    <div className="fixed inset-0 overflow-hidden" style={{ background: 'linear-gradient(180deg, #fff5e6 0%, #ffe6f0 20%, #e6f3ff 40%, #fff0f5 60%, #ffffff 100%)', zIndex: 0 }}>
+    <div className="fixed inset-0 overflow-hidden" style={{ background: 'linear-gradient(180deg, #e0f2f1 0%, #f0f9f4 20%, #e8f5e9 40%, #f1f8f6 60%, #ffffff 100%)', zIndex: 0 }}>
       {/* Playful Pattern Background */}
       <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{
-        backgroundImage: `radial-gradient(circle, #ff6b9d 1px, transparent 1px)`,
+        backgroundImage: `radial-gradient(circle, #56B88F 1px, transparent 1px)`,
         backgroundSize: '30px 30px',
         zIndex: 1
       }}></div>
@@ -574,10 +644,10 @@ export default function SearchPageV3({
               onClick={() => setShowHistory(!showHistory)}
               className="relative p-2 rounded-xl transition-colors"
               style={{ backgroundColor: 'transparent' }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 107, 157, 0.1)'}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(46, 139, 146, 0.1)'}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
             >
-              <History className="w-5 h-5" style={{ color: '#ff6b9d' }} />
+              <History className="w-5 h-5" style={{ color: '#2E8B92' }} />
               {searchHistory.length > 0 && (
                 <motion.span 
                   initial={{ scale: 0 }}
@@ -614,7 +684,7 @@ export default function SearchPageV3({
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 165, 0, 0.1)'}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
               >
-                <SettingsIcon className="w-5 h-5" style={{ color: '#ffa500' }} />
+                <SettingsIcon className="w-5 h-5" style={{ color: '#F2A15F' }} />
               </motion.button>
               
               {/* Settings Dropdown Menu */}
@@ -628,24 +698,24 @@ export default function SearchPageV3({
                     className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-2xl border-2 border-gray-200 overflow-hidden z-50"
                   >
                     <div className="py-2">
-                      {/* Excluded Activities Option */}
+                      {/* My Trips Option */}
                       <motion.button
-                        whileHover={{ backgroundColor: '#fef3c7' }}
+                        whileHover={{ backgroundColor: '#e0f2f1' }}
                         whileTap={{ scale: 0.98 }}
                         onClick={() => {
-                          setShowExclusionManager(true);
+                          setShowMyTrips(true);
                           setShowSettingsMenu(false);
                         }}
                         className="w-full px-4 py-3 flex items-center gap-3 text-left transition-colors"
                       >
-                        <Ban className="w-5 h-5 text-red-500" />
+                        <Heart className="w-5 h-5 text-pink-500" />
                         <div className="flex-1">
-                          <div className="text-sm font-bold text-gray-900">Excluded Activities</div>
-                          <div className="text-xs text-gray-600">Manage blocked items</div>
+                          <div className="text-sm font-bold text-gray-900">My Trips</div>
+                          <div className="text-xs text-gray-600">Favorites & Trip Rules</div>
                         </div>
-                        {Object.keys(exclusionList).length > 0 && (
-                          <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded-full text-xs font-semibold">
-                            {Object.values(exclusionList).reduce((sum, arr) => sum + arr.length, 0)}
+                        {favorites.length > 0 && (
+                          <span className="bg-pink-100 text-pink-700 px-2 py-0.5 rounded-full text-xs font-semibold">
+                            {favorites.length}
                           </span>
                         )}
                       </motion.button>
@@ -654,7 +724,7 @@ export default function SearchPageV3({
                       
                       {/* Settings Option */}
                       <motion.button
-                        whileHover={{ backgroundColor: '#e0f2fe' }}
+                        whileHover={{ backgroundColor: '#e0f2f1' }}
                         whileTap={{ scale: 0.98 }}
                         onClick={() => {
                           setShowSettings(true);
@@ -695,7 +765,7 @@ export default function SearchPageV3({
         >
           <h1 className="text-base font-semibold whitespace-nowrap" style={{ 
             fontFamily: 'system-ui, -apple-system, sans-serif',
-            background: 'linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899, #f59e0b, #10b981)',
+            background: 'linear-gradient(135deg, #2E8B92, #56B88F, #F2A15F, #F26B8A)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
             backgroundClip: 'text',
@@ -737,7 +807,8 @@ export default function SearchPageV3({
                         initial={{ width: '0%' }}
                         animate={{ width: `${loading.progress}%` }}
                         transition={{ duration: 0.3 }}
-                        className="absolute inset-y-0 left-0 bg-gradient-to-r from-orange-500 via-rose-500 to-pink-500 rounded-full"
+                        className="absolute inset-y-0 left-0 rounded-full"
+                        style={{ background: 'linear-gradient(90deg, #2E8B92 0%, #56B88F 100%)' }}
                       />
                     </div>
                   </div>
@@ -766,8 +837,13 @@ export default function SearchPageV3({
                     >
                       {/* Show rotating messages */}
                       <p 
-                        className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-500 via-pink-500 to-purple-500"
-                        style={{ fontFamily: 'Baloo 2, sans-serif' }}
+                        className="text-2xl font-black text-transparent bg-clip-text"
+                        style={{ 
+                          fontFamily: 'Baloo 2, sans-serif',
+                          background: 'linear-gradient(135deg, #2E8B92 0%, #56B88F 50%, #F2A15F 100%)',
+                          WebkitBackgroundClip: 'text',
+                          WebkitTextFillColor: 'transparent'
+                        }}
                       >
                         {DYNAMIC_MESSAGES[dynamicMessage]}
                       </p>
@@ -777,9 +853,9 @@ export default function SearchPageV3({
                         transition={{ duration: 1.5, repeat: Infinity }}
                         className="flex justify-center gap-1.5 pt-2"
                       >
-                        <span className="w-2.5 h-2.5 bg-orange-500 rounded-full"></span>
-                        <span className="w-2.5 h-2.5 bg-rose-500 rounded-full"></span>
-                        <span className="w-2.5 h-2.5 bg-pink-500 rounded-full"></span>
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#2E8B92' }}></span>
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#56B88F' }}></span>
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#F2A15F' }}></span>
                       </motion.div>
                     </motion.div>
                   </AnimatePresence>
@@ -802,10 +878,10 @@ export default function SearchPageV3({
                 animate={{ x: 0, opacity: 1 }}
                 transition={{ delay: 0.1 }}
               >
-                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center shadow-md">
+                <div className="w-7 h-7 rounded-full flex items-center justify-center shadow-md" style={{ background: 'linear-gradient(135deg, #2E8B92 0%, #56B88F 100%)' }}>
                   <MapPin className="w-4 h-4 text-white" />
                 </div>
-                <span className="text-xs font-bold" style={{ color: '#ff6b9d' }}>WHERE</span>
+                <span className="text-xs font-bold" style={{ color: '#2E8B92' }}>WHERE</span>
               </motion.div>
               <div className="relative">
                 <button
@@ -816,7 +892,7 @@ export default function SearchPageV3({
                     setLocationSuggestions([]);
                   }}
                   className="w-full px-4 py-3.5 pr-12 bg-white border-2 rounded-2xl focus:outline-none text-left text-gray-900 font-medium transition-all shadow-sm hover:shadow-md"
-                  style={{ borderColor: '#ff6b9d' }}
+                  style={{ borderColor: '#2E8B92' }}
                   onFocus={(e) => e.currentTarget.style.boxShadow = '0 0 0 3px rgba(255, 107, 157, 0.15)'}
                   onBlur={(e) => e.currentTarget.style.boxShadow = ''}
                 >
@@ -829,7 +905,8 @@ export default function SearchPageV3({
                   disabled={isDetectingLocation}
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-gradient-to-br from-pink-400 to-rose-500 text-white rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-white rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ background: 'linear-gradient(135deg, #2E8B92 0%, #56B88F 100%)' }}
                   title="Use current location"
                 >
                   {isDetectingLocation ? (
@@ -853,15 +930,15 @@ export default function SearchPageV3({
                   animate={{ x: 0, opacity: 1 }}
                   transition={{ delay: 0.15 }}
                 >
-                  <div className="w-6 h-6 rounded-full bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center shadow-sm">
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center shadow-sm" style={{ background: 'linear-gradient(135deg, #F2A15F 0%, #F2C14E 100%)' }}>
                     <Calendar className="w-3 h-3 text-white" />
                   </div>
-                  <span className="text-[10px] font-bold" style={{ color: '#ffa500' }}>WHEN</span>
+                  <span className="text-[10px] font-bold" style={{ color: '#F2A15F' }}>WHEN</span>
                 </motion.div>
                 <button
                   onClick={() => setShowDateModal(true)}
                   className="w-full px-3 py-3 bg-white border-2 rounded-xl focus:outline-none text-sm font-semibold text-gray-900 transition-all shadow-sm hover:shadow-md"
-                  style={{ borderColor: '#ffa500' }}
+                  style={{ borderColor: '#F2A15F' }}
                 >
                   {getDateDisplay()}
                 </button>
@@ -875,17 +952,17 @@ export default function SearchPageV3({
                   animate={{ x: 0, opacity: 1 }}
                   transition={{ delay: 0.2 }}
                 >
-                  <div className="w-6 h-6 rounded-full bg-gradient-to-br from-yellow-400 to-orange-400 flex items-center justify-center shadow-sm">
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center shadow-sm" style={{ background: 'linear-gradient(135deg, #F2C14E 0%, #F2A15F 100%)' }}>
                     <Clock className="w-3 h-3 text-white" />
                   </div>
-                  <span className="text-[10px] font-bold" style={{ color: '#ffd700' }}>DURATION</span>
+                  <span className="text-[10px] font-bold" style={{ color: '#F2C14E' }}>DURATION</span>
                 </motion.div>
                 <select
                   value={searchParams.duration}
                   onChange={(e) => updateSearchParams({ duration: Number(e.target.value) })}
                   className="w-full px-3 py-3 bg-white border-2 rounded-xl focus:outline-none text-sm font-semibold text-gray-900 transition-all shadow-sm hover:shadow-md appearance-none cursor-pointer"
                   style={{ 
-                    borderColor: '#ffd700',
+                    borderColor: '#F2C14E',
                     backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236b7280'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
                     backgroundRepeat: 'no-repeat',
                     backgroundPosition: 'right 0.5rem center',
@@ -911,23 +988,23 @@ export default function SearchPageV3({
                 transition={{ delay: 0.25 }}
               >
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center shadow-md">
-                    <Users className="w-4 h-4 text-white" />
-                  </div>
-                  <span className="text-xs font-bold" style={{ color: '#c084fc' }}>KIDS AGES</span>
+                <div className="w-7 h-7 rounded-full flex items-center justify-center shadow-md" style={{ background: 'linear-gradient(135deg, #2E8B92 0%, #56B88F 100%)' }}>
+                  <Users className="w-4 h-4 text-white" />
+                </div>
+                  <span className="text-xs font-bold" style={{ color: '#2E8B92' }}>KIDS AGES</span>
                 </div>
                 
                 {/* Selected Age Pills */}
                 {searchParams.ages.length > 0 && (
                   <>
-                    {searchParams.ages.map((age, idx) => (
+                      {searchParams.ages.map((age, idx) => (
                       <motion.span
                         key={age}
                         initial={{ scale: 0, rotate: -180 }}
                         animate={{ scale: 1, rotate: 0 }}
                         transition={{ type: "spring", delay: idx * 0.05 }}
                         className="inline-flex items-center gap-1 px-3 py-1.5 text-white rounded-full text-xs font-bold shadow-lg"
-                        style={{ background: 'linear-gradient(135deg, #ff6b9d, #c084fc)' }}
+                        style={{ background: 'linear-gradient(135deg, #2E8B92, #56B88F)' }}
                       >
                         {age}y
                         <button
@@ -969,10 +1046,10 @@ export default function SearchPageV3({
                         className={`flex-shrink-0 w-10 h-10 rounded-full font-bold text-sm shadow-md transition-all ${
                           isSelected
                             ? 'text-white shadow-lg scale-110'
-                            : 'bg-white text-gray-700 border-2 border-purple-200 hover:border-purple-400'
+                            : 'bg-white text-gray-700 border-2 border-[#b2dfdb] hover:border-[#80cbc4]'
                         }`}
                         style={isSelected ? {
-                          background: 'linear-gradient(135deg, #ff6b9d, #c084fc)',
+                          background: 'linear-gradient(135deg, #2E8B92, #56B88F)',
                           transform: 'translateZ(0)',
                           willChange: 'transform, opacity'
                         } : {
@@ -1005,7 +1082,7 @@ export default function SearchPageV3({
                 style={{
                   background: loading.isLoading 
                     ? '#cccccc' 
-                    : 'linear-gradient(135deg, #ff3366 0%, #ff6b9d 50%, #ff8c42 100%)',
+                    : 'linear-gradient(135deg, #2E8B92 0%, #56B88F 50%, #2E8B92 100%)',
                   fontFamily: 'Baloo 2, sans-serif'
                 }}
               >
@@ -1019,7 +1096,7 @@ export default function SearchPageV3({
                         style={{
                           left: `${50 + Math.cos((i / 20) * Math.PI * 2) * 45}%`,
                           top: `${50 + Math.sin((i / 20) * Math.PI * 2) * 45}%`,
-                          background: i % 3 === 0 ? '#ffd700' : i % 3 === 1 ? '#ff6b9d' : '#ffffff'
+                          background: i % 3 === 0 ? '#F2C14E' : i % 3 === 1 ? '#56B88F' : '#ffffff'
                         }}
                         animate={{
                           scale: [0, 2.5, 0],
@@ -1114,7 +1191,11 @@ export default function SearchPageV3({
                               ? `${tag.color} border-current shadow-lg scale-105`
                               : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:shadow-lg'
                           }`}
-                          style={{
+                          style={selectedTags.includes(tag.id) ? {
+                            ...tag.style,
+                            transform: 'translateZ(0)',
+                            willChange: 'transform, opacity'
+                          } : {
                             transform: 'translateZ(0)',
                             willChange: 'transform, opacity'
                           }}
@@ -1149,17 +1230,17 @@ export default function SearchPageV3({
             style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))', zIndex: 40 }}
           >
               <div className="flex items-center justify-between mb-2 px-4">
-                <h3 className="text-xs font-bold" style={{ 
-                  background: 'linear-gradient(135deg, #ff6b9d, #ffa500)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text'
-                }}>
-                  ⭐ Popular in {searchParams.location}
-                </h3>
-                <button className="text-[10px] font-semibold" style={{ color: '#ff6b9d' }}>
-                  See all →
-                </button>
+              <h3 className="text-xs font-bold" style={{ 
+                background: 'linear-gradient(135deg, #2E8B92, #56B88F)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text'
+              }}>
+                ⭐ Popular in {searchParams.location}
+              </h3>
+              <button className="text-[10px] font-semibold" style={{ color: '#2E8B92' }}>
+                See all →
+              </button>
               </div>
               
               {/* Activity Cards Carousel */}
@@ -1200,7 +1281,7 @@ export default function SearchPageV3({
                         <div className="relative bg-white rounded-2xl overflow-hidden shadow-md border-2 border-gray-100 hover:shadow-xl transition-all" style={{ height: '145px' }}>
                           <div className="flex flex-col h-full">
                             {/* Colorful Top Section with Icon - Fixed Height */}
-                            <div className="relative bg-gradient-to-br from-orange-400 via-pink-500 to-purple-500 flex items-center justify-center" style={{ height: '80px', flexShrink: 0 }}>
+                            <div className="relative flex items-center justify-center" style={{ height: '80px', flexShrink: 0, background: 'linear-gradient(135deg, #2E8B92 0%, #56B88F 50%, #F2A15F 100%)' }}>
                               {/* Lucide Icon Background Circle */}
                               <div className="w-16 h-16 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg">
                                 {getIconForCategory(activity.category)}
@@ -1218,7 +1299,7 @@ export default function SearchPageV3({
                                 {activity.title}
                               </h4>
                               <div className="mt-auto pt-1">
-                                <span className="inline-block px-2.5 py-0.5 bg-gradient-to-r from-orange-100 to-pink-100 text-orange-600 rounded-full text-[9px] font-semibold whitespace-nowrap">
+                                <span className="inline-block px-2.5 py-0.5 rounded-full text-[9px] font-semibold whitespace-nowrap" style={{ background: 'linear-gradient(135deg, #e0f2f1 0%, #ffe4cc 100%)', color: '#1e5e5a' }}>
                                   {activity.category}
                                 </span>
                               </div>
@@ -1239,6 +1320,7 @@ export default function SearchPageV3({
         isOpen={showLocationModal}
         onClose={() => setShowLocationModal(false)}
         title="Select Location"
+        maxHeight="75vh"
       >
         {/* Search Input */}
         <div className="mb-4">
@@ -1249,7 +1331,16 @@ export default function SearchPageV3({
               value={locationSearchText}
               onChange={(e) => handleLocationSearch(e.target.value)}
               placeholder="Search for a city..."
-              className="w-full pl-10 pr-10 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-400 text-gray-900 placeholder-gray-400"
+              className="w-full pl-10 pr-10 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:outline-none text-gray-900 placeholder-gray-400"
+              style={{ transition: 'all 0.2s' }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = '#2E8B92';
+                e.currentTarget.style.boxShadow = '0 0 0 3px rgba(46, 139, 146, 0.1)';
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = '#f3f4f6';
+                e.currentTarget.style.boxShadow = 'none';
+              }}
             />
             {locationSearchText && (
               <button
@@ -1262,8 +1353,8 @@ export default function SearchPageV3({
           </div>
         </div>
 
-        {/* Results */}
-        <div className="space-y-2">
+        {/* Results - Fixed height scrollable area */}
+        <div className="space-y-2 overflow-y-auto" style={{ height: '400px', maxHeight: '50vh' }}>
           {isLoadingCities ? (
             <div className="flex items-center justify-center py-8 text-gray-600">
               <Loader className="w-5 h-5 animate-spin mr-2" />
@@ -1279,10 +1370,13 @@ export default function SearchPageV3({
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={() => handleCitySelect(city)}
-                className="w-full flex items-center gap-3 p-3 bg-gray-50 hover:bg-orange-50 rounded-xl transition-colors text-left"
+                className="w-full flex items-center gap-3 p-3 bg-gray-50 rounded-xl transition-colors text-left"
+                style={{ backgroundColor: '#f9fafb' }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e0f2f1'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#f9fafb'}
               >
-                <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <MapPin className="w-5 h-5 text-orange-600" />
+                <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: 'linear-gradient(135deg, #2E8B92 0%, #56B88F 100%)' }}>
+                  <MapPin className="w-5 h-5 text-white" />
                 </div>
                 <div className="flex-1">
                   <p className="font-semibold text-gray-900">{city.name}</p>
@@ -1313,10 +1407,12 @@ export default function SearchPageV3({
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
                         onClick={() => handleLocationHistorySelect(location)}
-                        className="w-full flex items-center gap-3 p-3 bg-gray-50 hover:bg-purple-50 rounded-xl transition-colors text-left"
+                        className="w-full flex items-center gap-3 p-3 bg-gray-50 rounded-xl transition-colors text-left"
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e0f2f1'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#f9fafb'}
                       >
-                        <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0">
-                          <History className="w-5 h-5 text-purple-600" />
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: 'linear-gradient(135deg, #2E8B92 0%, #56B88F 100%)' }}>
+                          <History className="w-5 h-5 text-white" />
                         </div>
                         <div className="flex-1">
                           <p className="font-semibold text-gray-900">{location}</p>
@@ -1536,13 +1632,22 @@ export default function SearchPageV3({
         )}
       </AnimatedModal>
 
-      {/* Exclusion Manager Modal */}
+      {/* My Trips Modal */}
       {removeFromExclusionList && (
-        <ExclusionManager
-          isOpen={showExclusionManager}
-          onClose={() => setShowExclusionManager(false)}
+        <MyTripsModal
+          isOpen={showMyTrips}
+          onClose={() => setShowMyTrips(false)}
+          favorites={favorites}
+          tripLists={tripLists}
           exclusionList={exclusionList}
           removeFromExclusionList={removeFromExclusionList}
+          onCreateList={handleCreateList}
+          onDeleteList={handleDeleteList}
+          onRemoveFavorite={handleRemoveFavorite}
+          onAddActivityToList={handleAddActivityToList}
+          onRemoveActivityFromList={handleRemoveActivityFromList}
+          onReorderList={handleReorderList}
+          onRefreshData={loadFavoritesAndLists}
         />
       )}
 

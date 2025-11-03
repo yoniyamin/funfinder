@@ -49,7 +49,7 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  color: #4f46e5;
+  color: #2E8B92;
   font-weight: 500;
   font-size: 0.875rem;
   transition: color 0.2s;
@@ -60,7 +60,7 @@
 }
 
 .back-button:hover {
-  color: #4338ca;
+  color: #25767C;
 }
 
 .results-title {
@@ -206,7 +206,7 @@
 .events-compact-section {
   display: flex;
   gap: 0.5rem;
-  margin-top: 0.5rem;
+  margin-top: 0.1rem;
   flex-wrap: wrap;
 }
 
@@ -280,7 +280,7 @@
 .count-highlight {
   font-size: 1.5rem;
   font-weight: 800;
-  color: #667eea;
+  color: #2E8B92;
   font-family: 'Baloo 2', sans-serif;
   line-height: 1;
   flex-shrink: 0;
@@ -326,8 +326,8 @@
 
 .filter-select-mini:focus {
   outline: none;
-  border-color: #4f46e5;
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  border-color: #2E8B92;
+  box-shadow: 0 0 0 3px rgba(46, 139, 146, 0.1);
 }
 
 .clear-btn-mini {
@@ -371,7 +371,7 @@
   position: relative;
   border: 4px solid transparent;
   background-image: linear-gradient(white, white), 
-                    linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+                    linear-gradient(135deg, #2E8B92 0%, #56B88F 50%, #F2A15F 100%);
   background-origin: border-box;
   background-clip: padding-box, border-box;
   animation: borderRotate 8s linear infinite;
@@ -385,11 +385,11 @@
 @keyframes borderRotate {
   0% {
     background-image: linear-gradient(white, white), 
-                      linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+                      linear-gradient(135deg, #2E8B92 0%, #56B88F 50%, #F2A15F 100%);
   }
   100% {
     background-image: linear-gradient(white, white), 
-                      linear-gradient(495deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+                      linear-gradient(495deg, #2E8B92 0%, #56B88F 50%, #F2A15F 100%);
   }
 }
 
@@ -418,7 +418,7 @@
   right: -0.5rem;
   width: 2.5rem;
   height: 2.5rem;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #2E8B92 0%, #56B88F 100%);
   color: white;
   border-radius: 50%;
   display: flex;
@@ -427,7 +427,7 @@
   font-weight: 700;
   font-size: 1rem;
   z-index: 10;
-  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.5), 0 2px 8px rgba(118, 75, 162, 0.4);
+  box-shadow: 0 4px 16px rgba(46, 139, 146, 0.5), 0 2px 8px rgba(86, 184, 143, 0.4);
   font-family: 'Baloo 2', sans-serif;
   border: 3px solid white;
   transform: scale(1);
@@ -465,7 +465,7 @@
   width: 2.5rem;
   height: 2.5rem;
   border-radius: 0.75rem;
-  background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
+  background: linear-gradient(135deg, #e0f2f1 0%, #b2dfdb 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -533,33 +533,33 @@
 }
 
 .meta-badge.badge-free {
-  background: #d1fae5;
-  color: #065f46;
-  border-color: #6ee7b7;
+  background: #d1f4e0;
+  color: #1d5238;
+  border-color: #56B88F;
 }
 
 .meta-badge.badge-paid {
-  background: #fef3c7;
-  color: #92400e;
-  border-color: #fcd34d;
+  background: #ffe4cc;
+  color: #8b5a2b;
+  border-color: #F2A15F;
 }
 
 .meta-badge.badge-weather-good {
-  background: #fef3c7;
-  color: #92400e;
-  border-color: #fcd34d;
+  background: #ffe4cc;
+  color: #8b5a2b;
+  border-color: #F2A15F;
 }
 
 .meta-badge.badge-weather-ok {
-  background: #dbeafe;
-  color: #1e40af;
-  border-color: #93c5fd;
+  background: #e0f2f1;
+  color: #1e5e5a;
+  border-color: #80cbc4;
 }
 
 .meta-badge.badge-weather-bad {
-  background: #e0e7ff;
-  color: #4338ca;
-  border-color: #c7d2fe;
+  background: #e3f2fd;
+  color: #1565c0;
+  border-color: #90caf9;
 }
 
 .meta-badge.badge-weather-any {
@@ -585,7 +585,7 @@
   justify-content: center;
   gap: 0.5rem;
   padding: 0.875rem 1.5rem;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #2E8B92 0%, #56B88F 100%);
   color: white;
   border: none;
   border-radius: 0.75rem;
@@ -593,13 +593,13 @@
   font-size: 0.9375rem;
   cursor: pointer;
   transition: all 0.2s;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 4px 12px rgba(46, 139, 146, 0.4);
   font-family: 'Baloo 2', sans-serif;
 }
 
 .booking-button-primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(102, 126, 234, 0.5);
+  box-shadow: 0 8px 20px rgba(46, 139, 146, 0.5);
 }
 
 .booking-button-primary:active {
@@ -625,8 +625,8 @@
   gap: 0.5rem;
   padding: 0.75rem 1.25rem;
   background: white;
-  color: #4f46e5;
-  border: 2px solid #4f46e5;
+  color: #2E8B92;
+  border: 2px solid #2E8B92;
   border-radius: 0.75rem;
   font-weight: 600;
   font-size: 0.875rem;
@@ -636,7 +636,7 @@
 }
 
 .view-details-button:hover {
-  background: #eef2ff;
+  background: #e0f2f1;
   transform: translateY(-2px);
 }
 
@@ -682,7 +682,7 @@
 
 .map-view-header {
   padding: 1rem;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #2E8B92 0%, #56B88F 100%);
   color: white;
   display: flex;
   justify-content: space-between;
@@ -744,7 +744,7 @@
   justify-content: center;
   gap: 0.5rem;
   padding: 0.875rem;
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  background: linear-gradient(135deg, #56B88F 0%, #2E8B92 100%);
   color: white;
   border: none;
   border-radius: 0.75rem;
@@ -758,7 +758,7 @@
 
 .open-maps-button:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+  box-shadow: 0 4px 12px rgba(46, 139, 146, 0.4);
 }
 
 .card-expanded-header {
@@ -774,9 +774,9 @@
   gap: 0.5rem;
   padding: 0.625rem 1.25rem;
   border-radius: 0.625rem;
-  background: #eef2ff;
-  color: #4f46e5;
-  border: 2px solid #c7d2fe;
+  background: #e0f2f1;
+  color: #2E8B92;
+  border: 2px solid #80cbc4;
   cursor: pointer;
   transition: all 0.2s;
   font-weight: 600;
@@ -785,8 +785,8 @@
 }
 
 .collapse-button-large:hover {
-  background: #e0e7ff;
-  border-color: #a5b4fc;
+  background: #b2dfdb;
+  border-color: #4db6ac;
   transform: translateY(-1px);
 }
 
@@ -821,7 +821,7 @@
   width: 3.5rem;
   height: 3.5rem;
   border-radius: 1rem;
-  background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
+  background: linear-gradient(135deg, #e0f2f1 0%, #b2dfdb 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -848,7 +848,7 @@
 }
 
 .activity-address-link:hover {
-  color: #4f46e5;
+  color: #2E8B92;
   text-decoration: underline;
 }
 
@@ -875,37 +875,37 @@
 }
 
 .expanded-badge.badge-category {
-  background: #eef2ff;
-  color: #4338ca;
-  border-color: #c7d2fe;
+  background: #e0f2f1;
+  color: #1e5e5a;
+  border-color: #80cbc4;
 }
 
 .expanded-badge.badge-free {
-  background: #d1fae5;
-  color: #065f46;
-  border-color: #6ee7b7;
+  background: #d1f4e0;
+  color: #1d5238;
+  border-color: #56B88F;
 }
 
 .expanded-badge.badge-paid {
-  background: #fef3c7;
-  color: #92400e;
-  border-color: #fcd34d;
+  background: #ffe4cc;
+  color: #8b5a2b;
+  border-color: #F2A15F;
 }
 
 .expanded-badge.badge-weather {
-  background: #dbeafe;
-  color: #1e40af;
-  border-color: #93c5fd;
+  background: #e0f2f1;
+  color: #1e5e5a;
+  border-color: #80cbc4;
 }
 
 .expanded-badge.badge-fever {
-  background: linear-gradient(135deg, #fae8ff 0%, #fce7f3 100%);
-  color: #86198f;
-  border-color: #f0abfc;
+  background: linear-gradient(135deg, #fce4ec 0%, #ffd8e4 100%);
+  color: #c2185b;
+  border-color: #F26B8A;
 }
 
 .expanded-badge.badge-fever:hover {
-  background: linear-gradient(135deg, #f5d0fe 0%, #fbcfe8 100%);
+  background: linear-gradient(135deg, #f8bbd0 0%, #ffc1d4 100%);
   transform: translateY(-1px);
 }
 
@@ -915,7 +915,7 @@
 }
 
 .read-more-btn {
-  color: #4f46e5;
+  color: #2E8B92;
   font-weight: 500;
   font-size: 0.875rem;
   background: none;
@@ -928,7 +928,7 @@
 }
 
 .read-more-btn:hover {
-  color: #4338ca;
+  color: #25767C;
 }
 
 /* Activity Notes */
@@ -967,8 +967,8 @@
   gap: 0.5rem;
   padding: 0.75rem 1.25rem;
   background: white;
-  color: #4f46e5;
-  border: 2px solid #4f46e5;
+  color: #2E8B92;
+  border: 2px solid #2E8B92;
   border-radius: 0.75rem;
   font-weight: 600;
   font-size: 0.9375rem;
@@ -979,9 +979,9 @@
 }
 
 .info-link-button:hover {
-  background: #eef2ff;
+  background: #e0f2f1;
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
+  box-shadow: 0 4px 12px rgba(46, 139, 146, 0.2);
 }
 
 .share-button {
@@ -1111,7 +1111,7 @@
 
 .empty-action {
   padding: 0.75rem 1.5rem;
-  background: #4f46e5;
+  background: #2E8B92;
   color: white;
   border: none;
   border-radius: 0.5rem;
@@ -1122,7 +1122,7 @@
 }
 
 .empty-action:hover {
-  background: #4338ca;
+  background: #25767C;
   transform: translateY(-2px);
 }
 
@@ -1151,8 +1151,8 @@
 }
 
 .sources-badge {
-  background: #eef2ff;
-  color: #4338ca;
+  background: #e0f2f1;
+  color: #1e5e5a;
   padding: 0.25rem 0.625rem;
   border-radius: 9999px;
   font-size: 0.75rem;
@@ -1187,7 +1187,7 @@
 .source-icon {
   width: 2.5rem;
   height: 2.5rem;
-  background: #4f46e5;
+  background: #2E8B92;
   color: white;
   border-radius: 0.5rem;
   display: flex;

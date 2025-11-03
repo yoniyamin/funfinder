@@ -8,6 +8,7 @@ interface AnimatedModalProps {
   title?: string;
   children: React.ReactNode;
   maxHeight?: string;
+  zIndex?: number;
 }
 
 export function AnimatedModal({ 
@@ -15,7 +16,8 @@ export function AnimatedModal({
   onClose, 
   title, 
   children,
-  maxHeight = '85vh'
+  maxHeight = '85vh',
+  zIndex = 100
 }: AnimatedModalProps) {
   const [isDragging, setIsDragging] = useState(false);
   
@@ -63,7 +65,8 @@ export function AnimatedModal({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             onClick={onClose}
-            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100]"
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm"
+            style={{ zIndex }}
           />
           
           {/* Modal */}
@@ -81,15 +84,15 @@ export function AnimatedModal({
               damping: 30, 
               stiffness: 300 
             }}
-            className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl z-[101] overflow-hidden shadow-2xl"
-            style={{ maxHeight, touchAction: 'none' }}
+            className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl overflow-hidden shadow-2xl"
+            style={{ maxHeight, touchAction: 'none', zIndex: zIndex + 1 }}
           >
             {/* Drag Handle - More prominent */}
             <div className="flex justify-center pt-4 pb-2 cursor-grab active:cursor-grabbing">
               <motion.div 
                 className="w-12 h-1.5 bg-gray-300 rounded-full"
                 animate={{ 
-                  backgroundColor: isDragging ? '#ff6b9d' : '#d1d5db',
+                  backgroundColor: isDragging ? '#56B88F' : '#d1d5db',
                   scale: isDragging ? 1.2 : 1
                 }}
                 transition={{ duration: 0.2 }}

@@ -96,6 +96,13 @@ export class Neo4jDataManager {
       // Create weather and festival cache constraints
       await this.weatherFestivalCache.createCacheConstraints();
       
+      // Create constraints for favorites and trip lists
+      await session.run('CREATE CONSTRAINT saved_activity_id IF NOT EXISTS FOR (a:SavedActivity) REQUIRE a.activityId IS UNIQUE');
+      await session.run('CREATE CONSTRAINT trip_list_id IF NOT EXISTS FOR (l:TripList) REQUIRE l.listId IS UNIQUE');
+      await session.run('CREATE INDEX saved_activity_location IF NOT EXISTS FOR (a:SavedActivity) ON (a.location)');
+      await session.run('CREATE INDEX saved_activity_saved_at IF NOT EXISTS FOR (a:SavedActivity) ON (a.savedAt)');
+      await session.run('CREATE INDEX trip_list_created_at IF NOT EXISTS FOR (l:TripList) ON (l.createdAt)');
+      
     } catch (error) {
       console.warn('Constraint/Index creation warning (may already exist):', error.message);
     } finally {
@@ -771,6 +778,377 @@ export class Neo4jDataManager {
       return result.records[0]?.get('deletedCount') > 0;
     } catch (error) {
       console.error('Error removing from exclusion list:', error.message);
+      return false;
+    } finally {
+      session.close();
+    }
+  }
+
+  // Favorites and Trip Lists methods
+  async saveFavoriteActivity(activity, location) {
+    await this.ensureConnection();
+    const session = this.driver.session({ database: this.database });
+    
+    try {
+      const { v4: uuidv4 } = await import('uuid');
+      const activityId = uuidv4();
+      const savedAt = new Date().toISOString();
+      
+      const result = await session.run(`
+        CREATE (a:SavedActivity {
+          activityId: $activityId,
+          title: $title,
+          category: $category,
+          description: $description,
+          suitable_ages: $suitable_ages,
+          duration_hours: $duration_hours,
+          address: $address,
+          lat: $lat,
+          lon: $lon,
+          booking_url: $booking_url,
+          free: $free,
+          weather_fit: $weather_fit,
+          notes: $notes,
+          source: $source,
+          location: $location,
+          savedAt: $savedAt
+        })
+        RETURN a
+      `, {
+        activityId,
+        title: activity.title || '',
+        category: activity.category || 'other',
+        description: activity.description || '',
+        suitable_ages: activity.suitable_ages || '',
+        duration_hours: activity.duration_hours || 0,
+        address: activity.address || null,
+        lat: activity.lat || null,
+        lon: activity.lon || null,
+        booking_url: activity.booking_url || null,
+        free: activity.free || null,
+        weather_fit: activity.weather_fit || 'ok',
+        notes: activity.notes || null,
+        source: activity.source || null,
+        location,
+        savedAt
+      });
+      
+      const savedActivity = result.records[0].get('a').properties;
+      console.log('✅ Saved activity to favorites:', savedActivity.title);
+      return savedActivity;
+    } catch (error) {
+      console.error('Error saving favorite activity:', error.message);
+      throw error;
+    } finally {
+      session.close();
+    }
+  }
+
+  async getFavoriteActivities() {
+    await this.ensureConnection();
+    const session = this.driver.session({ database: this.database });
+    
+    try {
+      const result = await session.run(`
+        MATCH (a:SavedActivity)
+        OPTIONAL MATCH (a)-[m:MEMBER_OF]->(l:TripList)
+        WITH a, COLLECT(l.listId) as listIds
+        RETURN a, listIds
+        ORDER BY a.savedAt DESC
+      `);
+      
+      const activities = result.records.map(record => {
+        const activity = record.get('a').properties;
+        const listIds = record.get('listIds');
+        return {
+          ...activity,
+          listIds: listIds.filter(id => id !== null)
+        };
+      });
+      
+      console.log(`✅ Loaded ${activities.length} favorite activities`);
+      return activities;
+    } catch (error) {
+      console.error('Error loading favorite activities:', error.message);
+      return [];
+    } finally {
+      session.close();
+    }
+  }
+
+  async removeFavoriteActivity(activityId) {
+    await this.ensureConnection();
+    const session = this.driver.session({ database: this.database });
+    
+    try {
+      await session.run(`
+        MATCH (a:SavedActivity {activityId: $activityId})
+        DETACH DELETE a
+      `, { activityId });
+      
+      console.log('✅ Removed activity from favorites:', activityId);
+      return true;
+    } catch (error) {
+      console.error('Error removing favorite activity:', error.message);
+      return false;
+    } finally {
+      session.close();
+    }
+  }
+
+  async createTripList(name, location = null) {
+    await this.ensureConnection();
+    const session = this.driver.session({ database: this.database });
+    
+    try {
+      const { v4: uuidv4 } = await import('uuid');
+      const listId = uuidv4();
+      const now = new Date().toISOString();
+      
+      const result = await session.run(`
+        CREATE (l:TripList {
+          listId: $listId,
+          name: $name,
+          location: $location,
+          createdAt: $createdAt,
+          updatedAt: $updatedAt
+        })
+        RETURN l
+      `, {
+        listId,
+        name,
+        location,
+        createdAt: now,
+        updatedAt: now
+      });
+      
+      const tripList = result.records[0].get('l').properties;
+      console.log('✅ Created trip list:', tripList.name);
+      return tripList;
+    } catch (error) {
+      console.error('Error creating trip list:', error.message);
+      throw error;
+    } finally {
+      session.close();
+    }
+  }
+
+  async getTripLists() {
+    await this.ensureConnection();
+    const session = this.driver.session({ database: this.database });
+    
+    try {
+      const result = await session.run(`
+        MATCH (l:TripList)
+        OPTIONAL MATCH (a:SavedActivity)-[m:MEMBER_OF]->(l)
+        WITH l, a, m
+        ORDER BY m.order
+        WITH l, COLLECT(a.activityId) as activityIds
+        RETURN l, activityIds
+        ORDER BY l.createdAt DESC
+      `);
+      
+      const lists = result.records.map(record => {
+        const list = record.get('l').properties;
+        const activityIds = record.get('activityIds').filter(id => id !== null);
+        return {
+          ...list,
+          activityIds
+        };
+      });
+      
+      console.log(`✅ Loaded ${lists.length} trip lists`);
+      return lists;
+    } catch (error) {
+      console.error('Error loading trip lists:', error.message);
+      return [];
+    } finally {
+      session.close();
+    }
+  }
+
+  async updateTripList(listId, updates) {
+    await this.ensureConnection();
+    const session = this.driver.session({ database: this.database });
+    
+    try {
+      const now = new Date().toISOString();
+      const setClauses = [];
+      const params = { listId, updatedAt: now };
+      
+      if (updates.name !== undefined) {
+        setClauses.push('l.name = $name');
+        params.name = updates.name;
+      }
+      
+      if (updates.location !== undefined) {
+        setClauses.push('l.location = $location');
+        params.location = updates.location;
+      }
+      
+      setClauses.push('l.updatedAt = $updatedAt');
+      
+      const result = await session.run(`
+        MATCH (l:TripList {listId: $listId})
+        SET ${setClauses.join(', ')}
+        RETURN l
+      `, params);
+      
+      if (result.records.length === 0) {
+        throw new Error('Trip list not found');
+      }
+      
+      const updatedList = result.records[0].get('l').properties;
+      console.log('✅ Updated trip list:', updatedList.name);
+      return updatedList;
+    } catch (error) {
+      console.error('Error updating trip list:', error.message);
+      throw error;
+    } finally {
+      session.close();
+    }
+  }
+
+  async deleteTripList(listId) {
+    await this.ensureConnection();
+    const session = this.driver.session({ database: this.database });
+    
+    try {
+      await session.run(`
+        MATCH (l:TripList {listId: $listId})
+        DETACH DELETE l
+      `, { listId });
+      
+      console.log('✅ Deleted trip list:', listId);
+      return true;
+    } catch (error) {
+      console.error('Error deleting trip list:', error.message);
+      return false;
+    } finally {
+      session.close();
+    }
+  }
+
+  async addActivityToList(listId, activityId, order = null) {
+    await this.ensureConnection();
+    const session = this.driver.session({ database: this.database });
+    
+    try {
+      // If no order specified, get the max order and add 1
+      if (order === null) {
+        const maxOrderResult = await session.run(`
+          MATCH (:SavedActivity)-[m:MEMBER_OF]->(l:TripList {listId: $listId})
+          RETURN COALESCE(MAX(m.order), -1) as maxOrder
+        `, { listId });
+        
+        let maxOrder = maxOrderResult.records[0].get('maxOrder');
+        console.log('🔍 Max order raw value:', maxOrder);
+        
+        // Convert Neo4j Integer object to JavaScript number
+        if (maxOrder && typeof maxOrder.toNumber === 'function') {
+          maxOrder = maxOrder.toNumber();
+        } else if (typeof maxOrder === 'bigint') {
+          maxOrder = Number(maxOrder);
+        } else if (typeof maxOrder === 'object' && maxOrder !== null && 'low' in maxOrder) {
+          // Neo4j Integer object - use low value for small integers
+          maxOrder = maxOrder.low;
+        }
+        
+        console.log('🔄 Converted to number:', maxOrder);
+        
+        // Now safely add 1
+        order = maxOrder + 1;
+        console.log('✅ Final order value:', order);
+      }
+      
+      const now = new Date().toISOString();
+      
+      // First verify both nodes exist
+      const checkResult = await session.run(`
+        MATCH (a:SavedActivity {activityId: $activityId})
+        MATCH (l:TripList {listId: $listId})
+        RETURN a, l
+      `, { activityId, listId });
+      
+      if (checkResult.records.length === 0) {
+        console.error('❌ Activity or List not found:', { activityId, listId });
+        return false;
+      }
+      
+      // Create the relationship
+      const result = await session.run(`
+        MATCH (a:SavedActivity {activityId: $activityId})
+        MATCH (l:TripList {listId: $listId})
+        MERGE (a)-[m:MEMBER_OF]->(l)
+        SET m.order = $order,
+            m.addedAt = $addedAt,
+            l.updatedAt = $updatedAt
+        RETURN m
+      `, { activityId, listId, order, addedAt: now, updatedAt: now });
+      
+      if (result.records.length > 0) {
+        console.log('✅ Added activity to list successfully');
+        return true;
+      } else {
+        console.error('❌ Failed to create relationship');
+        return false;
+      }
+    } catch (error) {
+      console.error('AA Error adding activity to list:', error.message);
+      return false;
+    } finally {
+      session.close();
+    }
+  }
+
+  async removeActivityFromList(listId, activityId) {
+    await this.ensureConnection();
+    const session = this.driver.session({ database: this.database });
+    
+    try {
+      const now = new Date().toISOString();
+      
+      await session.run(`
+        MATCH (a:SavedActivity {activityId: $activityId})-[m:MEMBER_OF]->(l:TripList {listId: $listId})
+        DELETE m
+        SET l.updatedAt = $updatedAt
+      `, { activityId, listId, updatedAt: now });
+      
+      console.log('✅ Removed activity from list');
+      return true;
+    } catch (error) {
+      console.error('Error removing activity from list:', error.message);
+      return false;
+    } finally {
+      session.close();
+    }
+  }
+
+  async reorderListActivities(listId, activityIds) {
+    await this.ensureConnection();
+    const session = this.driver.session({ database: this.database });
+    
+    try {
+      const now = new Date().toISOString();
+      
+      // Update each activity's order
+      for (let i = 0; i < activityIds.length; i++) {
+        await session.run(`
+          MATCH (a:SavedActivity {activityId: $activityId})-[m:MEMBER_OF]->(l:TripList {listId: $listId})
+          SET m.order = $order
+        `, { activityId: activityIds[i], listId, order: i });
+      }
+      
+      // Update list's updatedAt timestamp
+      await session.run(`
+        MATCH (l:TripList {listId: $listId})
+        SET l.updatedAt = $updatedAt
+      `, { listId, updatedAt: now });
+      
+      console.log('✅ Reordered activities in list');
+      return true;
+    } catch (error) {
+      console.error('Error reordering activities:', error.message);
       return false;
     } finally {
       session.close();

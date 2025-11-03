@@ -2,11 +2,39 @@ export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: { 
     extend: {
+      colors: {
+        primary: {
+          DEFAULT: '#2E8B92',
+          hover: '#25767C',
+        },
+        secondary: {
+          DEFAULT: '#F2A15F',
+        },
+        accent: {
+          DEFAULT: '#F26B8A',
+        },
+        success: {
+          DEFAULT: '#56B88F',
+        },
+        warning: {
+          DEFAULT: '#F2C14E',
+        },
+        'sunny-mint': {
+          bg: '#FAFBFC',
+          surface: '#FFFFFF',
+          text: {
+            primary: '#1E2A32',
+            secondary: '#5B6B75',
+          },
+          divider: '#E6EEF2',
+        }
+      },
       backgroundImage: {
-        'gradient-hero': 'linear-gradient(45deg, #ff0080, #ff8c00, #40e0d0, #ee82ee, #7fff00, #1e90ff, #ff69b4, #ffd700)',
-        'gradient-fun': 'linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4, #feca57)',
-        'gradient-playful': 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        'gradient-border': 'linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4, #feca57, #ff8a80)',
+        'gradient-hero': 'linear-gradient(45deg, #2E8B92, #56B88F, #F2A15F, #F26B8A)',
+        'gradient-fun': 'linear-gradient(45deg, #56B88F, #2E8B92, #F2A15F)',
+        'gradient-playful': 'linear-gradient(135deg, #2E8B92 0%, #56B88F 100%)',
+        'gradient-border': 'linear-gradient(45deg, #2E8B92, #56B88F, #F2A15F, #F26B8A)',
+        'gradient-cta': 'linear-gradient(90deg, #2E8B92, #56B88F)',
       },
       animation: {
         'gradient-x': 'gradient-x 3s ease infinite',
