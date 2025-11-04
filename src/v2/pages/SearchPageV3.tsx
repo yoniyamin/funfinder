@@ -188,7 +188,14 @@ export default function SearchPageV3({
       url.searchParams.set('count', '1');
       url.searchParams.set('language', 'en');
 
-      const response = await fetch(url.toString());
+      // Use fetchWithTimeout with 10 second timeout
+      const response = await Promise.race([
+        fetch(url.toString()),
+        new Promise<Response>((_, reject) =>
+          setTimeout(() => reject(new Error('Request timeout after 10000ms')), 10000)
+        )
+      ]);
+
       if (!response.ok) {
         console.error('Reverse geocoding failed:', response.status, response.statusText);
         return null;
@@ -921,13 +928,29 @@ export default function SearchPageV3({
                     setShowLocationModal(true);
                     setLocationSuggestions([]);
                   }}
-                  className="w-full px-4 py-3.5 pr-12 bg-white border-2 rounded-2xl focus:outline-none text-left text-gray-900 font-medium transition-all shadow-sm hover:shadow-md"
+                  className="w-full px-4 py-3.5 pr-24 bg-white border-2 rounded-2xl focus:outline-none text-left text-gray-900 font-medium transition-all shadow-sm hover:shadow-md"
                   style={{ borderColor: '#2E8B92' }}
                   onFocus={(e) => e.currentTarget.style.boxShadow = '0 0 0 3px rgba(255, 107, 157, 0.15)'}
                   onBlur={(e) => e.currentTarget.style.boxShadow = ''}
                 >
                   {searchParams.location || 'City or neighborhood'}
                 </button>
+                {/* Clear button - only show when there's a location */}
+                {searchParams.location && (
+                  <motion.button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      updateSearchParams({ location: '' });
+                    }}
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    className="absolute right-12 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 transition-all"
+                    title="Clear location"
+                  >
+                    <X className="w-4 h-4" />
+                  </motion.button>
+                )}
                 {/* GPS Button */}
                 <motion.button
                   type="button"
@@ -1268,7 +1291,11 @@ export default function SearchPageV3({
               }}>
                 ⭐ Popular in {searchParams.location}
               </h3>
-              <button className="text-[10px] font-semibold" style={{ color: '#2E8B92' }}>
+              <button 
+                onClick={handleSearch}
+                className="text-[10px] font-semibold hover:opacity-70 transition-opacity" 
+                style={{ color: '#2E8B92' }}
+              >
                 See all →
               </button>
               </div>
@@ -1306,6 +1333,12 @@ export default function SearchPageV3({
                         whileHover={{ y: -4 }}
                         whileTap={{ scale: 0.98 }}
                         className="relative flex-shrink-0 w-36 snap-start group cursor-pointer"
+                        onClick={() => {
+                          // Store the activity to highlight in sessionStorage
+                          sessionStorage.setItem('highlightActivity', activity.title);
+                          // Trigger search
+                          handleSearch();
+                        }}
                       >
                         {/* Modern Card Design - Strict Fixed Height */}
                         <div className="relative bg-white rounded-2xl overflow-hidden shadow-md border-2 border-gray-100 hover:shadow-xl transition-all" style={{ height: '145px' }}>

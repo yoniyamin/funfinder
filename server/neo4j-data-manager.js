@@ -1488,18 +1488,32 @@ export class Neo4jDataManager {
     try {
       console.log(`🔍 Getting popular activities for: "${location}" (limit: ${limit})`);
       
+      // Check if location is a PlaceKey ID (format: provider:id)
+      const isPlaceKeyId = location.includes(':') && !location.includes(',');
+      
+      // Build query - use exact match for PlaceKey IDs, exact or contains for location strings
+      const query = isPlaceKeyId
+        ? `MATCH (s:SearchCacheEnhanced)
+           WHERE s.location = $location
+           AND s.results IS NOT NULL
+           RETURN s.results as results, 
+                  s.lastAccessed as lastAccessed,
+                  s.location as location,
+                  s.date as date
+           ORDER BY s.lastAccessed DESC
+           LIMIT 1`
+        : `MATCH (s:SearchCacheEnhanced)
+           WHERE s.location = $location
+           AND s.results IS NOT NULL
+           RETURN s.results as results, 
+                  s.lastAccessed as lastAccessed,
+                  s.location as location,
+                  s.date as date
+           ORDER BY s.lastAccessed DESC
+           LIMIT 1`;
+      
       // Now try to get the cached results (stored in 'results' property as JSON string)
-      const recentCacheResult = await session.run(`
-        MATCH (s:SearchCacheEnhanced)
-        WHERE s.location CONTAINS $location
-        AND s.results IS NOT NULL
-        RETURN s.results as results, 
-               s.lastAccessed as lastAccessed,
-               s.location as location,
-               s.date as date
-        ORDER BY s.lastAccessed DESC
-        LIMIT 1
-      `, { location });
+      const recentCacheResult = await session.run(query, { location });
       
       if (recentCacheResult.records.length === 0) {
         console.log(`⚠️ No cached search results found for location: "${location}"`);

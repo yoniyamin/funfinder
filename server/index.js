@@ -4406,8 +4406,12 @@ app.post('/api/activities', async (req, res) => {
           const cacheKey = `${allowed}-${maxActivities || 'default'}`;
           
           // Check for exact match first
+          // Use PlaceKey ID for cache key if available
+          const cacheLocation = ctx.placeKey 
+            ? `${ctx.placeKey.provider}:${ctx.placeKey.id}`
+            : ctx.location;
           const exactCachedResults = await dataManager.getExactCachedResults(
-            dataManager.generateSearchKey(ctx.location, ctx.date, ctx.duration_hours, ctx.ages, cacheKey, ctx.extra_instructions || '', modelName)
+            dataManager.generateSearchKey(cacheLocation, ctx.date, ctx.duration_hours, ctx.ages, cacheKey, ctx.extra_instructions || '', modelName)
           );
           
           let shouldBypassForModel = false;
@@ -4453,8 +4457,14 @@ app.post('/api/activities', async (req, res) => {
       try {
         const modelName = getModelIdentifier();
         const cacheKey = `${allowed}-${maxActivities || 'default'}`;
+        
+        // Use PlaceKey ID for cache key if available, otherwise fall back to location string
+        const cacheLocation = ctx.placeKey 
+          ? `${ctx.placeKey.provider}:${ctx.placeKey.id}`
+          : ctx.location;
+        
         const cachedResults = await dataManager.getCachedSearchResults(
-          ctx.location,
+          cacheLocation,
           ctx.date,
           ctx.duration_hours,
           ctx.ages,
@@ -4468,8 +4478,10 @@ app.post('/api/activities', async (req, res) => {
           console.log('⚡ Using cached search results for:', ctx.location, ctx.date);
           
           // Apply exclusion filtering to cached results
+          // Exclusions are keyed by location string (user-friendly), but we also check PlaceKey ID
           const exclusions = await dataManager.loadExclusionList();
-          const locationExclusions = exclusions[ctx.location] || [];
+          const locationExclusions = exclusions[ctx.location] || 
+            (ctx.placeKey ? exclusions[`${ctx.placeKey.provider}:${ctx.placeKey.id}`] : []) || [];
           
           if (locationExclusions.length > 0 && cachedResults.activities) {
             console.log(`🚫 Filtering ${locationExclusions.length} excluded activities from cached results`);
@@ -4553,8 +4565,14 @@ app.post('/api/activities', async (req, res) => {
           try {
             const modelName = getModelIdentifier();
             const cacheKey = `${allowed}-${maxActivities || 'default'}`;
+            
+            // Use PlaceKey ID for cache key if available
+            const cacheLocation = ctx.placeKey 
+              ? `${ctx.placeKey.provider}:${ctx.placeKey.id}`
+              : ctx.location;
+            
             await dataManager.cacheSearchResults(
-              ctx.location,
+              cacheLocation,
               ctx.date,
               ctx.duration_hours,
               ctx.ages,

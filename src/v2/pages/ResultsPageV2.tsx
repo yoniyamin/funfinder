@@ -884,6 +884,59 @@ export default function ResultsPageV2({
     };
   }, [filtered]);
 
+  // Handle highlighting activity from carousel click
+  useEffect(() => {
+    if (!activities || activities.length === 0) return;
+
+    const highlightActivity = sessionStorage.getItem('highlightActivity');
+    if (!highlightActivity) return;
+
+    // Find the matching activity
+    const matchingActivity = filtered.find((activity, idx) => 
+      activity.title === highlightActivity
+    );
+
+    if (!matchingActivity) {
+      // Activity not found, clear the flag
+      sessionStorage.removeItem('highlightActivity');
+      return;
+    }
+
+    // Find the index of the matching activity
+    const activityIndex = filtered.findIndex((activity) => 
+      activity.title === highlightActivity
+    );
+
+    // Expand the card
+    setExpandedCards(new Set([activityIndex]));
+
+    // Scroll to the activity after a short delay to ensure DOM is ready
+    setTimeout(() => {
+      const cardElement = document.getElementById(`activity-card-${activityIndex}`);
+      if (cardElement) {
+        cardElement.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'center' 
+        });
+        
+        // Add a highlight effect
+        cardElement.style.transition = 'box-shadow 0.3s ease';
+        cardElement.style.boxShadow = '0 0 0 4px rgba(46, 139, 146, 0.3)';
+        
+        // Remove highlight after 3 seconds
+        setTimeout(() => {
+          cardElement.style.boxShadow = '';
+          setTimeout(() => {
+            cardElement.style.transition = '';
+          }, 300);
+        }, 3000);
+      }
+
+      // Clear the flag
+      sessionStorage.removeItem('highlightActivity');
+    }, 300);
+  }, [activities, filtered]);
+
   // No scroll detection needed - sections will scroll naturally
 
   const clearFilters = () => {
