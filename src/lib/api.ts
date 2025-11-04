@@ -1,4 +1,13 @@
 import { validateGeocodingResponse, validateWeatherResponse, ValidatedGeocodingResult, ValidatedWeatherApiResponse } from './validation-helpers';
+import type { PlaceKey } from './placekey';
+import { 
+  parseLocationInput, 
+  rankCandidates, 
+  openMeteoResultToPlaceKey, 
+  normalizeAdmin1Code, 
+  normalizeUSState,
+  validatePlaceKey 
+} from './placekey';
 
 export const toISODate = (d: Date | string) =>
   typeof d === 'string' ? d : new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
@@ -13,6 +22,107 @@ function fetchWithTimeout(url: string | URL, options: RequestInit = {}, timeoutM
   ]);
 }
 
+/**
+ * Resolve a location input string to a PlaceKey with stable ID
+ * This is the recommended function - it returns PlaceKey instead of string
+ */
+export async function resolvePlace(input: string, signal?: AbortSignal): Promise<PlaceKey> {
+  const startTime = performance.now();
+  const parsed = parseLocationInput(input);
+  
+  // Normalize desired country and admin1
+  const desiredCountry = parsed.country ? parsed.country.toUpperCase() : undefined;
+  let desiredAdmin1: string | undefined;
+  
+  if (parsed.state && desiredCountry === 'US') {
+    desiredAdmin1 = normalizeUSState(parsed.state) || undefined;
+  }
+  
+  // Build geocoding query - normalize for API
+  const geocodeQuery = parsed.state && parsed.country
+    ? `${parsed.city}, ${parsed.country}`
+    : parsed.country
+    ? `${parsed.city}, ${parsed.country}`
+    : parsed.city;
+  
+  console.log(`📍 [${new Date().toISOString()}] Resolving place: ${input} -> ${geocodeQuery}`);
+  
+  try {
+    // Fetch multiple candidates for ranking
+    const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
+    url.searchParams.set('name', geocodeQuery);
+    url.searchParams.set('count', '10');
+    url.searchParams.set('language', 'en');
+    
+    const r = await fetch(url, { signal });
+    const duration = performance.now() - startTime;
+    
+    if(!r.ok) {
+      console.error(`❌ [${new Date().toISOString()}] Geocoding failed (${duration.toFixed(2)}ms): ${r.status} ${r.statusText}`);
+      throw new Error(`Geocoding failed: ${r.status} ${r.statusText}`);
+    }
+    
+    const j = await r.json();
+    if(!j.results?.length) {
+      console.error(`❌ [${new Date().toISOString()}] Location not found (${duration.toFixed(2)}ms): ${input}`);
+      throw new Error('No matching location found');
+    }
+    
+    // Rank and filter candidates
+    const ranked = rankCandidates(j.results, desiredCountry, desiredAdmin1);
+    
+    if (ranked.length === 0) {
+      console.warn(`⚠️ [${new Date().toISOString()}] No candidates matched filters, using first result`);
+      // Fallback to first result if no matches
+      const placeKey = openMeteoResultToPlaceKey(j.results[0]);
+      
+      // Validate with reverse geocoding (non-blocking - silently skip if it fails)
+      // Open-Meteo doesn't support reverse geocoding, so validation may fail
+      try {
+        await validatePlaceKey(placeKey);
+        // Validation passed - no need to log
+      } catch (validationError) {
+        // Validation is non-blocking - silently skip (expected to fail for Open-Meteo)
+      }
+      
+      console.log(`✅ [${new Date().toISOString()}] Place resolved (${duration.toFixed(2)}ms): ${placeKey.name}, ${placeKey.country_code}`);
+      return placeKey;
+    }
+    
+    // Use top-ranked candidate
+    const selected = ranked[0];
+    const placeKey = openMeteoResultToPlaceKey(selected);
+    
+    // Validate with reverse geocoding (non-blocking - silently skip if it fails)
+    // Open-Meteo doesn't support reverse geocoding, so validation may fail
+    try {
+      const isValid = await validatePlaceKey(placeKey);
+      if (!isValid && ranked.length > 1) {
+        // Try next candidate if validation failed
+        const nextPlaceKey = openMeteoResultToPlaceKey(ranked[1]);
+        const nextIsValid = await validatePlaceKey(nextPlaceKey);
+        if (nextIsValid) {
+          console.log(`✅ [${new Date().toISOString()}] Place resolved (${duration.toFixed(2)}ms): ${nextPlaceKey.name}, ${nextPlaceKey.country_code}`);
+          return nextPlaceKey;
+        }
+      }
+    } catch (validationError) {
+      // Validation is non-blocking - silently skip (expected to fail for Open-Meteo)
+    }
+    
+    console.log(`✅ [${new Date().toISOString()}] Place resolved (${duration.toFixed(2)}ms): ${placeKey.name}, ${placeKey.country_code}`);
+    return placeKey;
+  } catch (error) {
+    const duration = performance.now() - startTime;
+    console.error(`❌ [${new Date().toISOString()}] Place resolution error (${duration.toFixed(2)}ms):`, error);
+    throw error;
+  }
+}
+
+/**
+ * Legacy geocode function - kept for backward compatibility
+ * Use resolvePlace() instead for PlaceKey support
+ */
 export async function geocode(name: string, signal?: AbortSignal){
   const startTime = performance.now();
   const url = new URL('https://geocoding-api.open-meteo.com/v1/search');

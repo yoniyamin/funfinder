@@ -40,7 +40,7 @@ import {
   Landmark, TreePine, Baby, Mountain, Waves, Palette, 
   Theater, Snowflake, UtensilsCrossed, Music, Camera,
   Castle, Building2, Gamepad2, Umbrella, Flame,
-  ThermometerSun, Shirt, ShieldCheck, Heart
+  ThermometerSun, Shirt, ShieldCheck, Heart, Loader
 } from 'lucide-react';
 import { WeatherCarousel } from '../components/WeatherCarousel';
 import { getWeatherTips, getWeatherSummary } from '../../lib/weatherHelpers';
@@ -112,6 +112,8 @@ interface ActivityCardProps {
   displayIndex: number;
   isFlipped: boolean;
   onToggleFlip: () => void;
+  favorites: any[];
+  onRefreshFavorites: () => void;
 }
 
 function ActivityCard({ 
@@ -123,38 +125,30 @@ function ActivityCard({
   context,
   displayIndex,
   isFlipped,
-  onToggleFlip
+  onToggleFlip,
+  favorites,
+  onRefreshFavorites
 }: ActivityCardProps) {
   const [sharingActivity, setSharingActivity] = useState(false);
-  const [isFavorited, setIsFavorited] = useState(false);
   const [showHeartAnimation, setShowHeartAnimation] = useState(false);
+  const [isMapLoading, setIsMapLoading] = useState(true);
   const CategoryIcon = getCategoryIcon(activity.category);
   const WeatherIcon = getWeatherIcon(activity.weather_fit);
   const cardRef = useRef<HTMLDivElement>(null);
 
   const hasPrimaryAction = Boolean(activity.booking_url);
 
-  // Check if activity is already favorited on mount
+  // Reset map loading state when flipping to map view
   useEffect(() => {
-    const checkFavoriteStatus = async () => {
-      try {
-        const response = await fetch('/api/favorites');
-        if (response.ok) {
-          const data = await response.json();
-          const favorites = data.favorites || [];
-          // Check if this activity title exists in favorites
-          const isAlreadyFavorited = favorites.some(
-            (fav: any) => fav.title === activity.title && fav.location === context?.location
-          );
-          setIsFavorited(isAlreadyFavorited);
-        }
-      } catch (error) {
-        console.error('Error checking favorite status:', error);
-      }
-    };
-    
-    checkFavoriteStatus();
-  }, [activity.title, context?.location]);
+    if (isFlipped && activity.address) {
+      setIsMapLoading(true);
+    }
+  }, [isFlipped, activity.address]);
+
+  // Check if activity is already favorited based on favorites list
+  const isFavorited = favorites.some(
+    (fav: any) => fav.title === activity.title && fav.location === context?.location
+  );
 
   // Handle adding to favorites
   const handleFavorite = async (e: React.MouseEvent) => {
@@ -162,7 +156,6 @@ function ActivityCard({
     
     // Optimistic UI update
     const wasFavorited = isFavorited;
-    setIsFavorited(!isFavorited);
     
     // Trigger animation only when favoriting (not unfavoriting)
     if (!wasFavorited) {
@@ -187,6 +180,8 @@ function ActivityCard({
         }
 
         console.log('✅ Activity saved to favorites');
+        // Refresh favorites list
+        onRefreshFavorites();
       } else {
         // Remove from favorites - would need activityId
         // For now, just toggle the UI state
@@ -194,8 +189,6 @@ function ActivityCard({
       }
     } catch (error) {
       console.error('Error saving favorite:', error);
-      // Revert on error
-      setIsFavorited(wasFavorited);
     }
   };
   
@@ -653,13 +646,30 @@ function ActivityCard({
             </button>
             <div className="map-view-title">{activity.title || 'Location'}</div>
           </div>
-          <div className="map-iframe-container">
+          <div className="map-iframe-container" style={{ position: 'relative' }}>
+            {isMapLoading && (
+              <div style={{ 
+                position: 'absolute', 
+                top: '50%', 
+                left: '50%', 
+                transform: 'translate(-50%, -50%)',
+                zIndex: 10,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <Loader className="w-8 h-8 text-[#2E8B92] animate-spin" />
+                <span style={{ fontSize: '14px', color: '#666' }}>Loading map...</span>
+              </div>
+            )}
             <iframe
               src={`https://www.google.com/maps?q=${encodeURIComponent(activity.address)}&output=embed`}
               allowFullScreen
               loading="lazy"
               referrerPolicy="no-referrer-when-downgrade"
               title={`Map of ${activity.title}`}
+              onLoad={() => setIsMapLoading(false)}
             />
           </div>
           <div className="map-view-actions">
@@ -717,6 +727,7 @@ export default function ResultsPageV2({
   const [showWeatherTips, setShowWeatherTips] = useState(false); // Collapsed by default
   const [showAllEvents, setShowAllEvents] = useState(false); // For expanding festivals/holidays
   const [currentTipIndex, setCurrentTipIndex] = useState(0); // Move to top level
+  const [favorites, setFavorites] = useState<any[]>([]);
   
   // Filters
   const [fCat, setFCat] = useState<string>('');
@@ -725,6 +736,24 @@ export default function ResultsPageV2({
   const [fSource, setFSource] = useState<string>('');
 
   const { activities, ctx, webSources } = searchResults;
+
+  // Load favorites function
+  const loadFavorites = async () => {
+    try {
+      const response = await fetch('/api/favorites');
+      if (response.ok) {
+        const data = await response.json();
+        setFavorites(data.favorites || []);
+      }
+    } catch (error) {
+      console.error('Error loading favorites:', error);
+    }
+  };
+
+  // Load favorites once on mount
+  useEffect(() => {
+    loadFavorites();
+  }, []);
 
   // Weather tips rotation logic - moved to top level
   const weatherTips = useMemo(() => {
@@ -1336,6 +1365,8 @@ export default function ResultsPageV2({
                   displayIndex={idx + 1}
                   isFlipped={flippedCards.has(idx)}
                   onToggleFlip={() => toggleFlip(idx)}
+                  favorites={favorites}
+                  onRefreshFavorites={loadFavorites}
                 />
               </div>
             ))}

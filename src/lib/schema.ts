@@ -1,5 +1,8 @@
+import type { PlaceKey } from './placekey';
+
 export type Context = {
-  location: string;
+  location: string; // Display string (kept for backward compatibility)
+  placeKey?: PlaceKey; // Canonical place identifier (preferred)
   date: string; // YYYY-MM-DD
   duration_hours: number;
   ages: number[];

@@ -36,7 +36,15 @@ const ContextSchema = z.object({
   location: z.string().trim().min(1, "Location cannot be empty"),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format"),
   duration_hours: z.number().min(0.5).max(24).catch(2), // Default to 2 hours if invalid
-  ages: z.array(z.coerce.number().min(0).max(120)).default([]), // Allow empty array (no kids), coerce strings to numbers
+  ages: z.preprocess((arr) => {
+    // Filter out non-numeric values like "all" and convert strings to numbers
+    if (!Array.isArray(arr)) return [];
+    return arr.map((val) => {
+      if (typeof val === 'number') return val;
+      const num = Number(val);
+      return isNaN(num) ? null : num;
+    }).filter((age) => age !== null && !isNaN(age) && age >= 0 && age <= 120);
+  }, z.array(z.number().min(0).max(120)).default([])), // Allow empty array (no kids), filter out non-numeric values like "all"
   weather: WeatherSchema,
   is_public_holiday: z.boolean().catch(false),
   nearby_festivals: z.array(FestivalSchema).default([]),

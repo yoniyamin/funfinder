@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { toISODate, geocode, fetchHolidays, fetchWeatherDaily, fetchFestivalsWikidata, fetchHolidaysWithGemini } from '../../lib/api';
+import { toISODate, geocode, resolvePlace, fetchHolidays, fetchWeatherDaily, fetchFestivalsWikidata, fetchHolidaysWithGemini } from '../../lib/api';
+import { getPlaceKeyCacheKey } from '../../lib/placekey';
 import type { Context, LLMResult, SavedActivity, TripList } from '../../lib/schema';
 import { getImageUrl } from '../../config/assets';
 import { AnimatedModal } from '../components/AnimatedModal';
@@ -40,6 +41,7 @@ interface SearchHistoryEntry {
 interface City {
   name: string;
   country: string;
+  state?: string;
 }
 
 interface SearchPageProps {
@@ -302,7 +304,20 @@ export default function SearchPageV3({
   const fetchCachedActivities = async (location: string) => {
     try {
       console.log('🎪 Fetching cached activities for:', location);
-      const response = await fetch(`/api/cached-activities?location=${encodeURIComponent(location)}&limit=10`);
+      
+      // Resolve location to PlaceKey first to get stable cache key
+      let placeKeyId: string | null = null;
+      try {
+        const placeKey = await resolvePlace(location);
+        placeKeyId = getPlaceKeyCacheKey(placeKey);
+        console.log('📍 Resolved to PlaceKey:', placeKeyId);
+      } catch (error) {
+        console.warn('⚠️ Failed to resolve PlaceKey, using location string:', error);
+      }
+      
+      // Use PlaceKey ID for cache lookup if available, otherwise fall back to location string
+      const cacheLocation = placeKeyId || location;
+      const response = await fetch(`/api/cached-activities?location=${encodeURIComponent(cacheLocation)}&limit=10`);
       
       if (response.ok) {
         const data = await response.json();
@@ -428,10 +443,28 @@ export default function SearchPageV3({
 
       const data = await response.json();
       if (data.results && data.results.length > 0) {
-        const citiesData: City[] = data.results.map((result: any) => ({
-          name: result.name,
-          country: result.country || result.admin1 || ''
-        }));
+        // Group cities by name to detect duplicates
+        const cityGroups = new Map<string, any[]>();
+        data.results.forEach((result: any) => {
+          const key = `${result.name}, ${result.country}`;
+          if (!cityGroups.has(key)) {
+            cityGroups.set(key, []);
+          }
+          cityGroups.get(key)!.push(result);
+        });
+        
+        // Only include state if there are multiple cities with the same name in different states/provinces
+        const citiesData: City[] = data.results.map((result: any) => {
+          const key = `${result.name}, ${result.country}`;
+          const duplicates = cityGroups.get(key)!;
+          const needsState = duplicates.length > 1;
+          
+          return {
+            name: result.name,
+            country: result.country || '',
+            state: needsState ? (result.admin1 || undefined) : undefined
+          };
+        });
         setLocationSuggestions(citiesData);
       } else {
         setLocationSuggestions([]);
@@ -472,7 +505,7 @@ export default function SearchPageV3({
 
   // Handle selecting a city suggestion
   const handleCitySelect = (city: City) => {
-    const locationString = `${city.name}, ${city.country}`;
+    const locationString = city.state ? `${city.name}, ${city.state}, ${city.country}` : `${city.name}, ${city.country}`;
     updateSearchParams({ location: locationString });
     setShowLocationModal(false);
     setLocationSuggestions([]);
@@ -1341,7 +1374,7 @@ export default function SearchPageV3({
                         }}
                       >
                         {/* Modern Card Design - Strict Fixed Height */}
-                        <div className="relative bg-white rounded-2xl overflow-hidden shadow-md border-2 border-gray-100 hover:shadow-xl transition-all" style={{ height: '145px' }}>
+                        <div className="relative bg-white rounded-2xl overflow-hidden shadow-md border-2 border-gray-100 hover:shadow-xl transition-all" style={{ height: '150px' }}>
                           <div className="flex flex-col h-full">
                             {/* Colorful Top Section with Icon - Fixed Height */}
                             <div className="relative flex items-center justify-center" style={{ height: '80px', flexShrink: 0, background: 'linear-gradient(135deg, #2E8B92 0%, #56B88F 50%, #F2A15F 100%)' }}>
@@ -1357,11 +1390,17 @@ export default function SearchPageV3({
                             </div>
                             
                             {/* Content Section - Fills Remaining Space */}
-                            <div className="bg-white p-3 flex flex-col" style={{ height: '65px', flexShrink: 0 }}>
-                              <h4 className="font-bold text-xs text-gray-900 leading-tight line-clamp-2 flex-1 overflow-hidden" style={{ fontFamily: 'Baloo 2, sans-serif' }}>
+                            <div className="bg-white px-3 pt-2 pb-2 flex flex-col" style={{ height: '70px', flexShrink: 0 }}>
+                              <h4 className="font-bold text-xs text-gray-900 leading-tight line-clamp-2 overflow-hidden" style={{ 
+                                fontFamily: 'Baloo 2, sans-serif',
+                                minHeight: '32px',
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical'
+                              }}>
                                 {activity.title}
                               </h4>
-                              <div className="mt-auto pt-1">
+                              <div className="mt-auto">
                                 <span className="inline-block px-2.5 py-0.5 rounded-full text-[9px] font-semibold whitespace-nowrap" style={{ background: 'linear-gradient(135deg, #e0f2f1 0%, #ffe4cc 100%)', color: '#1e5e5a' }}>
                                   {activity.category}
                                 </span>
@@ -1443,7 +1482,7 @@ export default function SearchPageV3({
                 </div>
                 <div className="flex-1">
                   <p className="font-semibold text-gray-900">{city.name}</p>
-                  <p className="text-sm text-gray-600">{city.country}</p>
+                  <p className="text-sm text-gray-600">{city.state ? `${city.state}, ${city.country}` : city.country}</p>
                 </div>
               </motion.button>
             ))

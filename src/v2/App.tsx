@@ -6,11 +6,12 @@ import BottomNavBar from './components/BottomNavBar';
 import Settings from '../components/Settings';
 import InstallPrompt from './components/InstallPrompt';
 import type { CacheInfo } from './components/CacheIndicator';
-import { toISODate, geocode, fetchHolidays, fetchHolidaysWithFallback, fetchWeatherDaily, fetchWeatherHourly, fetchFestivalsWikidata, fetchHolidaysWithGemini } from '../lib/api';
+import { toISODate, resolvePlace, geocode, fetchHolidays, fetchHolidaysWithFallback, fetchWeatherDaily, fetchWeatherHourly, fetchFestivalsWikidata, fetchHolidaysWithGemini } from '../lib/api';
 import type { Activity, Context, LLMResult } from '../lib/schema';
 import { validateAIResponse, getValidationErrorSummary, ValidationError } from '../lib/validation-helpers';
 import type { ValidatedLLMResult } from '../lib/validation';
 import { getImageUrl, IMAGES } from '../config/assets';
+import { getPlaceKeyCacheKey, getPlaceKeyDisplayString } from '../lib/placekey';
 
 // Hook to detect screen size
 const useDesktopLayout = () => {
@@ -99,7 +100,7 @@ const getEstimatedProgressSteps = () => {
   if (history.length === 0) {
     // Default progression if no history
     return {
-      activitySearchStartProgress: 85,
+      activitySearchStartProgress: 75,
       estimatedDuration: 60000 // 60 seconds default
     };
   }
@@ -107,13 +108,9 @@ const getEstimatedProgressSteps = () => {
   // Calculate average duration
   const avgDuration = history.reduce((sum, entry) => sum + entry.duration, 0) / history.length;
   
-  // Allocate 15% of progress bar for activity search based on historical data
-  // If activity search typically takes 80% of total time, allocate more progress to it
-  const totalEstimatedTime = avgDuration * 1.2; // Add buffer
-  const activitySearchStartProgress = Math.max(75, Math.min(85, 85 - (avgDuration / totalEstimatedTime) * 20));
-  
+  // Start at 75% and allow up to 88% for progress increments
   return {
-    activitySearchStartProgress,
+    activitySearchStartProgress: 75,
     estimatedDuration: avgDuration
   };
 };
@@ -168,6 +165,10 @@ export default function App() {
   const messageTimeout = useRef<number | null>(null);
   // Add a ref to track if a search is actively running to prevent StrictMode interference
   const activeSearchRef = useRef<boolean>(false);
+  // Add a ref to track progress interval during AI request
+  const progressIntervalRef = useRef<number | null>(null);
+  // Add a ref to track current progress during AI request
+  const currentProgressRef = useRef<number>(0);
 
   // Load initial data
   useEffect(() => {
@@ -424,9 +425,16 @@ export default function App() {
       // Add small delay to ensure state is updated
       await new Promise(resolve => setTimeout(resolve, 100));
       
-      setLoading({ isLoading: true, progress: 10, status: 'Geocoding location…' });
-      const g = await geocode(location);
-      const { latitude: lat, longitude: lon, country_code, name, country } = g as any;
+      setLoading({ isLoading: true, progress: 10, status: 'Resolving location…' });
+      
+      // Resolve location to PlaceKey (stable canonical ID)
+      // Note: Not using AbortController signal to avoid StrictMode issues
+      const placeKey = await resolvePlace(location);
+      const { lat, lon, country_code, name, country } = placeKey;
+      
+      // Use PlaceKey for cache key, display string for context
+      const placeKeyCacheId = getPlaceKeyCacheKey(placeKey);
+      const contextLocation = getPlaceKeyDisplayString(placeKey, !!placeKey.admin1_code);
 
       setLoading({ isLoading: true, progress: 25, status: 'Fetching weather forecast…' });
       let w: { tmax: number | null; tmin: number | null; pprob: number | null; wind: number | null } = { tmax: null, tmin: null, pprob: null, wind: null };
@@ -520,7 +528,8 @@ export default function App() {
       }
 
       const context: Context = {
-        location: `${name}, ${country}`,
+        location: contextLocation, // Display string (backward compatibility)
+        placeKey: placeKey, // Canonical place identifier (preferred for caching)
         date,
         duration_hours: duration as number,
         ages,
@@ -595,7 +604,22 @@ export default function App() {
           setTimeout(() => reject(new Error('Request timeout after 120 seconds')), 120000);
         });
         
+        // Start progress increment interval (every 3 seconds, increment by 1% until 88%)
+        currentProgressRef.current = activitySearchStartProgress;
+        progressIntervalRef.current = setInterval(() => {
+          if (currentProgressRef.current < 88) {
+            currentProgressRef.current += 1;
+            setLoading({ isLoading: true, progress: currentProgressRef.current, status: 'Generating activity recommendations… This might take a while' });
+          }
+        }, 3000);
+        
         const resp = await Promise.race([fetchPromise, timeoutPromise]) as Response;
+        
+        // Clear progress interval once we get response
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+          progressIntervalRef.current = null;
+        }
         
         console.log('📡 Fetch request completed, status:', resp.status);
         console.log('📡 Response content-type:', resp.headers.get('content-type'));
@@ -681,6 +705,12 @@ export default function App() {
         }, 1000);
         
       } catch(err:any){
+        // Clear progress interval on error
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+          progressIntervalRef.current = null;
+        }
+        
         if (err.name === 'AbortError') {
           console.log('🚫 Search was cancelled by user');
           setLoading({ isLoading: false, progress: 0, status: 'Search cancelled' });
@@ -698,8 +728,8 @@ export default function App() {
             console.log(`Retrying search (attempt ${retryCount + 1}/2) due to temporary error:`, err.message);
             setLoading({ 
               isLoading: true, 
-              progress: 30, 
-              status: `Retry ${retryCount + 1}/2: Server temporarily unavailable...` 
+              progress: 75, 
+              status: `Retrying... (attempt ${retryCount + 1}/2)` 
             });
             
             // Mark search as inactive to allow retry
@@ -733,6 +763,11 @@ export default function App() {
         if (messageTimeout.current) {
           clearTimeout(messageTimeout.current);
           messageTimeout.current = null;
+        }
+        // Clear progress interval in finally
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+          progressIntervalRef.current = null;
         }
         // Clear the AbortController now that search is completely done
         if (searchAbortController.current) {
