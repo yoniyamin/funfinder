@@ -427,11 +427,15 @@ export class Neo4jDataManager {
       const requireSameModel = this.cacheSettings?.cache_include_model;
       const providerFilter = requireSameModel ? ai_provider : null;
 
-      // Basic geographic filtering - for now just same location and nearby dates
-      // In a full implementation, you'd calculate geographic distance here
+      // Parse requested location to extract city and state
+      const locationParts = location.split(',').map(p => p.trim().toLowerCase());
+      const requestedCity = locationParts[0];
+      const requestedState = locationParts.length >= 2 ? locationParts[1] : null;
+
+      // Get all candidates with same city name (broader initial filtering)
       const result = await session.run(`
         MATCH (s:SearchCacheEnhanced)
-        WHERE (s.location = $location OR s.location CONTAINS $locationKeyword)
+        WHERE s.location CONTAINS $cityName
           AND date(s.date) >= date($dateStart)
           AND date(s.date) <= date($dateEnd)
           AND ($providerFilter IS NULL OR s.ai_provider = $providerFilter)
@@ -441,26 +445,79 @@ export class Neo4jDataManager {
                s.featureVector as featureVector,
                s.results as results,
                s.ai_provider as ai_provider,
+               s.duration_hours as duration_hours,
+               s.ages as ages,
+               s.query as query,
+               s.extra_instructions as extra_instructions,
                0 as distance
         ORDER BY s.lastAccessed DESC
-        LIMIT 10
+        LIMIT 20
       `, {
-        location,
-        locationKeyword: location.split(',')[0], // City name for broader matching
+        cityName: requestedCity,
         dateStart: dateRangeStart.toISOString().split('T')[0],
         dateEnd: dateRangeEnd.toISOString().split('T')[0],
         providerFilter
       });
 
-      return result.records.map(record => ({
-        searchKey: record.get('searchKey'),
-        location: record.get('location'),
-        date: record.get('date'),
-        featureVector: record.get('featureVector'),
-        results: record.get('results'),
-        ai_provider: record.get('ai_provider'),
-        distance: record.get('distance') // For now 0, would be actual distance in full implementation
-      }));
+      // Filter candidates by state/region if specified in request
+      const candidates = result.records
+        .map(record => ({
+          searchKey: record.get('searchKey'),
+          location: record.get('location'),
+          date: record.get('date'),
+          featureVector: record.get('featureVector'),
+          results: record.get('results'),
+          ai_provider: record.get('ai_provider'),
+          duration_hours: record.get('duration_hours'),
+          ages: record.get('ages'),
+          query: record.get('query'),
+          extra_instructions: record.get('extra_instructions'),
+          distance: record.get('distance')
+        }))
+        .filter(candidate => {
+          // If state/region was specified in the request, validate it matches
+          if (requestedState) {
+            const candidateParts = candidate.location.split(',').map(p => p.trim().toLowerCase());
+            const candidateCity = candidateParts[0];
+            const candidateState = candidateParts.length >= 2 ? candidateParts[1] : null;
+            
+            // City must match (we already filtered by city in the query)
+            if (candidateCity !== requestedCity) {
+              return false;
+            }
+            
+            // State validation - if both have states specified, they must match
+            if (candidateState) {
+              // Normalize common state variations (e.g., "MA" vs "Massachusetts", "NY" vs "New York")
+              const stateCodeMap = {
+                'massachusetts': 'ma', 'ma': 'ma',
+                'new york': 'ny', 'ny': 'ny',
+                'kentucky': 'ky', 'ky': 'ky',
+                'ohio': 'oh', 'oh': 'oh',
+                'california': 'ca', 'ca': 'ca',
+                'texas': 'tx', 'tx': 'tx',
+                'florida': 'fl', 'fl': 'fl',
+                'pennsylvania': 'pa', 'pa': 'pa',
+                'illinois': 'il', 'il': 'il',
+                // Add more as needed
+              };
+              
+              const normalizedRequested = stateCodeMap[requestedState] || requestedState;
+              const normalizedCandidate = stateCodeMap[candidateState] || candidateState;
+              
+              // States must match after normalization
+              if (normalizedRequested !== normalizedCandidate) {
+                console.log(`🚫 [Cache] Rejecting candidate "${candidate.location}" - state mismatch: requested "${requestedState}" (${normalizedRequested}), cached "${candidateState}" (${normalizedCandidate})`);
+                return false;
+              }
+            }
+          }
+          
+          return true; // Candidate passes all filters
+        });
+      
+      console.log(`📊 [Cache] Found ${candidates.length} valid candidates after state filtering (from ${result.records.length} initial results)`);
+      return candidates;
       
     } catch (error) {
       console.error('Error finding similarity candidates:', error.message);
@@ -1477,11 +1534,12 @@ export class Neo4jDataManager {
   /**
    * Get popular activities by location for carousel display
    * Fetches from the most recent search cache and randomly selects activities
-   * @param {string} location - Location to get activities for
+   * @param {string} location - Location to get activities for (PlaceKey ID or location string)
    * @param {number} limit - Maximum number of activities to return (default 10)
+   * @param {string} originalLocation - Original location string for validation (optional)
    * @returns {Promise<Array>} Random selection of activities from most recent cache
    */
-  async getPopularActivitiesByLocation(location, limit = 10) {
+  async getPopularActivitiesByLocation(location, limit = 10, originalLocation = null) {
     await this.ensureConnection();
     const session = this.driver.session({ database: this.database });
     
@@ -1491,30 +1549,22 @@ export class Neo4jDataManager {
       // Check if location is a PlaceKey ID (format: provider:id)
       const isPlaceKeyId = location.includes(':') && !location.includes(',');
       
-      // Build query - use exact match for PlaceKey IDs, exact or contains for location strings
-      const query = isPlaceKeyId
-        ? `MATCH (s:SearchCacheEnhanced)
-           WHERE s.location = $location
-           AND s.results IS NOT NULL
-           RETURN s.results as results, 
-                  s.lastAccessed as lastAccessed,
-                  s.location as location,
-                  s.date as date
-           ORDER BY s.lastAccessed DESC
-           LIMIT 1`
-        : `MATCH (s:SearchCacheEnhanced)
-           WHERE s.location = $location
-           AND s.results IS NOT NULL
-           RETURN s.results as results, 
-                  s.lastAccessed as lastAccessed,
-                  s.location as location,
-                  s.date as date
-           ORDER BY s.lastAccessed DESC
-           LIMIT 1`;
+      // Build query - use exact match
+      const query = `MATCH (s:SearchCacheEnhanced)
+                     WHERE s.location = $location
+                     AND s.results IS NOT NULL
+                     RETURN s.results as results, 
+                            s.lastAccessed as lastAccessed,
+                            s.location as location,
+                            s.date as date
+                     ORDER BY s.lastAccessed DESC
+                     LIMIT 1`;
       
-      // Now try to get the cached results (stored in 'results' property as JSON string)
-      const recentCacheResult = await session.run(query, { location });
+      // Try exact match with the provided location
+      let recentCacheResult = await session.run(query, { location });
       
+      // If no exact match found, return empty array (don't use wrong cache)
+      // This ensures we only return cached activities for the exact location requested
       if (recentCacheResult.records.length === 0) {
         console.log(`⚠️ No cached search results found for location: "${location}"`);
         return [];
@@ -1528,6 +1578,87 @@ export class Neo4jDataManager {
       const lastAccessed = record.get('lastAccessed');
       
       console.log(`✅ Found cache for ${cacheLocation} (date: ${cacheDate}, accessed: ${lastAccessed})`);
+      
+      // Validate cache location matches original location if provided
+      // This prevents wrong cache matches (e.g., Boston, MA vs Boston, KY)
+      if (originalLocation) {
+        const isPlaceKeyId = location.includes(':') && !location.includes(',');
+        const isCachePlaceKeyId = cacheLocation.includes(':') && !cacheLocation.includes(',');
+        
+        if (isPlaceKeyId && isCachePlaceKeyId) {
+          // Both are PlaceKey IDs - extract and compare coordinates
+          const requestedCoordsMatch = location.match(/^[^:]+:(.+)$/);
+          const cachedCoordsMatch = cacheLocation.match(/^[^:]+:(.+)$/);
+          
+          if (requestedCoordsMatch && cachedCoordsMatch) {
+            const requestedCoords = requestedCoordsMatch[1].split(',').map(c => parseFloat(c.trim()));
+            const cachedCoords = cachedCoordsMatch[1].split(',').map(c => parseFloat(c.trim()));
+            
+            // Calculate distance between coordinates (rough approximation)
+            const latDiff = Math.abs(requestedCoords[0] - cachedCoords[0]);
+            const lonDiff = Math.abs(requestedCoords[1] - cachedCoords[1]);
+            const distance = Math.sqrt(latDiff * latDiff + lonDiff * lonDiff);
+            
+            // If coordinates are more than 0.05 degrees apart (~5km), reject the cache
+            // This catches cases where PlaceKey resolution returned wrong city
+            if (distance > 0.05) {
+              console.log(`⚠️ Cache location ${cacheLocation} coordinates don't match requested ${location} (distance: ${distance.toFixed(4)} degrees)`);
+              console.log(`⚠️ Rejecting cache to prevent wrong location match for: ${originalLocation}`);
+              return [];
+            }
+          }
+        }
+        
+        // If cache is a PlaceKey ID, we've already validated coordinates above
+        // If cache is a location string, validate city/state match
+        // PlaceKey IDs have format "provider:lat,lon" so we check if it starts with known providers
+        const knownProviders = ['openmeteo', 'geonames', 'osm', 'google', 'wikidata'];
+        const isPlaceKeyFormat = knownProviders.some(provider => cacheLocation.startsWith(provider + ':'));
+        
+        if (!isPlaceKeyFormat && cacheLocation && cacheLocation.includes(',')) {
+          // This is a location string, not a PlaceKey ID - validate city/state
+          const originalParts = originalLocation.toLowerCase().split(',').map(p => p.trim());
+          const originalCity = originalParts[0];
+          const originalState = originalParts.length >= 2 ? originalParts[1] : null;
+          
+          const cacheParts = cacheLocation.toLowerCase().split(',').map(p => p.trim());
+          const cacheCity = cacheParts[0];
+          
+          // City must match
+          if (cacheCity !== originalCity) {
+            console.log(`⚠️ Cache location "${cacheLocation}" city "${cacheCity}" doesn't match requested "${originalCity}" from "${originalLocation}"`);
+            console.log(`⚠️ Rejecting cache to prevent wrong location match`);
+            return [];
+          }
+          
+          // If state is specified in original, validate it matches cache
+          if (originalState && cacheParts.length >= 2) {
+            const cacheState = cacheParts[1];
+            
+            // Normalize state codes (e.g., "KY" vs "Kentucky")
+            const stateCodeMap = {
+              'kentucky': 'ky', 'ky': 'ky',
+              'massachusetts': 'ma', 'ma': 'ma',
+              'ohio': 'oh', 'oh': 'oh',
+              'texas': 'tx', 'tx': 'tx',
+              // Add more US states as needed
+            };
+            
+            const normalizedOriginal = stateCodeMap[originalState] || originalState;
+            const normalizedCache = stateCodeMap[cacheState] || cacheState;
+            
+            // Reject if states don't match (after normalization)
+            if (normalizedOriginal !== normalizedCache && 
+                originalState !== cacheState &&
+                !originalState.includes(cacheState) &&
+                !cacheState.includes(originalState)) {
+              console.log(`⚠️ Cache location "${cacheLocation}" state "${cacheState}" doesn't match requested "${originalState}" from "${originalLocation}"`);
+              console.log(`⚠️ Rejecting cache: normalized "${normalizedOriginal}" vs "${normalizedCache}"`);
+              return [];
+            }
+          }
+        }
+      }
       
       // Parse the JSON string to get the actual results object
       let resultsObj;

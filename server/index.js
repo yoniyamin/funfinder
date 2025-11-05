@@ -3872,7 +3872,12 @@ async function callModelWithRetry(ctx, allowedCats, maxRetries = 3, maxActivitie
   
   try {
     console.log('🎪 Fetching real events from Fever...');
-    const feverEvents = await getFeverEventsWithCache(ctx.location, feverCache);
+    // Pass PlaceKey context for disambiguation (e.g., Lisbon, OH vs Lisbon, Portugal)
+    const placeKeyContext = ctx.placeKey ? {
+      country_code: ctx.placeKey.country_code,
+      admin1_code: ctx.placeKey.admin1_code
+    } : null;
+    const feverEvents = await getFeverEventsWithCache(ctx.location, feverCache, placeKeyContext);
     
     if (feverEvents && feverEvents.length > 0) {
       // Format all events first
@@ -4663,13 +4668,19 @@ app.delete('/api/search-history/:id', async (req, res) => {
 // Cached Activities endpoint (for carousel)
 app.get('/api/cached-activities', async (req, res) => {
   try {
-    const { location, limit = 10 } = req.query;
+    const { location, originalLocation, limit = 10 } = req.query;
     
     if (!location) {
       return res.status(400).json({ ok: false, error: 'Location parameter is required' });
     }
     
-    const activities = await dataManager.getPopularActivitiesByLocation(location, parseInt(limit));
+    // Pass original location string for validation to prevent wrong cache matches
+    // (e.g., Boston, KY vs Boston, MA)
+    const activities = await dataManager.getPopularActivitiesByLocation(
+      location, 
+      parseInt(limit),
+      originalLocation || null
+    );
     console.log(`🎪 Returning ${activities.length} cached activities for: ${location}`);
     res.json({ ok: true, activities });
   } catch (error) {

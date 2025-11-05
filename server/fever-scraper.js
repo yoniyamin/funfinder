@@ -54,18 +54,71 @@ const FEVER_CITY_SLUGS = {
 
 /**
  * Normalize location name for Fever lookup
+ * @param {string} location - Location name (e.g., "Lisbon, OH, USA")
+ * @param {object} placeKeyContext - Optional PlaceKey context with country_code and admin1_code
  */
-function normalizeLocationForFever(location) {
+function normalizeLocationForFever(location, placeKeyContext = null) {
   const cityName = location.split(',')[0].trim().toLowerCase();
   
+  // Get country code from context if available
+  const countryCode = placeKeyContext?.country_code?.toLowerCase();
+  const admin1Code = placeKeyContext?.admin1_code;
+  
   // Direct match
-  if (FEVER_CITY_SLUGS[cityName]) {
-    return FEVER_CITY_SLUGS[cityName];
+  const directMatch = FEVER_CITY_SLUGS[cityName];
+  if (directMatch) {
+    // If we have country context, verify it matches
+    if (countryCode) {
+      // Map country codes to Fever country codes
+      const countryMap = {
+        'us': 'us',
+        'pt': 'pt',
+        'es': 'es',
+        'uk': 'uk',
+        'gb': 'uk', // UK and GB are both valid
+        'fr': 'fr',
+        'it': 'it',
+        'nl': 'nl',
+        'de': 'de'
+      };
+      
+      const expectedCountry = countryMap[countryCode];
+      if (expectedCountry && directMatch.country !== expectedCountry) {
+        // Country mismatch - this is likely the wrong city
+        // For example: "Lisbon, OH, USA" should not match "Lisbon, Portugal"
+        console.log(`⚠️ [Fever] City name "${cityName}" matches but country mismatch: expected ${expectedCountry}, got ${directMatch.country}`);
+        return null;
+      }
+    }
+    
+    return directMatch;
   }
   
-  // Fuzzy match
+  // Fuzzy match - but only if country matches
   for (const [key, value] of Object.entries(FEVER_CITY_SLUGS)) {
     if (cityName.includes(key) || key.includes(cityName)) {
+      // If we have country context, verify it matches
+      if (countryCode) {
+        const countryMap = {
+          'us': 'us',
+          'pt': 'pt',
+          'es': 'es',
+          'uk': 'uk',
+          'gb': 'uk',
+          'fr': 'fr',
+          'it': 'it',
+          'nl': 'nl',
+          'de': 'de'
+        };
+        
+        const expectedCountry = countryMap[countryCode];
+        if (expectedCountry && value.country !== expectedCountry) {
+          // Country mismatch - skip this match
+          console.log(`⚠️ [Fever] Fuzzy match "${key}" for "${cityName}" but country mismatch: expected ${expectedCountry}, got ${value.country}`);
+          continue;
+        }
+      }
+      
       return value;
     }
   }
@@ -77,14 +130,15 @@ function normalizeLocationForFever(location) {
  * Scrape Fever events for a location
  * @param {string} location - Location name (e.g., "Madrid, Spain")
  * @param {object} options - Additional options
+ * @param {object} placeKeyContext - Optional PlaceKey context for disambiguation
  * @returns {Promise<Array>} Array of events
  */
-export async function scrapeFeverEvents(location, options = {}) {
+export async function scrapeFeverEvents(location, options = {}, placeKeyContext = null) {
   const startTime = performance.now();
   console.log(`🎪 [Fever] Fetching events for: ${location}`);
   
   try {
-    const cityConfig = normalizeLocationForFever(location);
+    const cityConfig = normalizeLocationForFever(location, placeKeyContext);
     
     if (!cityConfig) {
       console.log(`⚠️ [Fever] City not supported: ${location}`);
@@ -662,8 +716,11 @@ export function formatEventsForAI(events, maxEvents = 30) {
 
 /**
  * Get Fever events with caching
+ * @param {string} location - Location name
+ * @param {object} cacheManager - Optional cache manager
+ * @param {object} placeKeyContext - Optional PlaceKey context for disambiguation
  */
-export async function getFeverEventsWithCache(location, cacheManager = null) {
+export async function getFeverEventsWithCache(location, cacheManager = null, placeKeyContext = null) {
   const cacheKey = `fever_events:${location.toLowerCase()}`;
   const cacheDuration = 6 * 60 * 60 * 1000; // 6 hours
   
@@ -681,7 +738,7 @@ export async function getFeverEventsWithCache(location, cacheManager = null) {
   }
   
   // Fetch fresh events
-  const events = await scrapeFeverEvents(location);
+  const events = await scrapeFeverEvents(location, {}, placeKeyContext);
   
   // Cache the results (best effort - don't fail if caching fails)
   if (cacheManager && events.length > 0) {

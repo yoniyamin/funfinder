@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toISODate, geocode, resolvePlace, fetchHolidays, fetchWeatherDaily, fetchFestivalsWikidata, fetchHolidaysWithGemini } from '../../lib/api';
-import { getPlaceKeyCacheKey } from '../../lib/placekey';
+import { getPlaceKeyCacheKey, normalizeUSState } from '../../lib/placekey';
 import type { Context, LLMResult, SavedActivity, TripList } from '../../lib/schema';
 import { getImageUrl } from '../../config/assets';
 import { AnimatedModal } from '../components/AnimatedModal';
@@ -167,7 +167,7 @@ export default function SearchPageV3({
   const [locationSearchText, setLocationSearchText] = useState('');
   const [isLoadingCities, setIsLoadingCities] = useState(false);
   const [newKidAge, setNewKidAge] = useState('');
-  const [cachedActivities, setCachedActivities] = useState<Activity[]>(SAMPLE_ACTIVITIES);
+  const [cachedActivities, setCachedActivities] = useState<Activity[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isFeaturesExpanded, setIsFeaturesExpanded] = useState(false); // Collapsible features
   const [dynamicMessage, setDynamicMessage] = useState(0);
@@ -307,17 +307,50 @@ export default function SearchPageV3({
       
       // Resolve location to PlaceKey first to get stable cache key
       let placeKeyId: string | null = null;
+      let placeKey: any = null;
       try {
-        const placeKey = await resolvePlace(location);
+        placeKey = await resolvePlace(location);
+        
+        // If resolvePlace returns null, location couldn't be accurately resolved
+        // This acts as a cache buster - don't show wrong location's activities
+        if (!placeKey) {
+          console.warn(`⚠️ Could not resolve location "${location}" accurately - skipping cache lookup`);
+          setCachedActivities([]); // Empty carousel instead of wrong location
+          return;
+        }
+        
+        // Validate PlaceKey matches the requested location (especially state)
+        const locationParts = location.toLowerCase().split(',').map(p => p.trim());
+        const requestedState = locationParts.length >= 2 ? locationParts[1] : null;
+        
+        if (requestedState && placeKey.admin1_code) {
+          // Extract state code from admin1_code (e.g., "US-KY" -> "KY")
+          const placeKeyStateCode = placeKey.admin1_code.toLowerCase().replace('us-', '');
+          // Normalize requested state to ISO code (e.g., "Kentucky" -> "US-KY" -> "ky")
+          const requestedStateIso = normalizeUSState(requestedState)?.toLowerCase().replace('us-', '') || 
+                                     (requestedState.length === 2 ? requestedState.toLowerCase() : null);
+          
+          // Check if states match
+          if (requestedStateIso && placeKeyStateCode !== requestedStateIso) {
+            console.warn(`⚠️ PlaceKey state mismatch: requested "${requestedState}" (${requestedStateIso}), got "${placeKey.admin1_code}" (${placeKeyStateCode})`);
+            console.warn(`⚠️ Skipping cache lookup to avoid showing wrong location's activities`);
+            setCachedActivities([]); // Empty array - don't show wrong location's cache
+            return;
+          }
+        }
+        
         placeKeyId = getPlaceKeyCacheKey(placeKey);
         console.log('📍 Resolved to PlaceKey:', placeKeyId);
       } catch (error) {
-        console.warn('⚠️ Failed to resolve PlaceKey, using location string:', error);
+        console.warn('⚠️ Failed to resolve PlaceKey, skipping cache lookup:', error);
+        setCachedActivities([]); // Empty array if PlaceKey resolution fails
+        return;
       }
       
       // Use PlaceKey ID for cache lookup if available, otherwise fall back to location string
+      // Also pass original location string for validation
       const cacheLocation = placeKeyId || location;
-      const response = await fetch(`/api/cached-activities?location=${encodeURIComponent(cacheLocation)}&limit=10`);
+      const response = await fetch(`/api/cached-activities?location=${encodeURIComponent(cacheLocation)}&originalLocation=${encodeURIComponent(location)}&limit=10`);
       
       if (response.ok) {
         const data = await response.json();
@@ -326,16 +359,18 @@ export default function SearchPageV3({
           console.log('✅ Loaded', data.activities.length, 'cached activities');
           setCachedActivities(data.activities);
         } else {
-          console.log('⚠️ No cached activities found, using sample data');
-          setCachedActivities(SAMPLE_ACTIVITIES);
+          // No cached activities - either no cache exists or cache was rejected (wrong location)
+          // Don't show sample data when cache was rejected to avoid showing wrong location's activities
+          console.log('⚠️ No cached activities found for this location');
+          setCachedActivities([]); // Empty array instead of sample data
         }
       } else {
-        console.log('❌ Failed to fetch cached activities, using sample data');
-        setCachedActivities(SAMPLE_ACTIVITIES);
+        console.log('❌ Failed to fetch cached activities');
+        setCachedActivities([]); // Empty array instead of sample data
       }
     } catch (error) {
       console.error('❌ Error fetching cached activities:', error);
-      setCachedActivities(SAMPLE_ACTIVITIES);
+      setCachedActivities([]); // Empty array instead of sample data
     }
   };
 

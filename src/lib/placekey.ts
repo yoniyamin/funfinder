@@ -138,7 +138,8 @@ export function parseLocationInput(input: string): {
 export function rankCandidates(
   candidates: any[],
   desiredCountry?: string,
-  desiredAdmin1?: string
+  desiredAdmin1?: string,
+  originalCityName?: string
 ): any[] {
   return candidates
     .filter(c => {
@@ -161,16 +162,32 @@ export function rankCandidates(
       return true;
     })
     .sort((a, b) => {
-      // Prefer higher population
+      // First priority: exact admin1 match (if specified)
+      if (desiredAdmin1) {
+        const aAdmin1 = normalizeAdmin1Code(a.admin1, a.country_code);
+        const bAdmin1 = normalizeAdmin1Code(b.admin1, b.country_code);
+        const aMatches = aAdmin1 === desiredAdmin1;
+        const bMatches = bAdmin1 === desiredAdmin1;
+        
+        if (aMatches && !bMatches) return -1;
+        if (!aMatches && bMatches) return 1;
+      }
+      
+      // Second priority: exact city name match (case-insensitive)
+      if (originalCityName) {
+        const aNameMatch = a.name?.toLowerCase() === originalCityName.toLowerCase();
+        const bNameMatch = b.name?.toLowerCase() === originalCityName.toLowerCase();
+        
+        if (aNameMatch && !bNameMatch) return -1;
+        if (!aNameMatch && bNameMatch) return 1;
+      }
+      
+      // Third priority: higher population (as tiebreaker)
       const popA = a.population || 0;
       const popB = b.population || 0;
       if (popB !== popA) {
         return popB - popA;
       }
-      
-      // Prefer exact name match (case-insensitive)
-      // This would require passing the original city name
-      // For now, just use population
       
       return 0;
     });

@@ -396,14 +396,17 @@ export default function App() {
     try {
       // Form validation
       if (!location.trim()) {
+        activeSearchRef.current = false; // Reset flag before early return
         alert('Please enter a location');
         return;
       }
       if (!date) {
+        activeSearchRef.current = false; // Reset flag before early return
         alert('Please select a date');
         return;
       }
       if (duration === '' || typeof duration !== 'number' || duration <= 0) {
+        activeSearchRef.current = false; // Reset flag before early return
         alert('Please enter a valid duration');
         return;
       }
@@ -430,6 +433,16 @@ export default function App() {
       // Resolve location to PlaceKey (stable canonical ID)
       // Note: Not using AbortController signal to avoid StrictMode issues
       const placeKey = await resolvePlace(location);
+      
+      // Check if location could be resolved accurately
+      if (!placeKey) {
+        console.error(`❌ Could not resolve location "${location}" accurately`);
+        activeSearchRef.current = false; // Reset flag before early return
+        setLoading({ isLoading: false, progress: 0, status: '' });
+        alert(`Could not find "${location}". Please try a different location or check the spelling.`);
+        return;
+      }
+      
       const { lat, lon, country_code, name, country } = placeKey;
       
       // Use PlaceKey for cache key, display string for context
@@ -843,6 +856,8 @@ export default function App() {
       const context = state.searchResults.ctx;
       if (!context) {
         console.error('No search context available for refresh');
+        activeSearchRef.current = false; // Reset flag before early return
+        setLoading({ isLoading: false, progress: 0, status: '' });
         return;
       }
 
