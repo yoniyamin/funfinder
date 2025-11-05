@@ -147,8 +147,14 @@ export function rankCandidates(
       // Open-Meteo doesn't have feature_class, so we'll skip this filter for now
       
       // Filter by country if specified
-      if (desiredCountry && c.country_code !== desiredCountry) {
-        return false;
+      // Check both country_code (e.g., "PT") and country name (e.g., "Portugal")
+      if (desiredCountry) {
+        const matchesCode = c.country_code === desiredCountry;
+        const matchesName = c.country?.toUpperCase() === desiredCountry;
+        
+        if (!matchesCode && !matchesName) {
+          return false;
+        }
       }
       
       // Filter by admin1 if specified
